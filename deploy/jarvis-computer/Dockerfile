@@ -34,6 +34,7 @@ RUN apt-get update \
         websockify \
         xdotool \
         scrot \
+        unzip \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 --shell /bin/bash jarvis
 
@@ -54,8 +55,22 @@ RUN mkdir -p \
 
 COPY apps /usr/share/jarvis-computer/apps
 COPY bin/chrome /usr/local/bin/chrome
+# Vendored official uBlock Origin Chromium zip. Unpacked here; never fetched at start.
+COPY extensions/ublock/uBlock0_1.74.0.chromium.zip /tmp/ublock-chromium.zip
+COPY policies/managed/ublock.json /etc/chromium/policies/managed/ublock.json
+COPY chromium.d/ublock-origin /etc/chromium.d/ublock-origin
 RUN chmod 0755 /usr/local/bin/chrome \
     && mkdir -p /usr/share/applications \
+        /usr/share/chromium/extensions/ublock \
+        /etc/chromium/policies/managed \
+        /etc/chromium.d \
+    && unzip -q /tmp/ublock-chromium.zip -d /tmp/ublock-unpack \
+    && cp -a /tmp/ublock-unpack/uBlock0.chromium/. /usr/share/chromium/extensions/ublock/ \
+    && test -f /usr/share/chromium/extensions/ublock/manifest.json \
+    && rm -rf /tmp/ublock-chromium.zip /tmp/ublock-unpack \
+    && chmod 0644 /etc/chromium/policies/managed/ublock.json \
+        /etc/chromium.d/ublock-origin \
+    && chmod -R a+rX /usr/share/chromium/extensions/ublock \
     && cp /usr/share/jarvis-computer/apps/*.desktop /usr/share/applications/ \
     && chmod 0644 /usr/share/applications/chrome.desktop \
         /usr/share/applications/notepad.desktop \

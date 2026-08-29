@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -400,3 +403,82 @@ def test_compose_config_when_docker_available():
     assert "/home/jarvis" in result.stdout
     assert "6080" in result.stdout
     assert "127.0.0.1" in result.stdout
+
+
+UBLOCK_ID = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
+UBLOCK_DIR = COMPUTER / "extensions" / "ublock"
+UBLOCK_ZIP = UBLOCK_DIR / "uBlock0_1.74.0.chromium.zip"
+UBLOCK_PIN = UBLOCK_DIR / "PINNED.txt"
+UBLOCK_LICENSE = UBLOCK_DIR / "LICENSE.txt"
+UBLOCK_POLICY = COMPUTER / "policies" / "managed" / "ublock.json"
+UBLOCK_CHROMIUM_D = COMPUTER / "chromium.d" / "ublock-origin"
+UBLOCK_SHA256 = "29a475e82688b304f2a9b2c0577c2655a8aaf75ce363fe02d720d389bbb9f451"
+UBLOCK_IMAGE_DIR = "/usr/share/chromium/extensions/ublock"
+UBLOCK_POLICY_IMAGE = "/etc/chromium/policies/managed/ublock.json"
+
+
+def test_chromium_ships_ublock_origin_by_default():
+    """Pinned uBlock is vendored and referenced by image, launcher, and policy."""
+    assert UBLOCK_ZIP.is_file(), "official Chromium zip must be vendored"
+    assert UBLOCK_PIN.is_file()
+    assert UBLOCK_LICENSE.is_file()
+    assert UBLOCK_POLICY.is_file()
+    assert UBLOCK_CHROMIUM_D.is_file()
+
+    digest = hashlib.sha256(UBLOCK_ZIP.read_bytes()).hexdigest()
+    assert digest == UBLOCK_SHA256
+    pin = UBLOCK_PIN.read_text(encoding="utf-8")
+    assert UBLOCK_SHA256 in pin
+    assert "1.74.0" in pin
+    assert "gorhill/uBlock" in pin
+    assert "GPL" in pin
+    license_text = UBLOCK_LICENSE.read_text(encoding="utf-8")
+    assert "GNU GENERAL PUBLIC LICENSE" in license_text
+
+    with zipfile.ZipFile(UBLOCK_ZIP) as zf:
+        names = zf.namelist()
+        assert "uBlock0.chromium/manifest.json" in names
+        manifest = json.loads(zf.read("uBlock0.chromium/manifest.json"))
+    assert manifest["name"] == "uBlock Origin"
+    assert manifest["version"] == "1.74.0"
+    assert int(manifest["manifest_version"]) == 2
+
+    policy = json.loads(UBLOCK_POLICY.read_text(encoding="utf-8"))
+    forcelist = policy["ExtensionInstallForcelist"]
+    assert any(item.startswith(f"{UBLOCK_ID};") for item in forcelist)
+    settings = policy["ExtensionSettings"][UBLOCK_ID]
+    assert settings["installation_mode"] == "force_installed"
+    assert "update_url" in settings
+    assert policy.get("ExtensionManifestV2Availability") == 2
+
+    dockerfile = DOCKERFILE.read_text(encoding="utf-8")
+    dockerfile_low = dockerfile.lower()
+    assert "uBlock0_1.74.0.chromium.zip" in dockerfile
+    assert "unzip" in dockerfile
+    assert UBLOCK_IMAGE_DIR in dockerfile
+    assert UBLOCK_POLICY_IMAGE in dockerfile
+    assert "chromium.d/ublock-origin" in dockerfile
+    assert "google-chrome" not in dockerfile_low
+    assert "dl.google.com" not in dockerfile_low
+    assert "chrome.deb" not in dockerfile_low
+    assert "chrome.google.com" not in dockerfile_low
+    for cmd in ("curl ", "wget ", "ADD http"):
+        assert cmd.lower() not in dockerfile_low, f"image must not download uBlock ({cmd})"
+
+    wrapper = CHROME_WRAPPER.read_text(encoding="utf-8")
+    assert "exec chromium" in wrapper
+    assert "--load-extension" in wrapper
+    assert UBLOCK_IMAGE_DIR in wrapper
+    assert "google-chrome" not in wrapper
+
+    chromium_d = UBLOCK_CHROMIUM_D.read_text(encoding="utf-8")
+    assert "--load-extension=/usr/share/chromium/extensions/ublock" in chromium_d
+
+    entry = ENTRYPOINT.read_text(encoding="utf-8").lower()
+    assert "curl" not in entry
+    assert "wget" not in entry
+    assert "chrome.google.com" not in entry
+
+    readme = COMPUTER_README.read_text(encoding="utf-8").lower()
+    assert "adblock on by default" in readme
+    assert "ublock" in readme

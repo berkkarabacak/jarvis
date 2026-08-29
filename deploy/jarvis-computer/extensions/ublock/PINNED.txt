@@ -1,0 +1,14 @@
+uBlock Origin for Jarvis's Debian Chromium (vendored; not downloaded at container start)
+
+Project:  uBlock Origin
+Upstream: https://github.com/gorhill/uBlock
+Mirror:   https://github.com/uBlockOrigin/uBlock
+Release:  1.74.0 (2026-08-25)
+Asset:    uBlock0_1.74.0.chromium.zip
+URL:      https://github.com/gorhill/uBlock/releases/download/1.74.0/uBlock0_1.74.0.chromium.zip
+SHA256:   29a475e82688b304f2a9b2c0577c2655a8aaf75ce363fe02d720d389bbb9f451
+
+Chrome Web Store / managed-policy ID: cjpalhdlnbpafiamejdnhcphjbkeiagm
+
+License: GPL-3.0-or-later (see LICENSE.txt from the official zip).
+Filter lists bundled by upstream carry their own notices (often GPL or Apache-2.0).

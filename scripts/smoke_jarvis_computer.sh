@@ -21,6 +21,11 @@ test -f "$DIR/README.md"
 test -f "$DOCS"
 test -f "$DIR/bin/chrome"
 test -f "$DIR/novnc/index.html"
+test -f "$DIR/extensions/ublock/uBlock0_1.74.0.chromium.zip"
+test -f "$DIR/extensions/ublock/PINNED.txt"
+test -f "$DIR/extensions/ublock/LICENSE.txt"
+test -f "$DIR/policies/managed/ublock.json"
+test -f "$DIR/chromium.d/ublock-origin"
 
 test -f "$THEME/xfwm4/themerc"
 test -f "$THEME/gtk-3.0/gtk.css"
@@ -70,6 +75,25 @@ grep -q 'JarvisWin' "$THEME/xfce-config/xfwm4.xml"
 grep -q '.jarvis-windows-theme-ready' "$DIR/entrypoint.sh"
 grep -q '.jarvis-apps-ready' "$DIR/entrypoint.sh"
 grep -q 'exec chromium' "$DIR/bin/chrome"
+grep -q -- '--load-extension' "$DIR/bin/chrome"
+grep -q '/usr/share/chromium/extensions/ublock' "$DIR/bin/chrome"
+grep -q 'uBlock0_1.74.0.chromium.zip' "$DOCKERFILE"
+grep -q '/usr/share/chromium/extensions/ublock' "$DOCKERFILE"
+grep -q '/etc/chromium/policies/managed/ublock.json' "$DOCKERFILE"
+grep -q 'ExtensionInstallForcelist' "$DIR/policies/managed/ublock.json"
+grep -q 'ExtensionSettings' "$DIR/policies/managed/ublock.json"
+grep -q 'cjpalhdlnbpafiamejdnhcphjbkeiagm' "$DIR/policies/managed/ublock.json"
+grep -q 'force_installed' "$DIR/policies/managed/ublock.json"
+grep -q -- '--load-extension=/usr/share/chromium/extensions/ublock' "$DIR/chromium.d/ublock-origin"
+grep -q 'adblock on by default' "$DIR/README.md"
+if grep -Eiq 'curl |wget |ADD https?://' "$DOCKERFILE" "$DIR/entrypoint.sh"; then
+  echo "uBlock must be vendored; do not download at image or container start" >&2
+  exit 1
+fi
+if grep -Eiq 'google-chrome|dl.google.com|chrome\.deb' "$DOCKERFILE"; then
+  echo "stay on Debian Chromium; do not add Google Chrome .deb" >&2
+  exit 1
+fi
 grep -q 'x11vnc' "$DIR/entrypoint.sh"
 grep -q 'websockify' "$DIR/entrypoint.sh"
 grep -q '/usr/share/novnc' "$DIR/entrypoint.sh"
