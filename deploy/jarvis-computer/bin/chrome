@@ -2,11 +2,8 @@
 # Chrome-shaped launcher for Debian Chromium. No Google Chrome repo.
 # --no-sandbox: Chromium's user-namespace sandbox is not available in this container.
 # --disable-dev-shm-usage: compose already sets shm_size; this avoids /dev/shm crashes.
-# --load-extension: vendored uBlock Origin (also force-installed via managed policy).
-UBLOCK_EXT="${UBLOCK_EXTENSION_DIR:-/usr/share/chromium/extensions/ublock}"
+# Adblock comes from Debian /etc/chromium.d/ublock-origin, not this wrapper.
 exec chromium \
   --no-sandbox \
   --disable-dev-shm-usage \
-  --disable-features=ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported \
-  --load-extension="$UBLOCK_EXT" \
   "$@"

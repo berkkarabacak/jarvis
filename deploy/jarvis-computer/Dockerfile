@@ -55,8 +55,9 @@ RUN mkdir -p \
 
 COPY apps /usr/share/jarvis-computer/apps
 COPY bin/chrome /usr/local/bin/chrome
-# Vendored official uBlock Origin Chromium zip. Unpacked here; never fetched at start.
-COPY extensions/ublock/uBlock0_1.74.0.chromium.zip /tmp/ublock-chromium.zip
+# Vendored official uBlock Origin Lite (MV3) zip. Unpacked here; never fetched at start.
+# Debian bookworm Chromium 149+ hard-blocks MV2, so the 1.74.0 tree cannot load.
+COPY extensions/ublock/uBOLite_2026.825.1619.chromium.zip /tmp/ublock-chromium.zip
 COPY policies/managed/ublock.json /etc/chromium/policies/managed/ublock.json
 COPY chromium.d/ublock-origin /etc/chromium.d/ublock-origin
 RUN chmod 0755 /usr/local/bin/chrome \
@@ -64,10 +65,9 @@ RUN chmod 0755 /usr/local/bin/chrome \
         /usr/share/chromium/extensions/ublock \
         /etc/chromium/policies/managed \
         /etc/chromium.d \
-    && unzip -q /tmp/ublock-chromium.zip -d /tmp/ublock-unpack \
-    && cp -a /tmp/ublock-unpack/uBlock0.chromium/. /usr/share/chromium/extensions/ublock/ \
+    && unzip -q /tmp/ublock-chromium.zip -d /usr/share/chromium/extensions/ublock \
     && test -f /usr/share/chromium/extensions/ublock/manifest.json \
-    && rm -rf /tmp/ublock-chromium.zip /tmp/ublock-unpack \
+    && rm -f /tmp/ublock-chromium.zip \
     && chmod 0644 /etc/chromium/policies/managed/ublock.json \
         /etc/chromium.d/ublock-origin \
     && chmod -R a+rX /usr/share/chromium/extensions/ublock \

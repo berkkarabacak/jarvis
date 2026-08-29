@@ -21,11 +21,12 @@ test -f "$DIR/README.md"
 test -f "$DOCS"
 test -f "$DIR/bin/chrome"
 test -f "$DIR/novnc/index.html"
-test -f "$DIR/extensions/ublock/uBlock0_1.74.0.chromium.zip"
+test -f "$DIR/extensions/ublock/uBOLite_2026.825.1619.chromium.zip"
 test -f "$DIR/extensions/ublock/PINNED.txt"
 test -f "$DIR/extensions/ublock/LICENSE.txt"
 test -f "$DIR/policies/managed/ublock.json"
 test -f "$DIR/chromium.d/ublock-origin"
+test -f "$ROOT/scripts/proof_jarvis_chromium_ublock.sh"
 
 test -f "$THEME/xfwm4/themerc"
 test -f "$THEME/gtk-3.0/gtk.css"
@@ -74,17 +75,27 @@ grep -q 'p=11' "$PANEL"
 grep -q 'JarvisWin' "$THEME/xfce-config/xfwm4.xml"
 grep -q '.jarvis-windows-theme-ready' "$DIR/entrypoint.sh"
 grep -q '.jarvis-apps-ready' "$DIR/entrypoint.sh"
+grep -q 'seed_chromium_ublock_profile' "$DIR/entrypoint.sh"
+grep -q 'refresh_chrome_desktop' "$DIR/entrypoint.sh"
+grep -q 'developer_mode' "$DIR/entrypoint.sh"
 grep -q 'exec chromium' "$DIR/bin/chrome"
-grep -q -- '--load-extension' "$DIR/bin/chrome"
-grep -q '/usr/share/chromium/extensions/ublock' "$DIR/bin/chrome"
-grep -q 'uBlock0_1.74.0.chromium.zip' "$DOCKERFILE"
+if grep -Eq -- '--load-extension=' "$DIR/bin/chrome"; then
+  echo "chrome wrapper must not also --load-extension; Debian chromium.d is the one path" >&2
+  exit 1
+fi
+grep -q 'Exec=/usr/local/bin/chrome' "$APPS/chrome.desktop"
+grep -q 'uBOLite_2026.825.1619.chromium.zip' "$DOCKERFILE"
 grep -q '/usr/share/chromium/extensions/ublock' "$DOCKERFILE"
 grep -q '/etc/chromium/policies/managed/ublock.json' "$DOCKERFILE"
-grep -q 'ExtensionInstallForcelist' "$DIR/policies/managed/ublock.json"
-grep -q 'ExtensionSettings' "$DIR/policies/managed/ublock.json"
-grep -q 'cjpalhdlnbpafiamejdnhcphjbkeiagm' "$DIR/policies/managed/ublock.json"
-grep -q 'force_installed' "$DIR/policies/managed/ublock.json"
-grep -q -- '--load-extension=/usr/share/chromium/extensions/ublock' "$DIR/chromium.d/ublock-origin"
+if grep -Eq 'ExtensionInstallForcelist|force_installed|clients2\.google\.com|update2/crx' "$DIR/policies/managed/ublock.json"; then
+  echo "managed policy must not force-install from the Chrome Web Store" >&2
+  exit 1
+fi
+grep -q 'export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --load-extension=/usr/share/chromium/extensions/ublock --disable-features=ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported"' "$DIR/chromium.d/ublock-origin"
+if grep -Eiq 'clients2\.google\.com|update2/crx' "$DIR/chromium.d/ublock-origin" "$DIR/bin/chrome" "$DOCKERFILE"; then
+  echo "do not depend on clients2.google.com to load uBlock" >&2
+  exit 1
+fi
 grep -q 'adblock on by default' "$DIR/README.md"
 if grep -Eiq 'curl |wget |ADD https?://' "$DOCKERFILE" "$DIR/entrypoint.sh"; then
   echo "uBlock must be vendored; do not download at image or container start" >&2
