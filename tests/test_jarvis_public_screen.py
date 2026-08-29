@@ -69,12 +69,13 @@ def test_public_session_rejects_operator_loopback_and_uses_watch_path():
     assert "data.url" not in script
 
 
-def test_android_watch_stream_is_under_jarvis_prefix():
+def test_android_watch_stream_is_under_public_prefix():
     watch = WATCH.read_text(encoding="utf-8")
     assert 'src="/stream.mjpeg"' not in watch
-    assert 'src="stream.mjpeg"' in watch
-    assert "/android/stream.mjpeg" in watch
-    assert "/jarvis/android/stream.mjpeg" in watch
+    assert 'src="/android/stream.mjpeg"' in watch
+    assert '<base href="/android/">' in watch
+    assert "The Android screen is not live yet." in watch
+    assert "http://127.0.0.1" not in watch.split("HTML = ", 1)[1].split('"""', 2)[1]
 
 
 @pytest.fixture

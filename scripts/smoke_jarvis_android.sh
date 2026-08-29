@@ -63,6 +63,15 @@ grep -q 'data-computer="android"' "$PUBLIC"
 grep -q 'Which computer he uses' "$PUBLIC"
 grep -q 'ORCH-461' "$DOCS"
 
+# Public watch page must never point at site-root /stream.mjpeg or loopback.
+grep -q 'src="/android/stream.mjpeg"' "$WATCH"
+grep -q '<base href="/android/">' "$WATCH"
+grep -q 'The Android screen is not live yet.' "$WATCH"
+if grep -q 'src="/stream.mjpeg"' "$WATCH"; then
+  echo "watch page must not use site-root /stream.mjpeg" >&2
+  exit 1
+fi
+
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     docker compose -f "$COMPOSE" --project-directory "$DIR" config >/dev/null

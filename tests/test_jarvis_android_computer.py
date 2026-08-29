@@ -311,7 +311,9 @@ def test_watch_path_is_localhost_equivalent_of_novnc():
     assert "Jarvis's screen" in watch
     assert "play_store_client" in watch
     assert 'src="/stream.mjpeg"' not in watch
-    assert 'src="stream.mjpeg"' in watch
+    assert 'src="/android/stream.mjpeg"' in watch
+    assert '<base href="/android/">' in watch
+    assert "The Android screen is not live yet." in watch
     linux_compose = (ROOT / "deploy" / "jarvis-computer" / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
