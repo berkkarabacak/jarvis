@@ -1,0 +1,34 @@
+# ORCH-401 + ORCH-402 + ORCH-403 + ORCH-404 + ORCH-405 — Jarvis's one
+# persistent Linux computer (Windows-like XFCE + Chrome/notepad/utilities).
+# Live noVNC view of THIS desktop (Xvfb :1), localhost only.
+# Jarvis look/click/type uses docker exec into this container (ORCH-405).
+# Not the user's Windows/Android app (ORCH-381).
+# Live notepad proof script: scripts/proof_jarvis_computer_notepad.py (ORCH-406).
+
+name: jarvis-computer
+
+services:
+  jarvis-computer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jarvis-computer:local
+    container_name: jarvis-computer
+    hostname: jarvis-computer
+    restart: unless-stopped
+    init: true
+    shm_size: "256mb"
+    environment:
+      DISPLAY: ":1"
+      HOME: /home/jarvis
+      USER: jarvis
+    volumes:
+      - jarvis-home:/home/jarvis
+    # Local-only. Do not publish on all interfaces — the desktop is not public.
+    # Open http://127.0.0.1:6080 to see and use the same XFCE session.
+    ports:
+      - "127.0.0.1:6080:6080"
+
+volumes:
+  jarvis-home:
+    name: jarvis-computer-home

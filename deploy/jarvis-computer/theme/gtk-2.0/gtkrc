@@ -1,0 +1,31 @@
+# Windows-like GTK2 colors for Jarvis (ORCH-402).
+gtk-font-name = "Liberation Sans 9"
+
+style "default"
+{
+  fg[NORMAL] = "#000000"
+  fg[PRELIGHT] = "#000000"
+  fg[SELECTED] = "#FFFFFF"
+  fg[ACTIVE] = "#000000"
+  fg[INSENSITIVE] = "#808080"
+
+  bg[NORMAL] = "#C0C0C0"
+  bg[PRELIGHT] = "#D4D0C8"
+  bg[SELECTED] = "#000080"
+  bg[ACTIVE] = "#C0C0C0"
+  bg[INSENSITIVE] = "#C0C0C0"
+
+  base[NORMAL] = "#FFFFFF"
+  base[PRELIGHT] = "#FFFFFF"
+  base[SELECTED] = "#000080"
+  base[ACTIVE] = "#FFFFFF"
+  base[INSENSITIVE] = "#C0C0C0"
+
+  text[NORMAL] = "#000000"
+  text[PRELIGHT] = "#000000"
+  text[SELECTED] = "#FFFFFF"
+  text[ACTIVE] = "#000000"
+  text[INSENSITIVE] = "#808080"
+}
+
+class "GtkWidget" style "default"

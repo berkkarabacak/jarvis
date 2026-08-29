@@ -1,0 +1,5 @@
+#!/bin/sh
+# Chrome-shaped launcher for Debian Chromium. No Google Chrome repo.
+# --no-sandbox: Chromium's user-namespace sandbox is not available in this container.
+# --disable-dev-shm-usage: compose already sets shm_size; this avoids /dev/shm crashes.
+exec chromium --no-sandbox --disable-dev-shm-usage "$@"

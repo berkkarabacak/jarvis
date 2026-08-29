@@ -1,0 +1,51 @@
+{
+  "name": "ai-control-room-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Control Room desktop shell ==GRoK== — same CEO UI as the web app",
+  "main": "main.js",
+  "author": "GRoK",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis portable",
+    "dist:installer": "electron-builder --win nsis --config electron-builder.installer.yml"
+  },
+  "build": {
+    "appId": "nl.aicontrolroom.desktop",
+    "productName": "AI Control Room",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "mini-avatar.js",
+      "packaged-python.js",
+      "talk-policy.js",
+      "preload.js",
+      "first-run.html",
+      "first-run-preload.js",
+      "avatar.html",
+      "avatar-preload.js",
+      "jarvis-tray.png",
+      "package.json"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "artifactName": "AI-Control-Room-${version}-${os}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  }
+}

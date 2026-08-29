@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jarvis</string>
+    <string name="talk_title">Jarvis</string>
+    <string name="talk_hint">Say something to Jarvis</string>
+    <string name="talk_send">Send</string>
+    <string name="talk_empty">Type a message. Jarvis will answer here.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_open">Settings</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_saved">Saved</string>
+    <string name="settings_connection">Where Jarvis lives</string>
+    <string name="settings_base_url">Server address</string>
+    <string name="settings_api_key">API key</string>
+    <string name="settings_test">Test connection</string>
+    <string name="settings_look_speed">How often I look at the screen</string>
+    <string name="settings_permission">What Jarvis may do</string>
+    <string name="settings_budget_title">Spending limit</string>
+    <string name="settings_budget_hint">Leave a box empty for no limit. Spend numbers come from the server.</string>
+    <string name="settings_monthly_budget">Monthly limit (dollars)</string>
+    <string name="settings_daily_budget">Daily limit (dollars)</string>
+    <string name="settings_no_limit">No limit</string>
+    <string name="settings_quality_title">Fast / Balanced / Smart</string>
+    <string name="settings_subscribe_title">Subscribe</string>
+    <string name="settings_subscribe_hint">Pick $3 or $8. Free is the try-Jarvis plan with a tiny spend cap.</string>
+    <string name="settings_subscribe_play_needed">Google Play is needed to subscribe</string>
+    <string name="settings_load_error">Could not load settings from the server.</string>
+    <string name="settings_save_error">Could not save settings.</string>
+    <string name="talk_need_server">Open Settings and enter the Jarvis server address first.</string>
+    <string name="talk_error">Jarvis could not answer. Check the server and try again.</string>
+</resources>

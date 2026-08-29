@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Notepad
+Comment=Plain text editor
+Exec=mousepad %F
+Icon=org.xfce.mousepad
+Terminal=false
+Categories=Utility;TextEditor;
+StartupNotify=true
+MimeType=text/plain;

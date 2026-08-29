@@ -1,0 +1,3271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis</title>
+  <script>
+    (function () {
+      try {
+        var path = (location.pathname || "").replace(/\/+$/, "") || "/";
+        var base = (path === "/jarvis" || path.indexOf("/jarvis/") === 0) ? "/jarvis" : "";
+        var voice = "warm";
+        try {
+          var raw = localStorage.getItem("jarvis.talk.prefs");
+          var data = raw ? JSON.parse(raw) : null;
+          if (data && (data.voice === "warm" || data.voice === "clear" || data.voice === "deep")) voice = data.voice;
+        } catch (e2) {}
+        var tz = "";
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e3) {}
+        // TEST: public Talk is not selling yet. Force English first hello.
+        // Flip to false (and app.jarvis.realtime.TEST_FORCE_ENGLISH) to restore
+        // locale-again worldwide.
+        var TEST_FORCE_ENGLISH = true;
+        window.__jarvisSessionPrefetch = fetch(base + "/api/jarvis/realtime/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            voice: voice,
+            locale: TEST_FORCE_ENGLISH ? "en" : String(navigator.language || "").trim(),
+            timezone: TEST_FORCE_ENGLISH ? "" : tz
+          })
+        });
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all';this.onload=null;document.documentElement.classList.add('fonts-ready')">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <script>
+    (function () {
+      try {
+        var raw = localStorage.getItem("jarvis.talk.prefs");
+        var data = raw ? JSON.parse(raw) : null;
+        var n = data && Number(data.textScale);
+        if (!isFinite(n)) return;
+        n = Math.max(0.9, Math.min(1.4, Math.round(n * 10) / 10));
+        document.documentElement.style.setProperty("--type-scale", String(n));
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    :root {
+      --ink: #201e1d;
+      --page: #f8f7f7;
+      --white: #ffffff;
+      --border: #d7d3d3;
+      --accent: #ec3013;
+      --listen: #2f7d32;
+      --listen-ink: #1d5c20;
+      --listen-bg: #f0f6f0;
+      --live-ink: #ae1800;
+      --live-bg: #fff2ef;
+      --muted: #605d5d;
+      --bubble: #f0eeee;
+      --no: #ae1800;
+      --type-scale: 1;
+      --ui-font: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    html.fonts-ready {
+      --ui-font: Archivo, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--page);
+      color: var(--ink);
+      font-family: var(--ui-font);
+      line-height: 1.4;
+    }
+    html { font-size: calc(16px * var(--type-scale)); }
+    body { font-size: 1rem; }
+    body {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+    @keyframes listen-pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.08); }
+    }
+    @keyframes pulseRing {
+      0% { box-shadow: 0 0 0 0 rgba(236, 48, 19, 0.42); }
+      70% { box-shadow: 0 0 0 12px rgba(236, 48, 19, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(236, 48, 19, 0); }
+    }
+    @keyframes blink-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+    #top {
+      height: 56px;
+      flex: 0 0 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0 12px 0 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+    }
+    h1 {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    h1 .mark { display: block; width: 26px; height: 26px; }
+    h1 .word { line-height: 1; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+    #listen-chip, #live-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    #listen-chip {
+      background: var(--listen-bg);
+      color: var(--listen-ink);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #listen-chip .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--listen);
+    }
+    #listen-chip[data-state="on"] .dot {
+      animation: blink-dot 1s ease-in-out infinite;
+    }
+    #listen-chip[data-state="off"] .dot {
+      background: var(--muted);
+    }
+    #live-chip {
+      background: var(--live-bg);
+      min-width: 0;
+    }
+    #live-chip .dot {
+      width: 8px;
+      height: 8px;
+      flex: 0 0 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: blink-dot 1s ease-in-out infinite;
+    }
+    #live-chip .live-word {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--live-ink);
+    }
+    #doing {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+    .bar-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--white);
+      cursor: pointer;
+      position: relative;
+    }
+    .bar-btn svg { display: block; width: 18px; height: 18px; }
+    #mic.bar-btn {
+      width: 44px;
+      height: 44px;
+      background: var(--ink);
+      color: var(--white);
+    }
+    #mic.bar-btn[data-on="1"] {
+      background: var(--accent);
+      color: var(--white);
+      animation: pulseRing 1.1s ease-out infinite;
+    }
+    #mute-me, #mute-him, #chat-btn {
+      width: 36px;
+      height: 36px;
+      background: var(--white);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+    #mute-me[data-on="1"], #mute-him[data-on="1"],
+    .bar-btn[data-mute][data-on="1"], .foot-btn[data-mute][data-on="1"],
+    #chat-btn[aria-expanded="true"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--white);
+    }
+    #settings-btn {
+      width: 40px;
+      height: 40px;
+      background: var(--white);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+    .bar-div {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+    }
+    #chat-btn .badge {
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--white);
+      font: 700 11px/16px var(--ui-font);
+      text-align: center;
+    }
+    #chat-btn .badge[hidden] { display: none; }
+    #stage {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+      background: var(--page);
+    }
+    #pc {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      background: #111;
+      position: relative;
+    }
+    #pc iframe { width: 100%; height: 100%; border: 0; background: #000; display: block; }
+    #talk-catch {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background: transparent;
+      cursor: pointer;
+    }
+    #talk-catch[hidden] { display: none; }
+    #chat {
+      flex: 0 0 330px;
+      width: 330px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--white);
+      border-left: 1px solid var(--border);
+    }
+    #chat[hidden] { display: none; }
+    .chat-head {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      padding: 8px 8px 0;
+    }
+    #chat-hide {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    #chat-hide svg { width: 22px; height: 22px; }
+    #log {
+      flex: 1;
+      margin: 0;
+      padding: 0.55rem 1rem 0.4rem;
+      list-style: none;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    #log::before {
+      content: "";
+      flex: 1 1 auto;
+    }
+    #log li {
+      max-width: 86%;
+      margin: 0 0 0.7rem;
+    }
+    #log li[data-who="you"] { margin-left: auto; }
+    #log p {
+      margin: 0;
+      padding: 0.65rem 0.85rem;
+      font-size: 17px;
+      font-weight: 500;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-align: left;
+    }
+    #log li[data-who="you"] p {
+      background: var(--ink);
+      color: var(--white);
+      border-radius: 16px 16px 4px 16px;
+    }
+    #log li[data-who="jarvis"] p {
+      background: var(--bubble);
+      color: var(--ink);
+      border-radius: 16px 16px 16px 4px;
+    }
+    #log li[data-live="1"] p { opacity: 0.78; }
+    #note {
+      width: 36px;
+      height: 36px;
+      margin: 0 1rem 0.4rem auto;
+      border-radius: 50%;
+      background: #f7eeee;
+      color: #8a3a32;
+      font: 700 1.1rem/36px inherit;
+      text-align: center;
+    }
+    #note:not([hidden])::before { content: "!"; }
+    .drawer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 0.55rem 0.85rem 0.2rem;
+    }
+    .foot-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 1px solid var(--border);
+      background: var(--ink);
+      color: var(--white);
+      cursor: pointer;
+    }
+    .foot-btn svg { width: 22px; height: 22px; display: block; }
+    #drawer-mic {
+      width: 62px;
+      height: 54px;
+      border-radius: 999px;
+      border-color: var(--ink);
+    }
+    #drawer-mic[data-on="1"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      animation: pulseRing 1.1s ease-out infinite;
+    }
+    .foot-btn[data-mute] {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: var(--white);
+      color: var(--ink);
+    }
+    .foot-btn[data-mute][data-on="1"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--white);
+    }
+    #bar {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      padding: 0.25rem 0.85rem 0.7rem;
+    }
+    #box {
+      flex: 1;
+      min-height: 36px;
+      height: 36px;
+      padding: 0.4rem 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--page);
+      color: var(--ink);
+      font: 15px/1.3 var(--ui-font);
+    }
+    #box:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
+    #go {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--white);
+      cursor: pointer;
+    }
+    #go .ico {
+      font: 700 15px/1 inherit;
+    }
+    #settings {
+      position: fixed;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      background: var(--page);
+      color: var(--ink);
+    }
+    #settings[hidden] { display: none; }
+    #settings .nav {
+      height: 62px;
+      flex: 0 0 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0 14px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+    }
+    #settings h2 {
+      margin: 0;
+      font-size: 19px;
+      font-weight: 800;
+    }
+    #settings-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 42px;
+      padding: 0 14px 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--white);
+      color: var(--ink);
+      font: 700 17px/1 var(--ui-font);
+      cursor: pointer;
+    }
+    #settings-back svg { width: 18px; height: 18px; }
+    #settings-close {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--white);
+      cursor: pointer;
+    }
+    #settings-close svg { width: 18px; height: 18px; }
+    #settings .body {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    #settings-rail {
+      flex: 0 0 228px;
+      width: 228px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 18px 12px;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      overflow: auto;
+    }
+    #settings-rail button {
+      display: flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: var(--ink);
+      font: 600 16px/1 var(--ui-font);
+      text-align: left;
+      cursor: pointer;
+    }
+    #settings-rail button[aria-selected="true"] {
+      background: var(--ink);
+      color: var(--white);
+    }
+    #settings .sheet {
+      flex: 1;
+      min-width: 0;
+      padding: 28px 32px 32px;
+      overflow: auto;
+    }
+    #settings .lead {
+      margin: 0 0 1.25rem;
+      font-size: 17px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    #settings .stat {
+      margin: 0 0 1.15rem;
+    }
+    #settings .kicker {
+      display: block;
+      margin: 0 0 0.2rem;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    #settings .hero {
+      display: block;
+      font-size: 40px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+    #settings .note {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    #settings .note[hidden], #spent-today-row[hidden], #spend-meter[hidden] { display: none; }
+    #spend-meter {
+      height: 10px;
+      margin: 0.4rem 0 1.4rem;
+      border-radius: 999px;
+      background: #e8e4e4;
+      overflow: hidden;
+    }
+    #spend-meter-fill {
+      height: 100%;
+      width: 0;
+      background: var(--ink);
+      border-radius: inherit;
+    }
+    #settings .now {
+      margin: 0.2rem 0 0;
+      font-size: 17px;
+    }
+    #model, #model-name-sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    #quality, #model-picks, #helper-picks {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0.2rem 0 1.1rem;
+    }
+    #helper-picks {
+      max-height: 52vh;
+      overflow: auto;
+    }
+    #quality button, #model-picks button, #helper-picks button {
+      min-height: 56px;
+      padding: 0 18px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--ink);
+      font: 700 17px/1 var(--ui-font);
+      text-align: left;
+      cursor: pointer;
+    }
+    #helper-picks button {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+      padding: 12px 18px;
+    }
+    #helper-picks .helper-id {
+      font: 400 12px/1.3 var(--ui-font);
+      opacity: 0.72;
+    }
+    #quality button[data-on="1"], #model-picks button[data-on="1"],
+    #helper-picks button[data-on="1"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--white);
+    }
+    .get-app {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 48px;
+      padding: 0 18px;
+      border-radius: 12px;
+      background: var(--ink);
+      color: var(--white);
+      font: 700 16px/1 var(--ui-font);
+      text-decoration: none;
+    }
+    .picks {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0.2rem 0 1.1rem;
+    }
+    .picks button {
+      min-height: 56px;
+      padding: 12px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--ink);
+      font: 700 17px/1.25 var(--ui-font);
+      text-align: left;
+      cursor: pointer;
+    }
+    .picks button[data-on="1"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: var(--white);
+    }
+    .picks .pick-note {
+      display: block;
+      margin-top: 6px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .picks button[data-on="1"] .pick-note { color: #d7d3d3; }
+    .row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .row-label {
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .row-value {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--muted);
+      text-align: right;
+    }
+    .choice {
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .choice-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .choice-label {
+      display: block;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .choice-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 15px;
+      color: var(--muted);
+    }
+    .seg {
+      display: inline-flex;
+      flex: 0 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--white);
+    }
+    .seg button {
+      min-width: 64px;
+      min-height: 44px;
+      padding: 0 14px;
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      font: 700 17px/1 var(--ui-font);
+      cursor: pointer;
+    }
+    .seg button[data-on="1"] {
+      background: var(--ink);
+      color: var(--white);
+    }
+    .seg button[data-val="no"][data-on="1"] {
+      background: var(--no);
+      color: var(--white);
+    }
+    .stepper-block { padding: 4px 0 18px; }
+    .stepper-label {
+      display: block;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    .stepper {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 10px;
+    }
+    .stepper button {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--ink);
+      font: 700 24px/1 var(--ui-font);
+      cursor: pointer;
+    }
+    .step-val {
+      min-width: 5.2rem;
+      font-size: 40px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+      text-align: center;
+    }
+    .empty {
+      margin: 0.4rem 0 1rem;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    #memory-log {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    #memory-log[hidden] { display: none; }
+    #memory-log li {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    #memory-log .who {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+    }
+    #memory-log p {
+      margin: 4px 0 0;
+      font-size: calc(17px * var(--type-scale));
+      font-weight: 500;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .panel[hidden] { display: none; }
+    #mic:focus-visible, #go:focus-visible, .bar-btn:focus-visible, .foot-btn:focus-visible,
+    h1:focus-visible, #settings-close:focus-visible, #settings-back:focus-visible,
+    #chat-hide:focus-visible, #settings-rail button:focus-visible,
+    #quality button:focus-visible, #model-picks button:focus-visible,
+    #helper-picks button:focus-visible, .get-app:focus-visible,
+    .picks button:focus-visible, .seg button:focus-visible, .stepper button:focus-visible {
+      outline: 2px solid var(--ink);
+      outline-offset: 2px;
+    }
+    h1, #log p, #settings .lead, #settings .now, #settings-back, #settings-rail button,
+    #quality button, #model-picks button, #helper-picks button, .picks button, .row-label, .row-value,
+    .choice-label, .seg button, .stepper-label, .empty {
+      font-size: calc(17px * var(--type-scale));
+    }
+    #settings h2 { font-size: calc(19px * var(--type-scale)); }
+    #settings .hero, .step-val { font-size: calc(40px * var(--type-scale)); }
+    #settings .kicker { font-size: calc(13px * var(--type-scale)); }
+    #settings .note, .picks .pick-note, .choice-note, #box, #doing {
+      font-size: calc(15px * var(--type-scale));
+    }
+    .get-app { font-size: calc(16px * var(--type-scale)); }
+    #listen-chip, #live-chip .live-word { font-size: calc(13px * var(--type-scale)); }
+    #sink { display: none; }
+    @media (max-width: 820px) {
+      #doing { display: none; }
+      #chat { flex-basis: min(330px, 46vw); width: min(330px, 46vw); }
+      #settings-rail { flex-basis: 160px; width: 160px; }
+      #settings .sheet { padding: 20px 16px 24px; }
+      #settings .hero { font-size: calc(32px * var(--type-scale)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #listen-chip .dot,
+      #live-chip .dot,
+      #mic.bar-btn[data-on="1"],
+      #drawer-mic[data-on="1"] {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header id="top">
+    <div class="brand">
+      <h1 aria-label="Jarvis">
+        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect width="32" height="32" rx="8" fill="#201e1d"/>
+          <circle cx="16" cy="16" r="8.2" fill="#ffffff"/>
+          <path fill="#7c3aed" d="M16 8.6l1.15 4.05 4.25.15-3.35 2.6 1.2 4.1L16 16.9l-3.25 2.6 1.2-4.1-3.35-2.6 4.25-.15z"/>
+        </svg>
+        <span class="word">Jarvis</span>
+      </h1>
+      <div class="status">
+        <span id="listen-chip" data-state="on"><span class="dot" aria-hidden="true"></span><span id="listen-label">Listening</span></span>
+        <span id="live-chip">
+          <span class="dot" aria-hidden="true"></span>
+          <span class="live-word">LIVE</span>
+          <span id="doing">Ready</span>
+        </span>
+      </div>
+    </div>
+    <div class="tools">
+      <button type="button" class="bar-btn" id="mic" title="Talk" aria-label="Talk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="11" rx="3"/>
+          <path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>
+        </svg>
+      </button>
+      <button type="button" class="bar-btn" id="mute-me" data-mute="me" title="Mute me" aria-label="Mute me" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="11" rx="3"/>
+          <path d="M6 11a6 6 0 0 0 12 0M12 17v4M4 4l16 16"/>
+        </svg>
+      </button>
+      <button type="button" class="bar-btn" id="mute-him" data-mute="him" title="Mute him" aria-label="Mute him" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M4 9v6h4l5 4V5L8 9H4z"/>
+          <path d="M16 9l5 6M21 9l-5 6"/>
+        </svg>
+      </button>
+      <button type="button" class="bar-btn" id="chat-btn" title="Chat" aria-label="Chat" aria-controls="chat" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M5 6h14v10H8l-3 3V6z"/>
+        </svg>
+        <span class="badge" id="chat-badge" hidden></span>
+      </button>
+      <span class="bar-div" aria-hidden="true"></span>
+      <button type="button" class="bar-btn" id="settings-btn" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="settings" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+  <div id="stage">
+    <section id="pc" aria-label="Screen">
+      <iframe id="pc-frame" title="Jarvis's screen" src=""></iframe>
+      <div id="talk-catch" hidden aria-hidden="true"></div>
+    </section>
+    <aside id="chat" hidden>
+      <div class="chat-head">
+        <button type="button" id="chat-hide" title="Hide" aria-label="Hide">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6"/>
+          </svg>
+        </button>
+      </div>
+      <ol id="log" aria-live="polite"></ol>
+      <p id="note" hidden></p>
+      <div class="drawer-foot">
+        <button type="button" class="foot-btn" id="drawer-mic" title="Talk" aria-label="Talk">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3"/>
+            <path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>
+          </svg>
+        </button>
+        <button type="button" class="foot-btn" data-mute="me" title="Mute me" aria-label="Mute me" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3"/>
+            <path d="M6 11a6 6 0 0 0 12 0M12 17v4M4 4l16 16"/>
+          </svg>
+        </button>
+        <button type="button" class="foot-btn" data-mute="him" title="Mute him" aria-label="Mute him" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 9v6h4l5 4V5L8 9H4z"/>
+            <path d="M16 9l5 6M21 9l-5 6"/>
+          </svg>
+        </button>
+      </div>
+      <form id="bar">
+        <input id="box" type="text" maxlength="2000" autocomplete="off" enterkeyhint="send" title="Type" aria-label="Type">
+        <button type="submit" id="go" title="Send" aria-label="Send">
+          <span class="ico" aria-hidden="true">↑</span>
+        </button>
+      </form>
+    </aside>
+  </div>
+  <div id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="nav">
+      <button type="button" id="settings-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M15 6l-6 6 6 6"/>
+        </svg>
+        Back
+      </button>
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" id="settings-close" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="body">
+      <nav id="settings-rail" class="rail" role="tablist" aria-label="Settings"></nav>
+      <div class="sheet">
+        <div class="panel" id="tab-cost" role="tabpanel" data-settings-panel="cost">
+          <p class="lead">What he has cost you this month.</p>
+          <div class="stat">
+            <span class="kicker">Spent this month</span>
+            <span class="hero money" id="spent-month">—</span>
+            <span class="note" id="spent-month-note" hidden></span>
+          </div>
+          <div class="stat">
+            <span class="kicker">Left</span>
+            <span class="hero money" id="spent-left">—</span>
+          </div>
+          <div class="stat" id="spent-today-row" hidden>
+            <span class="kicker">Spent today</span>
+            <span class="hero money" id="spent-today">—</span>
+          </div>
+          <div id="spend-meter" hidden><div id="spend-meter-fill"></div></div>
+          <p><a class="get-app" href="/jarvis/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
+        </div>
+        <div class="panel" id="tab-model" role="tabpanel" data-settings-panel="model" hidden>
+          <p class="lead">Which brain he uses. No codes, no keys.</p>
+          <div id="model-picks">
+            <button type="button" data-q="fast">Quick</button>
+            <button type="button" data-q="balanced">Everyday</button>
+            <button type="button" data-q="smart">Deep</button>
+          </div>
+          <p class="choice-label">Who does the extra work</p>
+          <div id="helper-picks"></div>
+          <p class="now">In use now: <span id="model-name">Everyday</span></p>
+          <span id="model"></span>
+        </div>
+        <div class="panel" id="tab-speed" role="tabpanel" data-settings-panel="speed" hidden>
+          <p class="lead">How fast he works and when he checks with you.</p>
+          <div id="quality">
+            <button type="button" data-speed="fast">Fast</button>
+            <button type="button" data-speed="balanced">Normal</button>
+            <button type="button" data-speed="careful">Careful</button>
+          </div>
+        </div>
+        <div class="panel" id="tab-voice" role="tabpanel" data-settings-panel="voice" hidden>
+          <p class="lead">How he sounds and how he hears you.</p>
+          <div class="picks" id="voice-picks">
+            <button type="button" data-voice="warm">Warm<span class="pick-note">Soft and friendly.</span></button>
+            <button type="button" data-voice="clear">Clear<span class="pick-note">Plain and even.</span></button>
+            <button type="button" data-voice="deep">Deep<span class="pick-note">Low and calm.</span></button>
+          </div>
+          <p class="choice-label">Talking speed</p>
+          <div class="picks" id="talk-speed-picks">
+            <button type="button" data-talk-speed="slow">Slow</button>
+            <button type="button" data-talk-speed="normal">Normal</button>
+            <button type="button" data-talk-speed="quick">Quick</button>
+          </div>
+          <div class="row">
+            <span class="row-label">Wake word</span>
+            <span class="row-value">Jarvis…</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Keeps listening after you speak</span>
+            <span class="row-value">Yes</span>
+          </div>
+        </div>
+        <div class="panel" id="tab-allowed" role="tabpanel" data-settings-panel="allowed" hidden>
+          <p class="lead">What he may do on his own computer.</p>
+          <div class="choice" data-allow="apps">
+            <div class="choice-top">
+              <div>
+                <span class="choice-label">Open apps and websites</span>
+                <span class="choice-note">Browser, mail, photos</span>
+              </div>
+              <div class="seg" role="group" aria-label="Open apps and websites">
+                <button type="button" data-val="yes">Yes</button>
+                <button type="button" data-val="ask">Ask</button>
+                <button type="button" data-val="no">No</button>
+              </div>
+            </div>
+          </div>
+          <div class="choice">
+            <div class="choice-top">
+              <div>
+                <span class="choice-label">Read your documents</span>
+                <span class="choice-note">Only the folder you share</span>
+              </div>
+              <span class="row-value">Needs the app</span>
+            </div>
+          </div>
+          <div class="choice" data-allow="files">
+            <div class="choice-top">
+              <div>
+                <span class="choice-label">Save and change files</span>
+                <span class="choice-note">Lists, letters, forms</span>
+              </div>
+              <div class="seg" role="group" aria-label="Save and change files">
+                <button type="button" data-val="yes">Yes</button>
+                <button type="button" data-val="ask">Ask</button>
+                <button type="button" data-val="no">No</button>
+              </div>
+            </div>
+          </div>
+          <div class="choice">
+            <div class="choice-top">
+              <div>
+                <span class="choice-label">Buy things or send messages</span>
+                <span class="choice-note">He always says the amount first</span>
+              </div>
+              <span class="row-value">Needs the app</span>
+            </div>
+          </div>
+          <div class="choice" data-allow="computer">
+            <div class="choice-top">
+              <div>
+                <span class="choice-label">Change the computer itself</span>
+                <span class="choice-note">Installing, deleting, settings</span>
+              </div>
+              <div class="seg" role="group" aria-label="Change the computer itself">
+                <button type="button" data-val="yes">Yes</button>
+                <button type="button" data-val="ask">Ask</button>
+                <button type="button" data-val="no">No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" id="tab-memory" role="tabpanel" data-settings-panel="memory" hidden>
+          <p class="lead">What he remembers about you.</p>
+          <p class="empty" id="memory-empty">He has not saved anything here yet.</p>
+          <ol id="memory-log" hidden></ol>
+        </div>
+        <div class="panel" id="tab-screen" role="tabpanel" data-settings-panel="screen" hidden>
+          <p class="lead">How his computer looks to you.</p>
+          <div class="stepper-block">
+            <span class="stepper-label">Text size everywhere</span>
+            <div class="stepper">
+              <button type="button" id="text-smaller" aria-label="Smaller">−</button>
+              <span class="step-val" id="text-size-val">100%</span>
+              <button type="button" id="text-bigger" aria-label="Bigger">+</button>
+            </div>
+          </div>
+          <p class="choice-label">Picture</p>
+          <p class="choice-note">Sharp costs a little more.</p>
+          <div class="picks" id="picture-picks">
+            <button type="button" data-picture="clear">Clear</button>
+            <button type="button" data-picture="smooth">Smooth</button>
+          </div>
+        </div>
+        <div class="panel" id="tab-computer" role="tabpanel" data-settings-panel="computer" hidden>
+          <p class="lead">Which computer he uses.</p>
+          <p class="choice-note">Same Jarvis. Same memory. Different box. Android is not the phone app.</p>
+          <div class="picks" id="computer-picks">
+            <button type="button" data-computer="linux">Linux<span class="pick-note">The usual desktop. This is the default.</span></button>
+            <button type="button" data-computer="android">Android<span class="pick-note">A phone-shaped box he can tap.</span></button>
+          </div>
+        </div>
+        <div class="panel" id="tab-about" role="tabpanel" data-settings-panel="about" hidden>
+          <p class="lead">This app and where to get help.</p>
+          <div class="row">
+            <span class="row-label">His computer</span>
+            <span class="row-value" id="computer-kind-label">Linux</span>
+          </div>
+          <div class="row">
+            <span class="row-label">Keys or codes needed</span>
+            <span class="row-value">None</span>
+          </div>
+          <p><a class="get-app" href="/jarvis/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <audio id="sink" autoplay playsinline hidden></audio>
+  <script>
+    (function () {
+      const CANT = "Can't talk right now";
+      const LOOK = "Look at the screen.";
+      const CANT_HEAR = "Can't hear you. Type here instead.";
+      const log = document.getElementById("log");
+      const note = document.getElementById("note");
+      const box = document.getElementById("box");
+      const form = document.getElementById("bar");
+      const mic = document.getElementById("mic");
+      const chatEl = document.getElementById("chat");
+      const chatBtn = document.getElementById("chat-btn");
+      const chatBadge = document.getElementById("chat-badge");
+      const listenChip = document.getElementById("listen-chip");
+      const listenLabel = document.getElementById("listen-label");
+      const doingEl = document.getElementById("doing");
+      const drawerMic = document.getElementById("drawer-mic");
+      const chatHide = document.getElementById("chat-hide");
+      const settingsEl = document.getElementById("settings");
+      const settingsBtn = document.getElementById("settings-btn");
+      const settingsClose = document.getElementById("settings-close");
+      const settingsBack = document.getElementById("settings-back");
+      const settingsRail = document.getElementById("settings-rail");
+      const spentToday = document.getElementById("spent-today");
+      const spentTodayRow = document.getElementById("spent-today-row");
+      const spentMonth = document.getElementById("spent-month");
+      const spentMonthNote = document.getElementById("spent-month-note");
+      const spentLeft = document.getElementById("spent-left");
+      const spendMeter = document.getElementById("spend-meter");
+      const spendMeterFill = document.getElementById("spend-meter-fill");
+      const modelEl = document.getElementById("model");
+      const modelNameEl = document.getElementById("model-name");
+      const qualityEl = document.getElementById("quality");
+      const modelPicksEl = document.getElementById("model-picks");
+      const helperPicksEl = document.getElementById("helper-picks");
+      const SETTINGS_TABS = [
+        { id: "cost", label: "Cost" },
+        { id: "model", label: "Model" },
+        { id: "speed", label: "Speed" },
+        { id: "voice", label: "Voice" },
+        { id: "allowed", label: "Allowed" },
+        { id: "memory", label: "Memory" },
+        { id: "screen", label: "Screen" },
+        { id: "computer", label: "Computer" },
+        { id: "about", label: "About" },
+      ];
+      const MODEL_NAMES = { fast: "Quick", balanced: "Everyday", smart: "Deep" };
+      const PREFS_KEY = "jarvis.talk.prefs";
+      const MIC_OK_KEY = "jarvis.talk.micOk";
+      const ALLOW_DEFAULTS = {
+        apps: "yes",
+        docs: "ask",
+        files: "ask",
+        buy: "ask",
+        computer: "no",
+      };
+      const TALK_RATES = { slow: 0.85, normal: 1, quick: 1.15 };
+      const TALK_VOICES = { warm: "marin", clear: "alloy", deep: "echo" };
+      const HOSTED_ALLOW_KEYS = ["apps", "files", "computer"];
+      // TEST: public Talk is not selling yet. Force English first hello.
+      // Flip to false (and app.jarvis.realtime.TEST_FORCE_ENGLISH) to restore
+      // locale-again worldwide.
+      const TEST_FORCE_ENGLISH = true;
+
+      let muteMe = false;
+      let muteHim = false;
+      let rec = null;
+      let listening = false;
+      let wantListen = false;
+      let speaking = false;
+      let currentAudio = null;
+      let liveYou = null;
+      let liveJarvis = null;
+      let sink = document.getElementById("sink");
+      let pc = null;
+      let dc = null;
+      let micStream = null;
+      let duplexLive = false;
+      let mintRealtime = true;
+      let canListen = true;
+      let connecting = false;
+      let greeted = false;
+      let channelOpen = false;
+      let remoteAudio = false;
+      let sessionReady = false;
+      let greetInFlight = false;
+      let greetAttempts = 0;
+      let lastAssistantSaid = "";
+      let duplexWait = null;
+      let sessionPrefetch = null;
+      let pendingText = null;
+      let pendingArgs = new Map();
+      let handledCalls = new Set();
+      let avatarReplyBuf = "";
+      let activeConfirmId = null;
+      let codeSpokenUntil = 0;
+      let lastUserGoal = "";
+      let lastToolAt = 0;
+      let hireWaveSpoken = false;
+      let hireStartSpoken = false;
+      let unread = 0;
+      let prefs = loadPrefs();
+
+      function loadPrefs() {
+        const out = {
+          voice: "warm",
+          talkSpeed: "normal",
+          allowed: {
+            apps: ALLOW_DEFAULTS.apps,
+            docs: ALLOW_DEFAULTS.docs,
+            files: ALLOW_DEFAULTS.files,
+            buy: ALLOW_DEFAULTS.buy,
+            computer: ALLOW_DEFAULTS.computer,
+          },
+          textScale: 1,
+          picture: "clear",
+          quality: "",
+          modelSpeed: "",
+          helper: "",
+          computerKind: "linux",
+        };
+        try {
+          const raw = localStorage.getItem(PREFS_KEY);
+          const data = raw ? JSON.parse(raw) : null;
+          if (!data || typeof data !== "object") return out;
+          if (data.voice === "warm" || data.voice === "clear" || data.voice === "deep") {
+            out.voice = data.voice;
+          }
+          if (data.talkSpeed === "slow" || data.talkSpeed === "normal" || data.talkSpeed === "quick") {
+            out.talkSpeed = data.talkSpeed;
+          }
+          if (data.picture === "clear" || data.picture === "smooth") {
+            out.picture = data.picture;
+          }
+          if (data.quality === "fast" || data.quality === "balanced" || data.quality === "smart") {
+            out.quality = data.quality;
+          }
+          if (data.modelSpeed === "fast" || data.modelSpeed === "balanced" || data.modelSpeed === "careful") {
+            out.modelSpeed = data.modelSpeed;
+          }
+          if (typeof data.helper === "string" && data.helper.trim()) {
+            out.helper = data.helper.trim();
+          }
+          if (data.computerKind === "linux" || data.computerKind === "android") {
+            out.computerKind = data.computerKind;
+          }
+          const scale = Number(data.textScale);
+          if (isFinite(scale)) {
+            out.textScale = Math.max(0.9, Math.min(1.4, Math.round(scale * 10) / 10));
+          }
+          if (data.allowed && typeof data.allowed === "object") {
+            const keys = ["apps", "docs", "files", "buy", "computer"];
+            for (let i = 0; i < keys.length; i++) {
+              const k = keys[i];
+              const v = data.allowed[k];
+              if (v === "yes" || v === "ask" || v === "no") out.allowed[k] = v;
+            }
+          }
+        } catch (_) {}
+        return out;
+      }
+
+      function savePrefs() {
+        try {
+          localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+        } catch (_) {}
+      }
+
+      function applyTextScale() {
+        document.documentElement.style.setProperty("--type-scale", String(prefs.textScale));
+        document.documentElement.setAttribute("data-text-scale", String(prefs.textScale));
+        const label = document.getElementById("text-size-val");
+        if (label) label.textContent = Math.round(prefs.textScale * 100) + "%";
+      }
+
+      function applyPicture() {
+        document.documentElement.setAttribute("data-picture", prefs.picture || "clear");
+        const frame = document.getElementById("pc-frame");
+        if (!frame) return;
+        const src = frame.getAttribute("src") || "/jarvis/screen";
+        try {
+          const url = new URL(src, location.href);
+          url.searchParams.set("picture", prefs.picture || "clear");
+          url.searchParams.set("t", String(Date.now()));
+          frame.setAttribute("src", url.pathname + url.search);
+        } catch (_) {
+          frame.setAttribute("src", "/jarvis/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
+        }
+      }
+
+      function realtimeVoice() {
+        return TALK_VOICES[prefs.voice] || TALK_VOICES.warm;
+      }
+
+      function applyLiveVoice() {
+        if (!dc || dc.readyState !== "open") return;
+        try {
+          dc.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              type: "realtime",
+              audio: { output: { voice: realtimeVoice() } }
+            }
+          }));
+        } catch (_) {}
+      }
+
+      function publicTalkAllowed() {
+        const out = {};
+        for (let i = 0; i < HOSTED_ALLOW_KEYS.length; i++) {
+          const key = HOSTED_ALLOW_KEYS[i];
+          const val = prefs.allowed[key] || ALLOW_DEFAULTS[key];
+          if (val === "yes" || val === "ask" || val === "no") out[key] = val;
+        }
+        return out;
+      }
+
+      function talkRate() {
+        return TALK_RATES[prefs.talkSpeed] || 1;
+      }
+
+      function applyTalkRate(el) {
+        if (!el) return;
+        try { el.playbackRate = talkRate(); } catch (_) {}
+      }
+
+      function applyTalkRateAll() {
+        applyTalkRate(sink);
+        applyTalkRate(currentAudio);
+      }
+
+      function apiBase() {
+        const path = location.pathname.replace(/\/+$/, "") || "/";
+        if (path === "/jarvis" || path.startsWith("/jarvis/")) return "/jarvis";
+        return "";
+      }
+
+      function showNote(on) {
+        note.hidden = !on;
+      }
+
+      function postTalkLog(who, text, tool, result) {
+        const role = who === "you" || who === "jarvis" || who === "tool" ? who : "";
+        if (!role) return;
+        const said = String(text || "").replace(/\s+/g, " ").trim();
+        if (!said && !tool) return;
+        const body = { role: role, text: said };
+        if (tool) body.tool = String(tool).slice(0, 64);
+        if (result) body.result = String(result).slice(0, 400);
+        fetch(apiBase() + "/api/jarvis/talk/log", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }).catch(function () {});
+      }
+
+      function add(who, text, live) {
+        if (!text) return null;
+        const li = document.createElement("li");
+        li.dataset.who = who;
+        if (live) li.dataset.live = "1";
+        const p = document.createElement("p");
+        p.textContent = text;
+        li.appendChild(p);
+        log.appendChild(li);
+        pinLog();
+        if (chatEl && chatEl.hidden && !live) {
+          unread += 1;
+          paintBadge();
+        }
+        if (!live && (who === "you" || who === "jarvis")) {
+          postTalkLog(who, text);
+        }
+        return li;
+      }
+
+      function setLiveYou(text) {
+        const said = String(text || "").replace(/\s+/g, " ").trim();
+        if (!said) return;
+        rememberUserGoal(said);
+        if (liveYou) {
+          const p = liveYou.querySelector("p");
+          if (p) p.textContent = said;
+          pinLog();
+          return;
+        }
+        liveYou = add("you", said, true);
+      }
+
+      function finishLiveYou() {
+        if (liveYou) {
+          const p = liveYou.querySelector("p");
+          if (p && p.textContent) postTalkLog("you", p.textContent);
+          liveYou.removeAttribute("data-live");
+        }
+        liveYou = null;
+      }
+
+      function setLiveJarvis(text) {
+        const said = String(text || "").replace(/\s+/g, " ").trim();
+        if (!said) return;
+        if (liveJarvis) {
+          const p = liveJarvis.querySelector("p");
+          if (p) p.textContent = said;
+          pinLog();
+          return;
+        }
+        liveJarvis = add("jarvis", said, true);
+      }
+
+      function finishLiveJarvis() {
+        if (liveJarvis) {
+          const p = liveJarvis.querySelector("p");
+          if (p && p.textContent) {
+            postTalkLog("jarvis", p.textContent);
+            if (chatEl && chatEl.hidden) {
+              unread += 1;
+              paintBadge();
+            }
+          }
+          liveJarvis.removeAttribute("data-live");
+        }
+        liveJarvis = null;
+      }
+
+      function talkPathFromHealth(health) {
+        const h = health && typeof health === "object" ? health : {};
+        const listenMode = String(h.listen_mode || "");
+        const speakMode = String(h.speak_mode || "");
+        const useDuplex =
+          h.realtime === true && listenMode === "openai_realtime";
+        const hear =
+          useDuplex ||
+          h.can_listen === true ||
+          listenMode === "browser_speech";
+        const speak =
+          useDuplex ||
+          h.can_speak === true ||
+          speakMode === "hosted_tts" ||
+          speakMode === "openai_tts" ||
+          speakMode === "openai_realtime";
+        if (useDuplex) {
+          return {
+            path: "openai_realtime",
+            listenMode: "openai_realtime",
+            canListen: true,
+            canSpeak: true,
+            mintRealtime: true,
+          };
+        }
+        if (hear) {
+          return {
+            path: "browser_speech",
+            listenMode: "browser_speech",
+            canListen: true,
+            canSpeak: !!speak,
+            mintRealtime: false,
+          };
+        }
+        return {
+          path: "none",
+          listenMode: "none",
+          canListen: false,
+          canSpeak: false,
+          mintRealtime: false,
+        };
+      }
+
+      function applyTalkPath(health) {
+        const path = talkPathFromHealth(health);
+        canListen = path.canListen === true;
+        mintRealtime = path.mintRealtime === true;
+        return path;
+      }
+
+      function money(n) {
+        if (n == null || n === "") return "—";
+        const x = Number(n);
+        if (!isFinite(x)) return "—";
+        return "$" + x.toFixed(2);
+      }
+
+      function asMoney(n) {
+        if (n == null || n === "") return null;
+        const x = Number(n);
+        return isFinite(x) ? x : null;
+      }
+
+      function paintPicks(root, attr, value) {
+        if (!root) return;
+        const bits = root.querySelectorAll("[" + attr + "]");
+        for (let i = 0; i < bits.length; i++) {
+          const on = value && bits[i].getAttribute(attr) === value;
+          bits[i].dataset.on = on ? "1" : "";
+          bits[i].setAttribute("aria-pressed", on ? "true" : "false");
+        }
+      }
+
+      function helperLabel(data) {
+        const friendly = String((data && data.helper_name) || "").trim();
+        if (friendly === "Quick" || friendly === "Kimi" || friendly === "Ox") {
+          return friendly;
+        }
+        const current = String((data && data.model) || "").trim();
+        const list = (data && data.helper_models) || [];
+        for (let i = 0; i < list.length; i++) {
+          const row = list[i] || {};
+          if (String(row.id || "") === current && row.name) return String(row.name);
+        }
+        return current;
+      }
+
+      function paintHelperPicks(models, current) {
+        if (!helperPicksEl) return;
+        helperPicksEl.textContent = "";
+        const list = Array.isArray(models) ? models.slice(0, 20) : [];
+        for (let i = 0; i < list.length; i++) {
+          const row = list[i] || {};
+          const id = String(row.id || "").trim();
+          if (!id) continue;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("data-helper", id);
+          const title = document.createElement("span");
+          title.className = "helper-name";
+          title.textContent = String(row.name || id);
+          const slug = document.createElement("span");
+          slug.className = "helper-id";
+          slug.textContent = id;
+          btn.appendChild(title);
+          btn.appendChild(slug);
+          btn.addEventListener("click", function () {
+            void saveTalkSettings({ model: id, model_lock: true });
+          });
+          helperPicksEl.appendChild(btn);
+        }
+        paintPicks(helperPicksEl, "data-helper", current || "");
+      }
+
+      function rememberTalkSettings(body) {
+        const next = body || {};
+        if (next.quality_vs_price === "fast" || next.quality_vs_price === "balanced" || next.quality_vs_price === "smart") {
+          prefs.quality = next.quality_vs_price;
+        }
+        if (next.model_speed === "fast" || next.model_speed === "balanced" || next.model_speed === "careful") {
+          prefs.modelSpeed = next.model_speed;
+        }
+        if (next.computer_kind === "linux" || next.computer_kind === "android") {
+          prefs.computerKind = next.computer_kind;
+        }
+        if (typeof next.model === "string" && next.model.trim()) {
+          prefs.helper = next.model.trim();
+        }
+        savePrefs();
+      }
+
+      async function saveTalkSettings(body) {
+        rememberTalkSettings(body);
+        try {
+          const res = await fetch(apiBase() + "/api/jarvis/settings", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body || {}),
+          });
+          const data = await res.json().catch(function () { return {}; });
+          if (res.ok) {
+            paintSheet(data);
+            return data;
+          }
+        } catch (_) {}
+        return null;
+      }
+
+      function pinLog() {
+        if (!log) return;
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function paintSheet(data) {
+        if (!data || typeof data !== "object") return;
+        if (modelEl) modelEl.textContent = "";
+        const today = ("spent_today_usd" in data) ? asMoney(data.spent_today_usd) : null;
+        if ("spent_today_usd" in data && spentToday) {
+          spentToday.textContent = money(data.spent_today_usd);
+          if (spentTodayRow) spentTodayRow.hidden = today == null;
+        }
+        if ("spent_month_usd" in data && spentMonth) spentMonth.textContent = money(data.spent_month_usd);
+        if ("remaining_budget_usd" in data && spentLeft) spentLeft.textContent = money(data.remaining_budget_usd);
+        const month = ("spent_month_usd" in data) ? asMoney(data.spent_month_usd) : null;
+        const budget = ("monthly_budget_usd" in data) ? asMoney(data.monthly_budget_usd) : null;
+        if (spentMonthNote) {
+          if (budget != null) {
+            spentMonthNote.hidden = false;
+            spentMonthNote.textContent = "of " + money(budget) + " included";
+          } else {
+            spentMonthNote.hidden = true;
+            spentMonthNote.textContent = "";
+          }
+        }
+        if (spendMeter && spendMeterFill) {
+          if (month != null && budget != null && budget > 0) {
+            spendMeter.hidden = false;
+            spendMeterFill.style.width = Math.max(0, Math.min(100, (month / budget) * 100)) + "%";
+          } else {
+            spendMeter.hidden = true;
+            spendMeterFill.style.width = "0";
+          }
+        }
+        if ("quality_vs_price" in data) {
+          const q = String(data.quality_vs_price || "").toLowerCase();
+          if (q === "fast" || q === "balanced" || q === "smart") prefs.quality = q;
+          paintPicks(modelPicksEl, "data-q", q);
+        }
+        if ("helper_models" in data) {
+          if (data.model) prefs.helper = String(data.model);
+          paintHelperPicks(data.helper_models, String(data.model || prefs.helper || ""));
+        } else if ("model" in data) {
+          if (data.model) prefs.helper = String(data.model);
+          paintPicks(helperPicksEl, "data-helper", String(data.model || prefs.helper || ""));
+        }
+        if (modelNameEl) {
+          const helper = helperLabel(data);
+          if (helper) modelNameEl.textContent = helper;
+          else if ("quality_vs_price" in data) {
+            const q = String(data.quality_vs_price || "").toLowerCase();
+            modelNameEl.textContent = MODEL_NAMES[q] || "Everyday";
+          }
+        }
+        if (modelEl && "model" in data) modelEl.textContent = String(data.model || "");
+        if ("model_speed" in data) {
+          const speed = String(data.model_speed || "").toLowerCase();
+          if (speed === "fast" || speed === "balanced" || speed === "careful") {
+            prefs.modelSpeed = speed;
+          }
+          paintPicks(qualityEl, "data-speed", speed);
+        }
+        if ("computer_kind" in data) {
+          const kind = String(data.computer_kind || "linux").toLowerCase();
+          if (kind === "linux" || kind === "android") prefs.computerKind = kind;
+          paintPicks(document.getElementById("computer-picks"), "data-computer", prefs.computerKind);
+          const live = document.getElementById("computer-kind-label");
+          if (live) live.textContent = prefs.computerKind === "android" ? "Android" : "Linux";
+        }
+        if (data.computer && typeof data.computer === "object") {
+          const live = document.getElementById("computer-kind-label");
+          if (live && data.computer.label) live.textContent = String(data.computer.label);
+        }
+        savePrefs();
+      }
+
+      function openSettings() {
+        settingsEl.hidden = false;
+        settingsBtn.setAttribute("aria-expanded", "true");
+        showSettingsTab("cost");
+        settingsClose.focus();
+        void health();
+      }
+
+      function closeSettings() {
+        settingsEl.hidden = true;
+        settingsBtn.setAttribute("aria-expanded", "false");
+      }
+
+      function showSettingsTab(name) {
+        const tabs = document.querySelectorAll("#settings [data-tab]");
+        const panels = document.querySelectorAll("[data-settings-panel]");
+        for (let i = 0; i < tabs.length; i++) {
+          tabs[i].setAttribute("aria-selected", tabs[i].getAttribute("data-tab") === name ? "true" : "false");
+        }
+        for (let i = 0; i < panels.length; i++) {
+          panels[i].hidden = panels[i].getAttribute("data-settings-panel") !== name;
+        }
+        if (name === "memory") void loadMemoryTab();
+      }
+
+      function loadMemoryTab() {
+        const empty = document.getElementById("memory-empty");
+        const list = document.getElementById("memory-log");
+        if (!empty || !list) return;
+        fetch(apiBase() + "/api/jarvis/talk/last", { credentials: "same-origin" })
+          .then(function (res) { return res.json().catch(function () { return {}; }); })
+          .then(function (data) {
+            const turns = (data && Array.isArray(data.turns)) ? data.turns : [];
+            list.textContent = "";
+            const names = { you: "You", jarvis: "Jarvis", tool: "Tool" };
+            for (let i = 0; i < turns.length; i++) {
+              const row = turns[i] || {};
+              const role = String(row.role || "");
+              const said = String(row.text || "").trim();
+              if (!said) continue;
+              const li = document.createElement("li");
+              const who = document.createElement("span");
+              who.className = "who";
+              who.textContent = names[role] || role;
+              const p = document.createElement("p");
+              p.textContent = said;
+              li.appendChild(who);
+              li.appendChild(p);
+              list.appendChild(li);
+            }
+            const has = list.childNodes.length > 0;
+            list.hidden = !has;
+            empty.hidden = has;
+          })
+          .catch(function () {
+            list.textContent = "";
+            list.hidden = true;
+            empty.hidden = false;
+          });
+      }
+
+      function renderSettingsRail() {
+        if (!settingsRail) return;
+        settingsRail.textContent = "";
+        for (let i = 0; i < SETTINGS_TABS.length; i++) {
+          const tab = SETTINGS_TABS[i];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.setAttribute("role", "tab");
+          btn.id = "tab-" + tab.id + "-btn";
+          btn.setAttribute("aria-controls", "tab-" + tab.id);
+          btn.setAttribute("data-tab", tab.id);
+          btn.textContent = tab.label;
+          btn.addEventListener("click", function () {
+            showSettingsTab(tab.id);
+          });
+          settingsRail.appendChild(btn);
+        }
+      }
+
+      function paintPrefs() {
+        paintPicks(document.getElementById("voice-picks"), "data-voice", prefs.voice);
+        paintPicks(document.getElementById("talk-speed-picks"), "data-talk-speed", prefs.talkSpeed);
+        paintPicks(document.getElementById("picture-picks"), "data-picture", prefs.picture);
+        if (prefs.quality) paintPicks(modelPicksEl, "data-q", prefs.quality);
+        if (prefs.modelSpeed) paintPicks(qualityEl, "data-speed", prefs.modelSpeed);
+        if (prefs.helper) paintPicks(helperPicksEl, "data-helper", prefs.helper);
+        paintPicks(document.getElementById("computer-picks"), "data-computer", prefs.computerKind || "linux");
+        const live = document.getElementById("computer-kind-label");
+        if (live) live.textContent = prefs.computerKind === "android" ? "Android" : "Linux";
+        const rows = document.querySelectorAll("#tab-allowed [data-allow]");
+        for (let i = 0; i < rows.length; i++) {
+          const key = rows[i].getAttribute("data-allow");
+          paintPicks(rows[i], "data-val", prefs.allowed[key] || ALLOW_DEFAULTS[key]);
+        }
+        applyTextScale();
+        applyPicture();
+      }
+
+      function paintBadge() {
+        if (!chatBadge) return;
+        const show = unread > 0 && chatEl && chatEl.hidden;
+        chatBadge.hidden = !show;
+        chatBadge.textContent = unread > 99 ? "99" : String(unread);
+      }
+
+      function setChatOpen(on) {
+        if (!chatEl || !chatBtn) return;
+        chatEl.hidden = !on;
+        chatBtn.setAttribute("aria-expanded", on ? "true" : "false");
+        if (on) unread = 0;
+        paintBadge();
+        if (on) pinLog();
+      }
+
+      function paintStatus() {
+        let listen = "Listening";
+        let state = "on";
+        if (muteMe) {
+          listen = "Mic off";
+          state = "off";
+        } else if (!canListen) {
+          listen = "Paused";
+          state = "paused";
+        }
+        if (listenLabel) listenLabel.textContent = listen;
+        if (listenChip) listenChip.dataset.state = state;
+        let doing = "Ready";
+        if (connecting) doing = "Starting";
+        else if (speaking) doing = "Talking";
+        else if (muteMe && wantListen) doing = "Mic is off";
+        else if (duplexLive || listening) doing = "Listening to you";
+        else if (lastToolAt && (Date.now() - lastToolAt) < 8000) doing = "On the computer";
+        if (doingEl) doingEl.textContent = doing;
+      }
+
+      function paintMic() {
+        if (duplexLive) {
+          mic.dataset.on = (wantListen && !muteMe) ? "1" : "";
+        } else {
+          mic.dataset.on = (wantListen && !muteMe && !speaking) ? "1" : "";
+        }
+        if (drawerMic) drawerMic.dataset.on = mic.dataset.on;
+        paintStatus();
+      }
+
+      function haltRec() {
+        listening = false;
+        try { if (rec) rec.stop(); } catch (_) {}
+      }
+
+      function stopListen() {
+        haltRec();
+        paintMic();
+      }
+
+      function Rec() {
+        return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+      }
+
+      function hearFail() {
+        add("jarvis", CANT_HEAR);
+      }
+
+      function startListen() {
+        if (duplexLive) return;
+        if (muteMe) return;
+        if (!wantListen || speaking) return;
+        const Ctor = Rec();
+        if (!Ctor) {
+          hearFail();
+          return;
+        }
+        if (listening) {
+          paintMic();
+          return;
+        }
+        rec = new Ctor();
+        rec.interimResults = true;
+        rec.continuous = true;
+        rec.onresult = function (e) {
+          if (speaking || muteMe) return;
+          let interim = "";
+          let finalText = "";
+          const rows = e.results || [];
+          const from = typeof e.resultIndex === "number" ? e.resultIndex : 0;
+          for (let i = from; i < rows.length; i++) {
+            const bit = ((rows[i][0] && rows[i][0].transcript) || "");
+            if (rows[i].isFinal) finalText += bit;
+            else interim += bit;
+          }
+          const shown = (finalText || interim).trim();
+          if (shown) setLiveYou(shown);
+          const said = finalText.trim();
+          if (said) {
+            finishLiveYou();
+            void ask(said, true);
+          }
+        };
+        rec.onend = function () {
+          listening = false;
+          if (muteMe || duplexLive) {
+            paintMic();
+            finishLiveYou();
+            return;
+          }
+          startListen();
+        };
+        rec.onerror = function (ev) {
+          const why = (ev && ev.error) || "";
+          if (why === "aborted") return;
+          listening = false;
+          if (muteMe || duplexLive) {
+            paintMic();
+            return;
+          }
+          startListen();
+        };
+        paintMic();
+        try {
+          rec.start();
+          listening = true;
+          rememberMicGranted();
+        } catch (_) {
+          listening = false;
+          setTimeout(function () {
+            if (!muteMe && wantListen && !speaking && !listening) startListen();
+          }, 120);
+        }
+      }
+
+      function stopVoice() {
+        if (!currentAudio) return;
+        try {
+          currentAudio.pause();
+          currentAudio.src = "";
+        } catch (_) {}
+        currentAudio = null;
+      }
+
+      function paintMute() {
+        const mes = document.querySelectorAll('[data-mute="me"]');
+        const hims = document.querySelectorAll('[data-mute="him"]');
+        for (let i = 0; i < mes.length; i++) {
+          mes[i].dataset.on = muteMe ? "1" : "";
+          mes[i].setAttribute("aria-pressed", muteMe ? "true" : "false");
+        }
+        for (let i = 0; i < hims.length; i++) {
+          hims[i].dataset.on = muteHim ? "1" : "";
+          hims[i].setAttribute("aria-pressed", muteHim ? "true" : "false");
+        }
+        paintStatus();
+      }
+
+      function setMicEnabled(on) {
+        if (!micStream) return;
+        micStream.getAudioTracks().forEach(function (t) {
+          t.enabled = !!on;
+        });
+      }
+
+      function applyHimMute() {
+        if (!sink) return;
+        sink.muted = muteHim;
+        sink.volume = muteHim ? 0 : 1;
+      }
+
+      function clearBufferedAudio() {
+        if (!sink) return;
+        const stream = sink.srcObject;
+        if (!stream) return;
+        try { sink.pause(); } catch (_) {}
+        sink.srcObject = null;
+        sink.srcObject = stream;
+        applyTalkRate(sink);
+        applyHimMute();
+        if (!muteHim) sink.play().catch(function () {});
+      }
+
+      function bargeIn() {
+        if (greetInFlight) return;
+        speaking = false;
+        finishLiveJarvis();
+        if (dc && dc.readyState === "open") {
+          try { dc.send(JSON.stringify({ type: "output_audio_buffer.clear" })); } catch (_) {}
+          try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+        }
+        clearBufferedAudio();
+        paintMic();
+      }
+
+      function startBrowserTalk() {
+        mintRealtime = false;
+        duplexLive = false;
+        connecting = false;
+        const Ctor = Rec();
+        if (!Ctor) {
+          hearFail();
+          return;
+        }
+        startListen();
+        paintMic();
+      }
+
+      function sessionBody() {
+        return {
+          voice: prefs.voice,
+          locale: TEST_FORCE_ENGLISH ? "en" : (navigator.language || "").trim(),
+          timezone: TEST_FORCE_ENGLISH ? "" : (function () {
+            try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
+            catch (e) { return ""; }
+          })(),
+        };
+      }
+
+      function prefetchSession() {
+        if (sessionPrefetch) return;
+        const early = window.__jarvisSessionPrefetch;
+        if (early) {
+          window.__jarvisSessionPrefetch = null;
+          sessionPrefetch = Promise.resolve(early).then(function (res) {
+            if (!res || typeof res.json !== "function") {
+              return res && res.token ? res : null;
+            }
+            return res.json().then(function (token) {
+              return { ok: res.ok, token: token || {} };
+            }).catch(function () { return { ok: false, token: {} }; });
+          }).catch(function () { return null; });
+          return;
+        }
+        if (!mintRealtime) return;
+        sessionPrefetch = fetch(apiBase() + "/api/jarvis/realtime/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sessionBody()),
+        }).then(function (res) {
+          return res.json().then(function (token) {
+            return { ok: res.ok, token: token || {} };
+          }).catch(function () { return { ok: false, token: {} }; });
+        }).catch(function () { return null; });
+      }
+
+      function takePrefetchedSession() {
+        const p = sessionPrefetch;
+        sessionPrefetch = null;
+        return p;
+      }
+
+      async function speak(text, force) {
+        if (duplexLive && !force) return;
+        if (muteHim) return;
+        try {
+          const res = await fetch(apiBase() + "/api/jarvis/speak", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ text: text, voice: prefs.voice }),
+          });
+          if (!res.ok) return;
+          if (muteHim) return;
+          const buf = await res.arrayBuffer();
+          if (!buf || buf.byteLength < 16) return;
+          if (muteHim) return;
+          if (!duplexLive) {
+            speaking = true;
+            haltRec();
+            paintMic();
+          }
+          stopVoice();
+          const url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+          const audio = new Audio(url);
+          currentAudio = audio;
+          applyTalkRate(audio);
+          function afterSpeak() {
+            URL.revokeObjectURL(url);
+            if (currentAudio !== audio) return;
+            currentAudio = null;
+            speaking = false;
+            paintMic();
+            if (!muteMe) startListen();
+          }
+          audio.onended = afterSpeak;
+          audio.onerror = afterSpeak;
+          await audio.play();
+        } catch (_) {
+          speaking = false;
+          paintMic();
+          if (!muteMe) startListen();
+        }
+      }
+
+      function teardownDuplex() {
+        if (!duplexLive || greetInFlight) {
+          greeted = false;
+          greetAttempts = 0;
+        }
+        duplexLive = false;
+        connecting = false;
+        channelOpen = false;
+        remoteAudio = false;
+        sessionReady = false;
+        greetInFlight = false;
+        clearDuplexWait();
+        try { dc && dc.close(); } catch (_) {}
+        try { pc && pc.close(); } catch (_) {}
+        dc = null;
+        pc = null;
+        if (sink) sink.srcObject = null;
+        paintMic();
+      }
+
+      function stopTracks() {
+        try {
+          if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+        } catch (_) {}
+        micStream = null;
+      }
+
+      function stopDuplex() {
+        stopTracks();
+        teardownDuplex();
+      }
+
+      function rememberUserGoal(text) {
+        const clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+        if (clean) lastUserGoal = clean;
+      }
+
+      function speakHireStart(text) {
+        if (hireStartSpoken || muteHim) return;
+        const line = hireStartLine(text || lastUserGoal);
+        if (emptySpeech(line)) return;
+        hireStartSpoken = true;
+        lastAssistantSaid = line;
+        add("jarvis", line);
+        void speak(line, true);
+      }
+
+      function speakHireWave() {
+        if (hireWaveSpoken || muteHim) return;
+        hireWaveSpoken = true;
+        const line = hireWaveLine();
+        lastAssistantSaid = line;
+        add("jarvis", line);
+        void speak(line, true);
+      }
+
+      function hireResponseEvent() {
+        return {
+          type: "response.create",
+          response: {
+            output_modalities: ["audio"],
+            instructions: TEST_FORCE_ENGLISH
+              ? "Speak one short English line first if you have not yet (I'll make five different games). Then call spawn_child for each distinct game. CHILD_LIMIT is not a stop — wait for the current helpers, then spawn the rest. Say you are making the next ones. After write_file, open each file:///home/jarvis/Exports/… URL. After tools, always speak a real English sentence. Never stay silent. Never say {}."
+              : "Speak one short line first if you have not yet (I'll make five different games). Then call spawn_child for each distinct game. CHILD_LIMIT is not a stop — wait for the current helpers, then spawn the rest. Say you are making the next ones. After tools, always speak a real sentence. Never stay silent. Never say {}.",
+          }
+        };
+      }
+
+      function hireAfterToolEvent(limit) {
+        return {
+          type: "response.create",
+          response: {
+            output_modalities: ["audio"],
+            instructions: limit
+              ? (TEST_FORCE_ENGLISH
+                ? "CHILD_LIMIT is not a stop. Wait for the current helpers, then spawn the rest. Say you are making the next ones. After the job, speak a real English sentence. Never stay silent. Never say {}."
+                : "CHILD_LIMIT is not a stop. Wait for the current helpers, then spawn the rest. Say you are making the next ones. After the job, speak a real sentence. Never stay silent. Never say {}.")
+              : (TEST_FORCE_ENGLISH
+                ? "After these tools, speak a real English sentence about the games. Never stay silent. Never say {}."
+                : "After these tools, speak a real sentence about the games. Never stay silent. Never say {}.")
+          }
+        };
+      }
+
+      function startHireResponse(text) {
+        if (greetInFlight) {
+          greetInFlight = false;
+          restoreTalkTurnDetection();
+        }
+        hireWaveSpoken = false;
+        speakHireStart(text || lastUserGoal);
+        if (!dc || dc.readyState !== "open") return;
+        try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+        dc.send(JSON.stringify(hireResponseEvent()));
+      }
+
+      function speakHireIfSilent(event) {
+        if (!looksLikeHireAsk(lastUserGoal) || !lastToolAt) return;
+        const outputs = event && event.response && event.response.output;
+        let hasFn = false;
+        if (Array.isArray(outputs)) {
+          for (let i = 0; i < outputs.length; i++) {
+            if (outputs[i] && outputs[i].type === "function_call") hasFn = true;
+          }
+        }
+        if (hasFn) return;
+        const said = String(lastAssistantSaid || "").replace(/\s+/g, " ").trim();
+        const start = hireStartLine(lastUserGoal);
+        const wave = hireWaveLine();
+        if (!emptySpeech(said) && said !== start && said !== wave) return;
+        const line = emptySpeech(said) ? start + " " + wave : "The games are open.";
+        if (emptySpeech(line)) return;
+        lastAssistantSaid = line;
+        add("jarvis", line);
+        void speak(line, true);
+      }
+
+      function clearRealtimeTaint(goal) {
+        rememberUserGoal(goal);
+        hireWaveSpoken = false;
+        hireStartSpoken = false;
+        try {
+          const body = { source: "realtime" };
+          if (goal) body.goal = String(goal).slice(0, 4000);
+          fetch(apiBase() + "/api/jarvis/taint/clear", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(body),
+          }).catch(function () {});
+        } catch (_) {}
+      }
+
+      function sendUserText(text) {
+        const clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 400);
+        if (!clean || !dc || dc.readyState !== "open") return false;
+        clearRealtimeTaint(clean);
+        try {
+          dc.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: clean }],
+            },
+          }));
+          if (looksLikeLookAsk(clean)) dc.send(JSON.stringify(lookResponseEvent()));
+          else if (looksLikeHireAsk(clean)) startHireResponse(clean);
+          else dc.send(JSON.stringify({ type: "response.create" }));
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function assistantTextFromParts(parts) {
+        if (!Array.isArray(parts)) return "";
+        return parts
+          .map(function (p) { return (p && (p.transcript || p.text)) || ""; })
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function assistantTalkFromEvent(event) {
+        if (!event || !event.type) return null;
+        if (
+          event.type === "response.audio_transcript.delta" ||
+          event.type === "response.output_audio_transcript.delta" ||
+          event.type === "response.text.delta" ||
+          event.type === "response.output_text.delta"
+        ) {
+          return { kind: "delta", text: String(event.delta || event.transcript || "") };
+        }
+        if (
+          event.type === "response.audio_transcript.done" ||
+          event.type === "response.output_audio_transcript.done" ||
+          event.type === "response.text.done" ||
+          event.type === "response.output_text.done"
+        ) {
+          return { kind: "done", text: String(event.transcript || event.text || "") };
+        }
+        if (event.type === "response.content_part.done" && event.part) {
+          const partText = String(event.part.transcript || event.part.text || "").trim();
+          if (partText) return { kind: "done", text: partText };
+        }
+        if (event.type === "response.output_item.done" && event.item && event.item.type === "message") {
+          const text = assistantTextFromParts(event.item.content);
+          if (text) return { kind: "done", text: text };
+        }
+        if (
+          (event.type === "conversation.item.added" || event.type === "conversation.item.done") &&
+          event.item &&
+          event.item.role === "assistant" &&
+          event.item.type === "message"
+        ) {
+          const added = assistantTextFromParts(event.item.content);
+          if (added) return { kind: "done", text: added };
+        }
+        if (event.type === "response.done" && event.response) {
+          const outputs = event.response.output || [];
+          const texts = [];
+          for (let i = 0; i < outputs.length; i++) {
+            const item = outputs[i];
+            if (!item || item.type !== "message") continue;
+            const bit = assistantTextFromParts(item.content);
+            if (bit) texts.push(bit);
+          }
+          if (texts.length) return { kind: "done", text: texts.join(" ") };
+        }
+        return null;
+      }
+
+      async function postConfirm(confirmId, decision) {
+        const res = await fetch(apiBase() + "/api/jarvis/tools/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ confirm_id: confirmId, decision: decision }),
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) return { ok: false, error: data.detail || res.statusText, decision: decision };
+        return data.result != null ? data.result : data;
+      }
+
+      async function postSpokenConfirm(transcript, confidence) {
+        const body = { decision: "confirm", utterance: String(transcript || "") };
+        if (typeof confidence === "number") body.confidence = confidence;
+        const res = await fetch(apiBase() + "/api/jarvis/tools/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(function () { return {}; });
+        return data.result != null ? data.result : data;
+      }
+
+      function speakCode(text) {
+        if (!text || muteHim) return;
+        codeSpokenUntil = Date.now() + Math.min(8000, 1200 + String(text).length * 55);
+        void speak(text, true);
+      }
+
+      async function onUserTranscript(transcript, confidence) {
+        if (!activeConfirmId || !transcript) return;
+        if (Date.now() < codeSpokenUntil) return;
+        let result;
+        try {
+          result = await postSpokenConfirm(transcript, confidence);
+        } catch (_) {
+          return;
+        }
+        const outcome = String((result && result.outcome) || "").toLowerCase();
+        if (result && result.ok) {
+          activeConfirmId = null;
+          if (sendUserText(
+            "[confirmed by voice] The user spoke the code. Tool result: " +
+              JSON.stringify(result).slice(0, 4000)
+          )) return;
+        }
+        if (outcome && outcome !== "ignored" && result && result.message) {
+          speakCode(result.message);
+        }
+      }
+
+      function liveYouText() {
+        if (!liveYou) return "";
+        const p = liveYou.querySelector("p");
+        return p ? String(p.textContent || "").replace(/\s+/g, " ").trim() : "";
+      }
+
+      function looksLikeLookAsk(text) {
+        return /what do you see|what are you seeing|what'?s on|on (the|your) screen|visible on|look at(?:\s+the)?\s+(?:your\s+)?(?:screen|browser|computer|page)|^\s*look(?:\s+again)?[\s!.?,]*$/i.test(
+          String(text || "")
+        );
+      }
+
+      function looksLikeHireAsk(text) {
+        const t = String(text || "");
+        if (
+          (
+            /\b(hire|spawn_child|children|helpers?|agents?|workers?)\b/i.test(t)
+            && /\b(html|tetris|game|write|create|make|file|page|research|helper|computer)\b/i.test(t)
+          )
+          || (
+            /\b(create|write|build|make)\b/i.test(t)
+            && /\b(\d+|ten|nine|eight|seven|six|five|four|three|two|many|several)\b/i.test(t)
+            && /\b(html|tetris|games?|files?|pages?)\b/i.test(t)
+          )
+        ) {
+          return true;
+        }
+        return false;
+      }
+
+      function emptySpeech(text) {
+        const raw = String(text || "").replace(/\s+/g, " ").trim();
+        return !raw || raw === "{}" || raw === "[]" || raw === "null" || raw === "undefined";
+      }
+
+      function hireCountWord(text) {
+        const t = String(text || "").toLowerCase();
+        const words = {
+          two: "two", three: "three", four: "four", five: "five",
+          six: "six", seven: "seven", eight: "eight", nine: "nine", ten: "ten"
+        };
+        for (const w in words) {
+          if (new RegExp("\\b" + w + "\\b").test(t)) return words[w];
+        }
+        const n = t.match(/\b([2-9]|10)\b/);
+        const map = {
+          2: "two", 3: "three", 4: "four", 5: "five",
+          6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"
+        };
+        if (n) return map[n[1]] || n[1];
+        return "five";
+      }
+
+      function hireStartLine(text) {
+        const word = hireCountWord(text);
+        const t = String(text || "");
+        if (/\btetris\b/i.test(t)) return "I'll make " + word + " different Tetris games.";
+        if (/\bgames?\b/i.test(t)) return "I'll make " + word + " different games.";
+        return "I'll make " + word + " different files.";
+      }
+
+      function hireWaveLine() {
+        return "Making the next ones.";
+      }
+
+      function isChildLimitOutput(output) {
+        const raw = String(output || "");
+        if (/CHILD_LIMIT/.test(raw)) return true;
+        try {
+          const parsed = JSON.parse(raw);
+          return String((parsed && parsed.error) || "") === "CHILD_LIMIT";
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function looksLikeDesktopAsk(text) {
+        const t = String(text || "");
+        if (looksLikeLookAsk(t)) return true;
+        return /\b(close|click|type|open|install|look|show|see|screen|file manager|explorer|still see)\b/i.test(t);
+      }
+
+      async function runTool(name, args) {
+        lastToolAt = Date.now();
+        paintStatus();
+        const payload = Object.assign({}, args || {});
+        const live = liveYouText();
+        if (looksLikeDesktopAsk(live)) payload.goal = live;
+        else if (looksLikeLookAsk(lastUserGoal) || looksLikeDesktopAsk(lastUserGoal)) payload.goal = lastUserGoal;
+        else if (!payload.goal && lastUserGoal) payload.goal = lastUserGoal;
+        const res = await fetch(apiBase() + "/api/jarvis/tools/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ name: name, arguments: payload, allowed: publicTalkAllowed() }),
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) return JSON.stringify({ ok: false, error: data.detail || res.statusText });
+        const toolResult = data.result != null ? data.result : data;
+        const uiPayload = data.ui != null ? data.ui : toolResult;
+        if ((name === "confirm_action" || name === "confirm_pending") && toolResult) {
+          const err = String(toolResult.error || "").toLowerCase();
+          const outcome = String(toolResult.outcome || "").toLowerCase();
+          const softFail =
+            err.indexOf("bare confirm") >= 0 ||
+            err.indexOf("cannot approve") >= 0 ||
+            ["needs_user", "mismatch", "unclear", "ignored", "spent", "expired"].indexOf(outcome) >= 0;
+          if (toolResult.needs_confirm !== true && !softFail) {
+            activeConfirmId = null;
+          }
+        }
+        if (uiPayload && uiPayload.needs_confirm) {
+          activeConfirmId = uiPayload.confirm_id || activeConfirmId;
+          const summary = uiPayload.action_summary || uiPayload.user_prompt || "Allow this?";
+          add("jarvis", String(summary));
+          speakCode(uiPayload.nonce_prompt);
+          postTalkLog("tool", String(summary), name, String(summary));
+          return JSON.stringify(toolResult);
+        }
+        const spoken = String(
+          (toolResult && (toolResult.summary || toolResult.error)) || name || ""
+        ).slice(0, 400);
+        postTalkLog("tool", spoken || name, name, spoken);
+        return JSON.stringify(toolResult);
+      }
+
+      function sendToolResult(callId, output) {
+        if (!dc || dc.readyState !== "open") return;
+        dc.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: String(output).slice(0, 12000),
+          },
+        }));
+        const limit = isChildLimitOutput(output);
+        if (limit) speakHireWave();
+        if (limit || looksLikeHireAsk(lastUserGoal)) {
+          dc.send(JSON.stringify(hireAfterToolEvent(limit)));
+          return;
+        }
+        dc.send(JSON.stringify({ type: "response.create" }));
+      }
+
+      async function executeFunctionCall(id, name, args) {
+        if (!id || handledCalls.has(id)) return;
+        handledCalls.add(id);
+        try {
+          const output = await runTool(name, args || {});
+          sendToolResult(id, output);
+        } catch (err) {
+          sendToolResult(id, JSON.stringify({ ok: false, error: String(err && err.message || err) }));
+        }
+      }
+
+      function commitAssistantTalk(text) {
+        const said = String(text || "").replace(/\s+/g, " ").trim();
+        if (emptySpeech(said)) return;
+        if (said === lastAssistantSaid && !liveJarvis) return;
+        lastAssistantSaid = said;
+        setLiveJarvis(said);
+        finishLiveJarvis();
+        if (greetInFlight) {
+          greetInFlight = false;
+          restoreTalkTurnDetection();
+        }
+        speaking = false;
+        paintMic();
+      }
+
+      async function handleRealtimeEvent(event) {
+        if (event.type === "error") {
+          if (greetInFlight && greetAttempts < 2) {
+            greetInFlight = false;
+            greeted = false;
+            sendRealtimeGreet();
+          } else if (greetInFlight) {
+            greetInFlight = false;
+          }
+          return;
+        }
+        if (event.type === "session.created" || event.type === "session.updated") {
+          sessionReady = true;
+          tryGoDuplex();
+        }
+        const isUserSpeech =
+          event.type === "conversation.item.input_audio_transcription.completed" ||
+          event.type === "conversation.item.input_audio_transcription.done" ||
+          (event.type === "conversation.item.added" &&
+            event.item &&
+            event.item.role === "user" &&
+            event.item.type === "message");
+        if (isUserSpeech) {
+          const spoken = event.transcript
+            || (event.item && event.item.content && event.item.content[0] && event.item.content[0].transcript)
+            || (event.item && event.item.content && event.item.content[0] && event.item.content[0].text)
+            || "";
+          clearRealtimeTaint(spoken);
+        }
+        if (event.type === "input_audio_buffer.speech_started") {
+          bargeIn();
+        }
+        if (event.type === "output_audio_buffer.cleared") {
+          if (!greetInFlight) {
+            clearBufferedAudio();
+            speaking = false;
+            paintMic();
+          }
+        }
+        if (
+          event.type === "conversation.item.input_audio_transcription.delta"
+        ) {
+          const bit = event.delta || event.transcript || "";
+          if (bit) setLiveYou(bit);
+        }
+        if (
+          event.type === "conversation.item.input_audio_transcription.completed" ||
+          event.type === "conversation.item.input_audio_transcription.done"
+        ) {
+          const said = event.transcript || "";
+          let conf;
+          if (typeof event.confidence === "number") conf = event.confidence;
+          if (said) {
+            setLiveYou(said);
+            finishLiveYou();
+            if (looksLikeLookAsk(said)) startLookResponse();
+            else if (looksLikeHireAsk(said)) startHireResponse(said);
+            else if (greetInFlight) finishGreetForUserAsk();
+          }
+          await onUserTranscript(said, conf);
+        }
+        if (event.type === "response.created") {
+          avatarReplyBuf = "";
+          speaking = true;
+          paintMic();
+        }
+        const talk = assistantTalkFromEvent(event);
+        if (talk) {
+          if (talk.kind === "delta") {
+            avatarReplyBuf += talk.text;
+            setLiveJarvis(avatarReplyBuf);
+          } else if (talk.text || avatarReplyBuf) {
+            commitAssistantTalk(talk.text || avatarReplyBuf);
+            avatarReplyBuf = "";
+          }
+        }
+        if (event.type === "response.function_call_arguments.delta") {
+          const id = event.call_id || event.item_id;
+          if (!id) return;
+          const cur = pendingArgs.get(id) || { name: event.name || "", args: "" };
+          if (event.name) cur.name = event.name;
+          cur.args += event.delta || "";
+          pendingArgs.set(id, cur);
+          return;
+        }
+        if (event.type === "response.function_call_arguments.done") {
+          const id = event.call_id || event.item_id;
+          const cur = pendingArgs.get(id) || { name: event.name || "", args: event.arguments || "" };
+          if (event.name) cur.name = event.name;
+          if (event.arguments) cur.args = event.arguments;
+          pendingArgs.delete(id);
+          let args = {};
+          try { args = JSON.parse(cur.args || "{}"); } catch (_) { args = {}; }
+          await executeFunctionCall(id, cur.name || event.name || "", args);
+          return;
+        }
+        if (event.type === "response.output_item.done" && event.item && event.item.type === "function_call") {
+          const item = event.item;
+          const id = item.call_id || item.id;
+          let args = {};
+          try { args = JSON.parse(item.arguments || "{}"); } catch (_) {}
+          await executeFunctionCall(id, item.name, args);
+        }
+        if (event.type === "response.done") {
+          speakHireIfSilent(event);
+        }
+      }
+
+      function hasRemoteAudioTrack(el) {
+        const stream = el && el.srcObject;
+        if (!stream || !stream.getAudioTracks) return false;
+        const tracks = stream.getAudioTracks();
+        for (let i = 0; i < tracks.length; i++) {
+          if (tracks[i] && tracks[i].readyState !== "ended") return true;
+        }
+        return false;
+      }
+
+      function canMarkDuplexLive(open, hasRemote, el, dataChannel) {
+        return !!(
+          open &&
+          hasRemote &&
+          hasRemoteAudioTrack(el) &&
+          dataChannel &&
+          dataChannel.readyState === "open"
+        );
+      }
+
+      function realtimeGreetEvent() {
+        return {
+          type: "response.create",
+          response: {
+            output_modalities: ["audio"],
+            instructions: TEST_FORCE_ENGLISH
+              ? "Greet in one short line in English only. Do not use Italian, Korean, Portuguese, or any other language. Do not invent a language. Do not call any tools. Do not mention disk, storage, CPU, RAM, or a screen."
+              : "Greet in one short line in the user's language. Do not use another language for the greeting. Do not call any tools. Do not mention disk, storage, CPU, RAM, or a screen.",
+            tool_choice: "none"
+          }
+        };
+      }
+
+      function lookResponseEvent() {
+        return {
+          type: "response.create",
+          response: {
+            output_modalities: ["audio"],
+            instructions: TEST_FORCE_ENGLISH
+              ? "They asked what you see on the screen. Call see_screen now. Then speak one short English line of what is actually on that fresh look. Do not say Hello. Do not stay silent. Do not skip the look as chat. Do not mention disk."
+              : "They asked what you see on the screen. Call see_screen now. Then speak one short line of what is actually on that fresh look, in their language. Do not say Hello. Do not stay silent. Do not skip the look as chat.",
+            tool_choice: { type: "function", name: "see_screen" }
+          }
+        };
+      }
+
+      function finishGreetForUserAsk() {
+        greetInFlight = false;
+        restoreTalkTurnDetection();
+        if (!dc || dc.readyState !== "open") return;
+        try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+        dc.send(JSON.stringify({ type: "response.create" }));
+      }
+
+      function startLookResponse() {
+        if (greetInFlight) {
+          greetInFlight = false;
+          restoreTalkTurnDetection();
+        }
+        if (!dc || dc.readyState !== "open") return;
+        try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+        dc.send(JSON.stringify(lookResponseEvent()));
+      }
+
+      function talkTurnDetection(interrupt) {
+        return {
+          type: "semantic_vad",
+          eagerness: "low",
+          create_response: !!interrupt,
+          interrupt_response: !!interrupt
+        };
+      }
+
+      function sendSessionTurnDetection(interrupt) {
+        if (!dc || dc.readyState !== "open") return;
+        dc.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            type: "realtime",
+            audio: { input: { turn_detection: talkTurnDetection(interrupt) } }
+          }
+        }));
+      }
+
+      function restoreTalkTurnDetection() {
+        sendSessionTurnDetection(true);
+      }
+
+      function sendRealtimeGreet() {
+        if (greeted) return false;
+        if (!duplexLive) return false;
+        if (!dc || dc.readyState !== "open") return false;
+        greeted = true;
+        greetInFlight = true;
+        greetAttempts += 1;
+        dc.send(JSON.stringify(realtimeGreetEvent()));
+        return true;
+      }
+
+      function clearDuplexWait() {
+        if (duplexWait) {
+          clearTimeout(duplexWait);
+          duplexWait = null;
+        }
+      }
+
+      function armDuplexWait() {
+        clearDuplexWait();
+        duplexWait = setTimeout(function () {
+          if (!duplexLive) failRealtimeNoDuplex();
+        }, 8000);
+      }
+
+      function failRealtimeNoDuplex() {
+        if (duplexLive) return;
+        connecting = false;
+        teardownDuplex();
+        if (canListen) startBrowserTalk();
+        else paintMic();
+      }
+
+      function tryGoDuplex() {
+        if (duplexLive) {
+          sendRealtimeGreet();
+          return;
+        }
+        if (!sessionReady) return;
+        if (!canMarkDuplexLive(channelOpen, remoteAudio, sink, dc)) return;
+        duplexLive = true;
+        connecting = false;
+        clearDuplexWait();
+        stopListen();
+        paintMic();
+        if (pendingText) {
+          const queued = pendingText;
+          pendingText = null;
+          sendUserText(queued);
+        } else {
+          sendRealtimeGreet();
+        }
+      }
+
+      async function connectRealtime() {
+        if (duplexLive || connecting) {
+          paintMic();
+          return;
+        }
+        connecting = true;
+        wantListen = true;
+        channelOpen = false;
+        remoteAudio = false;
+        sessionReady = false;
+        greetInFlight = false;
+        paintMic();
+        clearDuplexWait();
+
+        let token;
+        try {
+          let resOk = false;
+          const pre = takePrefetchedSession();
+          if (pre) {
+            const got = await pre;
+            if (got && got.ok && got.token && got.token.value) {
+              token = got.token;
+              resOk = true;
+            }
+          }
+          if (!token) {
+            const res = await fetch(apiBase() + "/api/jarvis/realtime/session", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(sessionBody()),
+            });
+            token = await res.json().catch(function () { return {}; });
+            resOk = res.ok;
+          }
+          if (!resOk || !token.value) {
+            connecting = false;
+            clearDuplexWait();
+            const fallback =
+              canListen ||
+              token.fallback === "browser_speech" ||
+              token.listen_mode === "browser_speech" ||
+              token.can_listen === true;
+            if (fallback) {
+              startBrowserTalk();
+              return;
+            }
+            showNote(true);
+            return;
+          }
+        } catch (_) {
+          connecting = false;
+          clearDuplexWait();
+          if (canListen) {
+            startBrowserTalk();
+            return;
+          }
+          showNote(true);
+          return;
+        }
+
+        try {
+          if (!micStream) {
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            });
+          }
+          rememberMicGranted();
+          setMicEnabled(!muteMe);
+        } catch (_) {
+          connecting = false;
+          clearDuplexWait();
+          startBrowserTalk();
+          return;
+        }
+
+        pc = new RTCPeerConnection();
+        pc.ontrack = function (e) {
+          const stream = (e.streams && e.streams[0]) || (e.track ? new MediaStream([e.track]) : null);
+          if (!stream) return;
+          sink.srcObject = stream;
+          applyTalkRate(sink);
+          applyHimMute();
+          sink.play().catch(function () {});
+          remoteAudio = hasRemoteAudioTrack(sink);
+          tryGoDuplex();
+        };
+        pc.addTrack(micStream.getAudioTracks()[0], micStream);
+
+        dc = pc.createDataChannel("oai-events");
+        dc.onopen = function () {
+          channelOpen = true;
+          if (!token.applied && token.session) {
+            dc.send(JSON.stringify({ type: "session.update", session: token.session }));
+          }
+          sendSessionTurnDetection(false);
+          setTimeout(function () {
+            if (!sessionReady && channelOpen) {
+              sessionReady = true;
+              tryGoDuplex();
+            }
+          }, 1500);
+          tryGoDuplex();
+        };
+        dc.onmessage = function (e) {
+          let event;
+          try { event = JSON.parse(e.data); } catch (_) { return; }
+          void handleRealtimeEvent(event);
+        };
+        dc.onclose = function () {
+          duplexLive = false;
+          connecting = false;
+          paintMic();
+        };
+        pc.onconnectionstatechange = function () {
+          if (!pc) return;
+          if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+            duplexLive = false;
+            connecting = false;
+            if (canListen) startBrowserTalk();
+            else paintMic();
+          }
+        };
+
+        try {
+          await pc.setLocalDescription(await pc.createOffer());
+          const sdpRes = await fetch("https://api.openai.com/v1/realtime/calls", {
+            method: "POST",
+            body: pc.localDescription.sdp,
+            headers: {
+              Authorization: "Bearer " + token.value,
+              "Content-Type": "application/sdp",
+            },
+          });
+          if (!sdpRes.ok) throw new Error("sdp");
+          await pc.setRemoteDescription({ type: "answer", sdp: await sdpRes.text() });
+          armDuplexWait();
+        } catch (_) {
+          connecting = false;
+          teardownDuplex();
+          if (canListen) startBrowserTalk();
+        }
+      }
+
+      function rememberMicGranted() {
+        try { localStorage.setItem(MIC_OK_KEY, "1"); } catch (_) {}
+      }
+
+      function rememberedMicGranted() {
+        try { return localStorage.getItem(MIC_OK_KEY) === "1"; } catch (_) { return false; }
+      }
+
+      function isTalkExemptTarget(el) {
+        if (!el || !el.closest) return false;
+        if (el.closest("#settings, #settings-btn")) return true;
+        if (el.closest("a[href]")) return true;
+        if (el.closest("input, textarea, select, option, label")) return true;
+        if (el.closest("#bar, #box, #go")) return true;
+        if (el.closest('[data-mute="me"]')) return true;
+        return false;
+      }
+
+      let firstClickTalk = null;
+
+      function disarmFirstClickTalk() {
+        if (firstClickTalk) {
+          document.removeEventListener("click", firstClickTalk, true);
+          firstClickTalk = null;
+        }
+        const catcher = document.getElementById("talk-catch");
+        if (catcher) catcher.hidden = true;
+      }
+
+      function armFirstClickTalk() {
+        if (firstClickTalk || wantListen || duplexLive || connecting) return;
+        const catcher = document.getElementById("talk-catch");
+        if (catcher) catcher.hidden = false;
+        firstClickTalk = function (e) {
+          if (wantListen || duplexLive || connecting) {
+            disarmFirstClickTalk();
+            return;
+          }
+          if (isTalkExemptTarget(e.target)) return;
+          disarmFirstClickTalk();
+          void startTalk();
+        };
+        document.addEventListener("click", firstClickTalk, true);
+      }
+
+      async function micAlreadyAllowed() {
+        if (rememberedMicGranted()) return true;
+        try {
+          if (navigator.permissions && navigator.permissions.query) {
+            const st = await navigator.permissions.query({ name: "microphone" });
+            if (st && st.state === "granted") return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
+      async function bootTalk() {
+        if (await micAlreadyAllowed()) {
+          void startTalk();
+          return;
+        }
+        armFirstClickTalk();
+      }
+
+      async function startTalk() {
+        disarmFirstClickTalk();
+        wantListen = true;
+        canListen = true;
+        if (muteMe) {
+          muteMe = false;
+          paintMute();
+        }
+        setMicEnabled(true);
+        if (duplexLive) {
+          paintMic();
+          return;
+        }
+        prefetchSession();
+        const upgrade = mintRealtime;
+        if (upgrade) void connectRealtime();
+        startListen();
+        paintMic();
+      }
+
+      function askTextMax(text) {
+        const t = String(text || "");
+        if (
+          (
+            /\b(hire|spawn_child|children|helpers?|agents?|workers?)\b/i.test(t)
+            && /\b(html|tetris|game|write|create|make|file|page|research|helper|computer)\b/i.test(t)
+          )
+          || (
+            /\b(create|write|build|make)\b/i.test(t)
+            && /\b(\d+|ten|nine|eight|seven|six|five|four|three|two|many|several)\b/i.test(t)
+            && /\b(html|tetris|games?|files?|pages?)\b/i.test(t)
+          )
+        ) {
+          return 2000;
+        }
+        return 400;
+      }
+
+      function askAbortMs(text) {
+        const t = String(text || "").toLowerCase();
+        if (
+          (
+            /\b(hire|spawn_child|children|helpers?|agents?|workers?)\b/.test(t)
+            && /\b(html|tetris|game|write|create|make|file|page|research|helper|computer)\b/.test(t)
+          )
+          || (
+            /\b(create|write|build|make)\b/.test(t)
+            && /\b(\d+|ten|nine|eight|seven|six|five|four|three|two|many|several)\b/.test(t)
+            && /\b(html|tetris|games?|files?|pages?)\b/.test(t)
+          )
+        ) {
+          return 180000;
+        }
+        if (
+          /\b(show|open|look|see|click|type|close|scroll|agree|read|install)\b/.test(t)
+          || /what do you see|what are you seeing|what'?s on|on (the|your) screen|look together|news together|popup|headline/.test(t)
+          || /\bnews\b/.test(t)
+        ) {
+          return 30000;
+        }
+        return 12000;
+      }
+
+      async function ask(text, alreadyShown) {
+        const clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, askTextMax(text));
+        if (!clean) return;
+        if (!alreadyShown) add("you", clean);
+        box.value = "";
+        if (duplexLive && sendUserText(clean)) return;
+        const ac = new AbortController();
+        const timer = setTimeout(function () { ac.abort(); }, askAbortMs(clean));
+        try {
+          const res = await fetch(apiBase() + "/api/jarvis/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ text: clean, allowed: publicTalkAllowed() }),
+            signal: ac.signal,
+          });
+          clearTimeout(timer);
+          const data = await res.json().catch(function () { return {}; });
+          paintSheet(data);
+          let reply = String(data.reply || "").replace(/\s+/g, " ").trim();
+          if (emptySpeech(reply)) {
+            reply = looksLikeHireAsk(clean) ? hireStartLine(clean) + " " + hireWaveLine() : CANT;
+          }
+          add("jarvis", reply);
+          if (reply === CANT) showNote(true);
+          else {
+            showNote(false);
+            void speak(reply);
+          }
+        } catch (_) {
+          clearTimeout(timer);
+          add("jarvis", LOOK);
+        }
+      }
+
+      async function health(lite) {
+        try {
+          const q = lite ? "?lite=1" : "";
+          const res = await fetch(apiBase() + "/api/jarvis/health" + q, {
+            credentials: "same-origin",
+          });
+          const h = await res.json();
+          paintSheet(h);
+          applyTalkPath(h);
+          const ready = h.can_listen === true || h.can_speak === true;
+          if (!lite) showNote(!ready);
+          return ready;
+        } catch (_) {
+          if (!lite) showNote(true);
+          return false;
+        }
+      }
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        void ask(box.value);
+      });
+
+      function onMuteMe() {
+        muteMe = !muteMe;
+        if (muteMe) stopListen();
+        if (muteMe) {
+          setMicEnabled(false);
+          if (dc && dc.readyState === "open") {
+            try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+          }
+        } else if (wantListen) {
+          setMicEnabled(true);
+          startListen();
+        }
+        paintMute();
+        paintMic();
+      }
+
+      function onMuteHim() {
+        muteHim = !muteHim;
+        applyHimMute();
+        if (muteHim) {
+          stopVoice();
+          speaking = false;
+          paintMic();
+          if (dc && dc.readyState === "open") {
+            try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+          }
+          if (!muteMe) startListen();
+        }
+        paintMute();
+      }
+
+      document.querySelectorAll('[data-mute="me"]').forEach(function (el) {
+        el.addEventListener("click", onMuteMe);
+      });
+      document.querySelectorAll('[data-mute="him"]').forEach(function (el) {
+        el.addEventListener("click", onMuteHim);
+      });
+
+      mic.addEventListener("click", function () {
+        void startTalk();
+      });
+      if (drawerMic) {
+        drawerMic.addEventListener("click", function () {
+          void startTalk();
+        });
+      }
+      if (chatBtn) {
+        chatBtn.addEventListener("click", function () {
+          setChatOpen(chatEl.hidden);
+        });
+      }
+      if (chatHide) {
+        chatHide.addEventListener("click", function () {
+          setChatOpen(false);
+        });
+      }
+      if (modelPicksEl) {
+        modelPicksEl.querySelectorAll("[data-q]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const q = el.getAttribute("data-q");
+            paintPicks(modelPicksEl, "data-q", q);
+            void saveTalkSettings({ quality_vs_price: q, model_lock: false });
+          });
+        });
+      }
+      if (qualityEl) {
+        qualityEl.querySelectorAll("[data-speed]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const speed = el.getAttribute("data-speed") || "balanced";
+            paintPicks(qualityEl, "data-speed", speed);
+            void saveTalkSettings({ model_speed: speed });
+          });
+        });
+      }
+      const computerPicksEl = document.getElementById("computer-picks");
+      if (computerPicksEl) {
+        computerPicksEl.querySelectorAll("[data-computer]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const kind = el.getAttribute("data-computer") || "linux";
+            paintPicks(computerPicksEl, "data-computer", kind);
+            void saveTalkSettings({ computer_kind: kind });
+          });
+        });
+      }
+
+      const voicePicksEl = document.getElementById("voice-picks");
+      if (voicePicksEl) {
+        voicePicksEl.querySelectorAll("[data-voice]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            prefs.voice = el.getAttribute("data-voice") || "warm";
+            savePrefs();
+            paintPicks(voicePicksEl, "data-voice", prefs.voice);
+            applyLiveVoice();
+          });
+        });
+      }
+      const talkSpeedEl = document.getElementById("talk-speed-picks");
+      if (talkSpeedEl) {
+        talkSpeedEl.querySelectorAll("[data-talk-speed]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            prefs.talkSpeed = el.getAttribute("data-talk-speed") || "normal";
+            savePrefs();
+            paintPicks(talkSpeedEl, "data-talk-speed", prefs.talkSpeed);
+            applyTalkRateAll();
+          });
+        });
+      }
+      document.querySelectorAll("#tab-allowed [data-allow]").forEach(function (row) {
+        row.querySelectorAll("[data-val]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const key = row.getAttribute("data-allow");
+            const val = el.getAttribute("data-val");
+            if (!key || !val) return;
+            prefs.allowed[key] = val;
+            savePrefs();
+            paintPicks(row, "data-val", val);
+          });
+        });
+      });
+      const pictureEl = document.getElementById("picture-picks");
+      if (pictureEl) {
+        pictureEl.querySelectorAll("[data-picture]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            prefs.picture = el.getAttribute("data-picture") || "clear";
+            savePrefs();
+            paintPicks(pictureEl, "data-picture", prefs.picture);
+            applyPicture();
+          });
+        });
+      }
+      function bumpTextScale(delta) {
+        const next = Math.max(0.9, Math.min(1.4, Math.round((prefs.textScale + delta) * 10) / 10));
+        prefs.textScale = next;
+        savePrefs();
+        applyTextScale();
+      }
+      const textSmaller = document.getElementById("text-smaller");
+      const textBigger = document.getElementById("text-bigger");
+      if (textSmaller) textSmaller.addEventListener("click", function () { bumpTextScale(-0.1); });
+      if (textBigger) textBigger.addEventListener("click", function () { bumpTextScale(0.1); });
+
+      settingsBtn.addEventListener("click", function () {
+        if (settingsEl.hidden) {
+          openSettings();
+        } else {
+          closeSettings();
+        }
+      });
+      settingsClose.addEventListener("click", closeSettings);
+      if (settingsBack) settingsBack.addEventListener("click", closeSettings);
+      renderSettingsRail();
+      paintPrefs();
+      settingsEl.addEventListener("click", function (e) {
+        if (e.target === settingsEl) closeSettings();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !settingsEl.hidden) closeSettings();
+      });
+
+      function loadPcScreen() {
+        const frame = document.getElementById("pc-frame");
+        if (!frame) return;
+        if (frame.getAttribute("src")) return;
+        frame.setAttribute("src", "/jarvis/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
+      }
+
+      function whenIdle(fn) {
+        if (typeof requestIdleCallback === "function") {
+          requestIdleCallback(fn, { timeout: 4000 });
+        } else {
+          setTimeout(fn, 1);
+        }
+      }
+
+      paintMute();
+      paintStatus();
+      pinLog();
+      if (!Rec()) {
+        canListen = false;
+        hearFail();
+        paintStatus();
+      }
+      prefetchSession();
+      void health(true);
+      whenIdle(function () {
+        loadPcScreen();
+        void health();
+      });
+      const pcEl = document.getElementById("pc");
+      if (pcEl) {
+        pcEl.addEventListener("pointerdown", loadPcScreen, { once: true });
+      }
+      void bootTalk();
+      addEventListener("pagehide", function () {
+        stopDuplex();
+      });
+    })();
+  </script>
+</body>
+</html>

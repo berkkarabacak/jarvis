@@ -1,0 +1,21 @@
+Jarvis for Windows
+==================
+
+1. Download Jarvis-Setup.exe
+2. Double-click it
+3. If Windows asks "Do you want to allow this app?", click Yes
+4. Talk. You are on Free.
+5. Click the gear icon (top right, or Jarvis → Settings) to pick Free / $3 / $8, a budget, speed, and quality
+
+That is the whole install. No unzip. No Python. No black console window.
+
+Your files stay in Documents\Jarvis
+  Inbox\      put files here for Jarvis to sort
+  Documents\
+  Scripts\
+  Exports\
+  Memory\
+
+Say: "Jarvis, organize my documents"
+
+If you were sent a zip instead, that is the advanced copy. Prefer Jarvis-Setup.exe.

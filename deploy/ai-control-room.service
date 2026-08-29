@@ -1,0 +1,44 @@
+[Unit]
+Description=AI Control Room (aicontrolroom.nl)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=berkkarabacak
+Group=berkkarabacak
+WorkingDirectory=/opt/ai-control-room
+
+# Secrets live here and ONLY here. Never in git, never in the frontend bundle.
+# Must be chmod 600 and owned by the service user.
+EnvironmentFile=/opt/ai-control-room/.env
+
+# --proxy-headers + --forwarded-allow-ips lets the app trust the scheme and
+# client IP that nginx forwards from loopback. The public rate limiter and the
+# same-origin CSRF guard both depend on those being correct.
+ExecStart=/opt/ai-control-room/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 \
+    --port 8896 \
+    --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+
+Restart=always
+RestartSec=3
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+# Hardening. StateDirectory gives the service a writable /var/lib path for the
+# SQLite file without loosening the rest of the filesystem.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/ai-control-room
+StateDirectory=ai-control-room
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-control-room
+
+[Install]
+WantedBy=multi-user.target

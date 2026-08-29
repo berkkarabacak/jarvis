@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = ["data", ".venv", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+no_strict_optional = true
+exclude = ["build", "dist", "data"]

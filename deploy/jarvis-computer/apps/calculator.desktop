@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Calculator
+Comment=Desktop calculator
+Exec=galculator
+Icon=galculator
+Terminal=false
+Categories=Utility;Calculator;
+StartupNotify=true

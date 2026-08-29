@@ -1,0 +1,45 @@
+    # Public Jarvis (https://berkkarabacak.com/jarvis/)
+    # Windows installer stays on disk. Do not proxy the exe through the app.
+    location ^~ /jarvis/download/ {
+        alias /var/www/jarvis/download/;
+    }
+
+    # Android watch (ORCH-461). Same Talk iframe path, different box.
+    # localhost only — do not publish the Android screen on all interfaces.
+    location ^~ /jarvis/android/ {
+        proxy_pass http://127.0.0.1:6081/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Same live noVNC session, never bind 0.0.0.0:6080.
+    location ^~ /jarvis/novnc/ {
+        proxy_pass http://127.0.0.1:6080/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Browser chat + talk. Do not keep serving the old static stub from
+    # /var/www/jarvis for /jarvis/ itself — that page cannot answer.
+    location = /jarvis { return 301 $scheme://$host/jarvis/; }
+    location /jarvis/ {
+        proxy_pass http://127.0.0.1:8895/jarvis/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 180s;
+        client_max_body_size 5M;
+    }

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis's screen</title>
+  <meta name="theme-color" content="#1b1d21" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #1b1d21; color: #f4f6f8; }
+    body {
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column;
+    }
+    #bar {
+      flex: 0 0 44px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 0 14px;
+      background: #111318;
+      border-bottom: 1px solid #2c313a;
+    }
+    #caption {
+      font-weight: 650;
+      letter-spacing: .01em;
+      white-space: nowrap;
+    }
+    #status {
+      font-size: 12px;
+      color: #c5ccd6;
+      white-space: nowrap;
+    }
+    #status[data-state="live"] { color: #9be7a8; }
+    #status[data-state="down"] { color: #f0b4b4; }
+    #stage { flex: 1; position: relative; min-height: 0; background: #0d0f12; }
+    #live {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border: 0; background: #000;
+    }
+    #down {
+      position: absolute; inset: 0;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 28px;
+    }
+    #down.is-open { display: flex; }
+    #card {
+      width: min(520px, 100%);
+      text-align: center;
+    }
+    #card p { margin: 0 0 12px; color: #d7dde6; }
+    #card .lead { font-size: 20px; font-weight: 650; color: #fff; }
+    #startBtn {
+      min-width: 220px; min-height: 48px;
+      margin-top: 8px; padding: 12px 20px;
+      border-radius: 10px; border: 0;
+      background: #f4f6f8; color: #111318;
+      font: 700 16px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer;
+    }
+    #startBtn:disabled { opacity: .55; cursor: default; }
+    #detail { margin-top: 14px; font-size: 13px; color: #b7c0cc; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header id="bar">
+    <div id="caption">Jarvis's screen</div>
+    <div id="status">Checking…</div>
+  </header>
+  <main id="stage">
+    <iframe id="live" title="Jarvis's screen" hidden></iframe>
+    <div id="down">
+      <div id="card">
+        <p class="lead">Jarvis's computer is not running.</p>
+        <p>This window shows his live desktop — Chrome, apps, terminal — not a recording. Start the one existing computer to watch it.</p>
+        <button type="button" id="startBtn">Start Jarvis's computer</button>
+        <p id="detail"></p>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var SESSION = "http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale";
+      var statusEl = document.getElementById("status");
+      var live = document.getElementById("live");
+      var down = document.getElementById("down");
+      var startBtn = document.getElementById("startBtn");
+      var detail = document.getElementById("detail");
+
+      function apiRoot() {
+        var path = location.pathname.replace(/\/+$/, "");
+        if (path.endsWith("/ceo/jarvis-screen")) {
+          return path.slice(0, -"/ceo/jarvis-screen".length) || "";
+        }
+        return "";
+      }
+
+      function setStatus(text, state) {
+        statusEl.textContent = text;
+        if (state) statusEl.setAttribute("data-state", state);
+        else statusEl.removeAttribute("data-state");
+      }
+
+      function showLive() {
+        down.classList.remove("is-open");
+        live.hidden = false;
+        if (live.getAttribute("src") !== SESSION) {
+          live.setAttribute("src", SESSION);
+        }
+        setStatus("Live", "live");
+      }
+
+      function showDown(message) {
+        live.hidden = true;
+        live.removeAttribute("src");
+        down.classList.add("is-open");
+        setStatus("Not running", "down");
+        detail.textContent = message || "";
+      }
+
+      function loadStatus() {
+        return fetch(apiRoot() + "/api/jarvis/computer/screen", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data && data.running) {
+              showLive();
+              return data;
+            }
+            showDown((data && data.error) || "Jarvis's computer is not running.");
+            return data;
+          })
+          .catch(function () {
+            showDown("Could not check Jarvis's computer. Is the local app running?");
+          });
+      }
+
+      startBtn.addEventListener("click", function () {
+        startBtn.disabled = true;
+        startBtn.textContent = "Starting…";
+        setStatus("Starting…");
+        detail.textContent = "Starting the one existing computer. This is not a screenshot.";
+        fetch(apiRoot() + "/api/jarvis/computer/screen/start", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            var data = res.j || {};
+            if (data.running) {
+              showLive();
+              startBtn.textContent = "Start Jarvis's computer";
+              startBtn.disabled = false;
+              return;
+            }
+            showDown(data.error || "Jarvis's computer is not running.");
+            startBtn.textContent = "Start Jarvis's computer";
+            startBtn.disabled = false;
+          })
+          .catch(function () {
+            showDown("Could not start Jarvis's computer.");
+            startBtn.textContent = "Start Jarvis's computer";
+            startBtn.disabled = false;
+          });
+      });
+
+      loadStatus();
+    })();
+  </script>
+</body>
+</html>

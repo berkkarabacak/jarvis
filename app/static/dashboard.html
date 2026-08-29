@@ -1,0 +1,1340 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Orchestrator</title>
+  <meta name="theme-color" content="#070b14" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="./logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg0: #070b14;
+      --panel: rgba(18, 26, 43, 0.9);
+      --panel2: #141e32;
+      --line: rgba(148, 163, 184, 0.14);
+      --line2: rgba(148, 163, 184, 0.28);
+      --text: #eef3ff;
+      --muted: #94a3b8;
+      --ok: #34d399;
+      --bad: #fb7185;
+      --warn: #fbbf24;
+      --accent: #60a5fa;
+      --accent2: #a78bfa;
+      --glow: rgba(96, 165, 250, 0.16);
+      --shadow: 0 16px 40px rgba(0,0,0,.35);
+      --radius: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: "DM Sans", "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1000px 520px at 6% -12%, rgba(96,165,250,.20), transparent 55%),
+        radial-gradient(780px 460px at 100% -5%, rgba(192,132,252,.14), transparent 52%),
+        radial-gradient(600px 300px at 50% 110%, rgba(52,211,153,.06), transparent 50%),
+        linear-gradient(180deg, #0a1020 0%, var(--bg0) 100%);
+      overflow: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .35;
+      background-image:
+        linear-gradient(rgba(148,163,184,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148,163,184,.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, #000 20%, transparent 75%);
+    }
+    body > * { position: relative; z-index: 1; }
+    body.gate-mode { overflow: auto; }
+
+    header {
+      height: 64px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1.1rem; gap: .75rem;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(10,16,32,.88), rgba(7,11,20,.72));
+      backdrop-filter: blur(16px);
+      box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+    }
+    .brand { display: flex; align-items: center; gap: .75rem; min-width: 0; }
+    .brand-mark {
+      width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
+      background: linear-gradient(145deg, rgba(96,165,250,.25), rgba(167,139,250,.18));
+      box-shadow: 0 0 0 1px rgba(148,163,184,.18), 0 0 0 4px var(--glow), 0 10px 28px rgba(96,165,250,.18);
+      display: grid; place-items: center; overflow: hidden;
+    }
+    .brand-mark img { width: 40px; height: 40px; display: block; }
+    .brand-text { min-width: 0; }
+    .brand h1 {
+      margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em;
+      background: linear-gradient(90deg, #f8fafc 0%, #c7d2fe 55%, #e9d5ff 100%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    .brand .sub { margin: .08rem 0 0; color: var(--muted); font-size: .74rem; letter-spacing: .01em; }
+
+    .row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+    .pill {
+      display: inline-flex; align-items: center; gap: .28rem;
+      border-radius: 999px; padding: .18rem .55rem; font-size: .7rem; font-weight: 700;
+      border: 1px solid var(--line); background: rgba(15,23,40,.92); color: var(--muted);
+      white-space: nowrap;
+    }
+    .pill.ok { color: var(--ok); border-color: rgba(52,211,153,.35); background: rgba(52,211,153,.08); }
+    .pill.bad { color: var(--bad); border-color: rgba(251,113,133,.35); background: rgba(251,113,133,.08); }
+    .pill.warn { color: var(--warn); border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.08); }
+    .pill.accent { color: #dbeafe; border-color: rgba(96,165,250,.35); background: rgba(96,165,250,.1); }
+
+    button, a.btn {
+      appearance: none; border: 1px solid var(--line2); background: rgba(26,39,66,.92);
+      color: var(--text); border-radius: 10px; padding: .42rem .7rem; font-weight: 650;
+      cursor: pointer; font-size: .8rem; text-decoration: none; display: inline-flex;
+      align-items: center; gap: .3rem; transition: .15s ease;
+    }
+    button:hover, a.btn:hover { border-color: rgba(96,165,250,.45); background: rgba(34,52,86,.95); }
+    button.primary, a.btn.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; color: #071018; box-shadow: 0 8px 22px rgba(96,165,250,.22);
+    }
+    button.primary:hover, a.btn.primary:hover { filter: brightness(1.05); }
+    button.danger { background: rgba(58,24,32,.9); border-color: rgba(251,113,133,.4); color: #ffc1c9; }
+    button.ghost { background: transparent; }
+    button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+
+    input, textarea, select {
+      width: 100%; background: #0b1324; color: var(--text); border: 1px solid var(--line2);
+      border-radius: 10px; padding: .48rem .65rem; font: inherit; font-size: .84rem; outline: none;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: rgba(96,165,250,.55); box-shadow: 0 0 0 3px var(--glow);
+    }
+    textarea { min-height: 72px; resize: vertical; max-height: 140px; }
+    label { display: block; font-size: .72rem; color: var(--muted); margin: .35rem 0 .18rem; font-weight: 600; }
+    .muted { color: var(--muted); font-size: .78rem; }
+    .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .75rem; }
+    .hidden { display: none !important; }
+
+    #gateMain {
+      min-height: calc(100vh - 0px);
+      display: grid; place-items: center;
+      padding: 2rem 1rem 3rem;
+    }
+    #gate {
+      width: min(440px, 100%);
+      margin: 0 auto; padding: 1.6rem 1.45rem 1.4rem;
+      border: 1px solid rgba(148,163,184,.18);
+      border-radius: 22px;
+      background:
+        linear-gradient(165deg, rgba(255,255,255,.04), transparent 42%),
+        rgba(14, 22, 38, 0.92);
+      box-shadow: var(--shadow), 0 0 0 1px rgba(96,165,250,.06) inset;
+      backdrop-filter: blur(16px);
+      position: relative;
+      overflow: hidden;
+    }
+    #gate::before {
+      content: "";
+      position: absolute; inset: -40% -20% auto auto; width: 220px; height: 220px;
+      background: radial-gradient(circle, rgba(96,165,250,.22), transparent 65%);
+      pointer-events: none;
+    }
+    .gate-logo {
+      width: 64px; height: 64px; border-radius: 18px; margin: 0 auto .95rem;
+      box-shadow: 0 0 0 1px rgba(148,163,184,.2), 0 12px 36px rgba(96,165,250,.22);
+      display: grid; place-items: center;
+      background: linear-gradient(145deg, rgba(96,165,250,.2), rgba(192,132,252,.12));
+    }
+    .gate-logo img { width: 64px; height: 64px; border-radius: 18px; display: block; }
+    .gate-kicker {
+      text-align: center; margin: 0 0 .35rem;
+      font-size: .68rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+      color: #93c5fd;
+    }
+    #gate h2 {
+      margin: 0 0 .45rem; font-size: 1.35rem; font-weight: 700; text-align: center;
+      letter-spacing: -.02em;
+    }
+    #gate > p { margin: 0; text-align: center; }
+
+    #appShell {
+      height: calc(100% - 64px);
+      display: grid;
+      grid-template-columns: minmax(460px, 1.2fr) minmax(300px, 1fr) 310px;
+      gap: .7rem; padding: .7rem;
+    }
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      #appShell { height: auto; min-height: calc(100vh - 64px); grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+      padding: .7rem .85rem; border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+    }
+    .panel-head h2 {
+      margin: 0; font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    }
+    .panel-body { flex: 1; min-height: 0; overflow: auto; padding: .55rem .65rem .7rem; }
+    .panel-body.flush { padding: 0; }
+
+    .kv { display: grid; grid-template-columns: 86px 1fr; gap: .25rem .55rem; font-size: .8rem; }
+    .kv div:nth-child(odd) { color: var(--muted); }
+
+    .tasks-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .78rem; }
+    .tasks-table th {
+      text-align: left; color: var(--muted); font-size: .66rem; font-weight: 750;
+      text-transform: uppercase; letter-spacing: .05em; padding: .55rem .55rem;
+      border-bottom: 1px solid var(--line); position: sticky; top: 0;
+      background: rgba(18,26,43,.96); backdrop-filter: blur(8px); white-space: nowrap; z-index: 1;
+    }
+    .tasks-table td {
+      padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: middle;
+      color: var(--muted); line-height: 1.3;
+    }
+    .tasks-table tr.task-row { cursor: pointer; transition: background .12s ease; }
+    .tasks-table tr.task-row:hover td { background: rgba(96,165,250,.07); }
+    .tasks-table tr.task-row.active td {
+      background: rgba(96,165,250,.12);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .name-cell { color: var(--text); font-weight: 700; max-width: 150px; }
+    .name-cell .sub { display: block; color: var(--muted); font-weight: 500; font-size: .7rem; margin-top: .12rem; }
+    .icon-cell { display: inline-flex; align-items: center; gap: .3rem; }
+    .icon-cell svg { width: 13px; height: 13px; opacity: .88; flex: 0 0 auto; }
+    .actions { display: flex; gap: .28rem; flex-wrap: nowrap; justify-content: flex-end; }
+    .actions button { padding: .28rem .48rem; font-size: .7rem; border-radius: 8px; }
+    .actions button svg { width: 11px; height: 11px; }
+    .table-foot {
+      padding: .5rem .7rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .7rem;
+    }
+
+    .result-meta {
+      padding: .55rem .75rem 0; color: var(--muted); font-size: .78rem;
+    }
+    .result-box {
+      flex: 1; min-height: 0; margin: .55rem .7rem .7rem; padding: .8rem .9rem;
+      overflow: auto; border-radius: 14px; border: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,.02), transparent 40%), #090f1c;
+      font-size: .88rem; line-height: 1.5;
+    }
+    .result-box.placeholder { color: var(--muted); display: grid; place-items: center; text-align: center; }
+    .md-body > :first-child { margin-top: 0; }
+    .md-body h1, .md-body h2, .md-body h3 { margin: .85em 0 .35em; line-height: 1.25; color: #f4f7ff; }
+    .md-body h1 { font-size: 1.2rem; border-bottom: 1px solid var(--line); padding-bottom: .3rem; }
+    .md-body h2 { font-size: 1.05rem; }
+    .md-body h3 { font-size: .95rem; color: #d5e2f8; }
+    .md-body p { margin: .45em 0; }
+    .md-body ul, .md-body ol { margin: .4em 0 .65em; padding-left: 1.2rem; }
+    .md-body li { margin: .22em 0; }
+    .md-body li::marker { color: var(--accent); }
+    .md-body strong { color: #fff; }
+    .md-body code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: .84em; background: rgba(148,163,184,.12); border: 1px solid var(--line);
+      border-radius: 6px; padding: .05em .3em;
+    }
+    .md-body pre {
+      margin: .6em 0; padding: .7rem; overflow: auto; background: #060a14;
+      border: 1px solid var(--line); border-radius: 10px;
+    }
+    .md-body pre code { background: none; border: none; padding: 0; }
+
+    .form-grid { display: grid; gap: .05rem; }
+    .check-row { display: flex; gap: .85rem; flex-wrap: wrap; margin: .25rem 0 .35rem; }
+    .check-row label {
+      display: inline-flex; align-items: center; gap: .35rem; margin: 0; font-weight: 500; cursor: pointer;
+    }
+    .check-row input { width: auto; accent-color: var(--accent); }
+    details.advanced { margin-top: .4rem; border-top: 1px solid var(--line); padding-top: .35rem; }
+    details.advanced summary { cursor: pointer; color: var(--muted); font-size: .72rem; user-select: none; }
+    details.advanced .adv-body { margin-top: .35rem; font-size: .74rem; color: var(--muted); line-height: 1.4; }
+    #scheduleHint { font-size: .72rem; color: var(--muted); min-height: 1em; margin: .12rem 0 .15rem; }
+    .notify-box {
+      border: 1px solid var(--line); border-radius: 12px; padding: .55rem .65rem;
+      background: rgba(7,11,20,.35); margin-bottom: .55rem; font-size: .78rem; line-height: 1.4;
+    }
+    .panel.form-focus {
+      box-shadow: 0 0 0 2px rgba(96,165,250,.55), 0 16px 40px rgba(0,0,0,.35);
+    }
+    #formTitle.form-title-flash {
+      color: #dbeafe !important;
+      text-shadow: 0 0 18px rgba(96,165,250,.45);
+    }
+
+    .toast {
+      position: fixed; right: .9rem; bottom: .9rem; max-width: 380px; padding: .75rem .9rem;
+      border-radius: 12px; border: 1px solid var(--line); background: #101a30;
+      display: none; z-index: 50; box-shadow: var(--shadow);
+    }
+    .toast.show { display: block; }
+    .toast.ok { border-color: rgba(52,211,153,.4); }
+    .toast.bad { border-color: rgba(251,113,133,.4); }
+
+    .empty {
+      margin: 1.2rem .6rem; padding: 1rem; border: 1px dashed var(--line2);
+      border-radius: 12px; text-align: center; color: var(--muted);
+    }
+    .compat-banner {
+      display: flex; flex-wrap: wrap; gap: .4rem .55rem; align-items: center;
+      margin: 0 0 .55rem; font-size: .72rem; color: var(--muted);
+    }
+    .sched-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .sched-table th {
+      text-align: left; font-size: .68rem; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--muted); padding: .35rem .45rem; border-bottom: 1px solid var(--line);
+      font-weight: 600;
+    }
+    .sched-table td {
+      padding: .42rem .45rem; border-bottom: 1px solid rgba(255,255,255,.04);
+      vertical-align: top;
+    }
+    .sched-table tr:hover td { background: rgba(96,165,250,.06); }
+    .sched-mini { color: var(--muted); font-size: .7rem; margin-top: .12rem; }
+    .cost-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  </style>
+</head>
+<body class="gate-mode">
+  <header class="hidden" id="appHeader">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <img src="./logo.svg" alt="" width="40" height="40" />
+      </div>
+      <div class="brand-text">
+        <h1>Agent Orchestrator</h1>
+        <div class="sub">Scheduled agent jobs · live status</div>
+      </div>
+      <span class="pill" id="svcPill">…</span>
+      <span class="pill" id="authPill">…</span>
+      <span class="pill" id="llmPill">…</span>
+      <span class="pill" id="dbPill">…</span>
+    </div>
+    <div class="row">
+      <a class="btn" id="historyLink" href="./history">History</a>
+      <button id="refreshBtn">Refresh</button>
+      <button id="logoutBtn" class="danger">Lock</button>
+    </div>
+  </header>
+
+  <main id="gateMain">
+    <section id="gate">
+      <div class="gate-logo" aria-hidden="true">
+        <img src="./logo.svg" alt="" width="64" height="64" />
+      </div>
+      <p class="gate-kicker">Multi-provider runner</p>
+      <h2>Agent Orchestrator</h2>
+      <p class="muted">Unlock with your API secret. Stored in a cookie for 1 year and sent only as <span class="mono">X-Api-Key</span>. OAuth tokens never appear here.</p>
+      <label for="apiKey">API secret</label>
+      <input id="apiKey" type="password" autocomplete="current-password" placeholder="••••••••••••" />
+      <div class="row" style="margin-top:1rem; justify-content:center">
+        <button class="primary" id="unlockBtn">Unlock dashboard</button>
+      </div>
+      <p id="gateErr" class="muted" style="color:var(--bad);min-height:1.1em;margin-top:.7rem;text-align:center"></p>
+    </section>
+  </main>
+
+  <div id="appShell" class="hidden">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Scheduled tasks</h2>
+        <button id="newJobBtn" class="primary">+ New</button>
+      </div>
+      <div class="panel-body flush" id="tasksList"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Control Room · scheduled work</h2>
+        <span class="pill" id="compatPill" title="ORCH-73 compatibility adapter">compat</span>
+      </div>
+      <div class="panel-body" id="schedulesPanel">
+        <div class="muted">Unlock to load read-only schedule descriptors (provider, cost, health).</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Latest result</h2>
+        <div class="row">
+          <button id="copyResultBtn" class="ghost">Copy</button>
+          <a class="btn" id="historyLink2" href="./history">All history</a>
+        </div>
+      </div>
+      <div class="result-meta" id="resultMeta">—</div>
+      <div class="result-box placeholder" id="resultDetail">Select a task and run it, or open History.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Status &amp; settings</h2></div>
+      <div class="panel-body">
+        <div class="kv" id="statusKv" style="margin-bottom:.65rem"></div>
+
+        <h2 style="margin:0 0 .35rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">LLM provider</h2>
+        <div class="notify-box" id="llmSettingsBox">Loading…</div>
+        <div class="form-grid" style="margin-bottom:.75rem">
+          <label for="llmProvider">Provider</label>
+          <select id="llmProvider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="xai">xAI (legacy)</option>
+          </select>
+          <label for="llmMode">Model mode</label>
+          <select id="llmMode">
+            <option value="auto">Auto (OpenRouter router)</option>
+            <option value="fixed">Fixed model</option>
+          </select>
+          <label for="llmDefaultModel">Default model</label>
+          <input id="llmDefaultModel" placeholder="openrouter/auto or provider/model" />
+          <label for="llmOrKey">OpenRouter API key</label>
+          <input id="llmOrKey" type="password" autocomplete="off" placeholder="Leave blank to keep existing" />
+          <div class="row" style="margin-top:.4rem">
+            <button class="primary" id="llmSaveBtn">Save LLM</button>
+            <button id="llmTestBtn">Test connection</button>
+          </div>
+          <p class="muted" id="llmSettingsNote" style="margin:.35rem 0 0"></p>
+        </div>
+
+        <h2 style="margin:0 0 .35rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Database</h2>
+        <div class="notify-box" id="dbSettingsBox">Loading…</div>
+        <div class="row" style="margin-bottom:.75rem">
+          <button id="dbTestBtn">Test database</button>
+        </div>
+
+        <h2 style="margin:0 0 .35rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Notifications</h2>
+        <div class="notify-box" id="notifySettings">Loading…</div>
+        <div class="row" style="margin-bottom:.75rem">
+          <button id="slackTestBtn" disabled title="Configure SLACK_BOT_TOKEN + SLACK_CHANNEL on the server first">Send test Slack</button>
+        </div>
+
+        <div id="taskFormAnchor"></div>
+        <h2 id="formTitle" style="margin:0 0 .25rem;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">New task</h2>
+        <div class="form-grid" id="taskForm">
+          <input type="hidden" id="jobId" />
+          <label for="jobName">Name</label>
+          <input id="jobName" placeholder="e.g. Daily Jira brief" />
+          <label for="jobSchedule">When should it run?</label>
+          <input id="jobSchedule" placeholder="e.g. 0 7 * * * for every day at 07:00" />
+          <div id="scheduleHint">Enter a schedule to see it in plain language</div>
+          <details class="advanced">
+            <summary>Advanced · cron expression</summary>
+            <div class="adv-body">
+              Standard 5-field cron (<span class="mono">min hour day month weekday</span>) in the app timezone.
+              Match this in Cloud Scheduler for unattended runs.
+            </div>
+          </details>
+          <label for="jobModelMode">Model mode</label>
+          <select id="jobModelMode">
+            <option value="inherit">Inherit global</option>
+            <option value="auto">Auto</option>
+            <option value="fixed">Fixed</option>
+          </select>
+          <label for="jobModel">Model</label>
+          <select id="jobModel"></select>
+          <label for="jobEmail">Notify email</label>
+          <input id="jobEmail" type="email" placeholder="you@example.com" />
+          <label>Slack notifications</label>
+          <div class="check-row">
+            <label><input type="checkbox" id="slackOnSuccess" /> On success</label>
+            <label><input type="checkbox" id="slackOnFailure" checked /> On failure</label>
+          </div>
+          <p class="muted" style="margin:0 0 .25rem">Default: failure only. Webhook URL is never shown.</p>
+          <label for="jobPrompt">Prompt</label>
+          <textarea id="jobPrompt" placeholder="Use {{date}} / {{jira_open_summary}}"></textarea>
+          <div class="row" style="margin-top:.55rem">
+            <button class="primary" id="saveJobBtn">Save task</button>
+            <button id="resetFormBtn" class="ghost">Clear</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script>
+    const LS_KEY = "ga_dashboard_api_key";
+    const COOKIE_KEY = "ga_api_key";
+    const COOKIE_DAYS = 365;
+    const state = {
+      jobs: [], models: [], jobNames: {}, selectedJobId: null, latestRun: null,
+      timezone: "UTC", rawOutput: "", slackConfigured: false,
+      schedules: [], scheduleRuns: [], scheduleUpcoming: [],
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const toast = (msg, ok = true) => {
+      const el = $("toast");
+      el.textContent = msg;
+      el.className = "toast show " + (ok ? "ok" : "bad");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => el.classList.remove("show"), 4000);
+    };
+
+    if (window.marked && marked.setOptions) {
+      marked.setOptions({ gfm: true, breaks: true, headerIds: false, mangle: false });
+    }
+
+    function apiBase() {
+      const path = location.pathname.replace(/\/+$/, "");
+      if (path.endsWith("/dashboard")) return path.slice(0, -"/dashboard".length) || "";
+      if (path.endsWith("/history")) return path.slice(0, -"/history".length) || "";
+      return path;
+    }
+    function readCookie(name) {
+      const parts = ("; " + document.cookie).split("; " + name + "=");
+      if (parts.length < 2) return "";
+      return decodeURIComponent(parts.pop().split(";").shift() || "");
+    }
+    function writeCookie(name, value, days) {
+      const maxAge = Math.floor(days * 24 * 60 * 60);
+      const secure = location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = name + "=" + encodeURIComponent(value) +
+        "; Path=/" + "; Max-Age=" + maxAge + "; SameSite=Lax" + secure;
+    }
+    function clearCookie(name) {
+      const secure = location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = name + "=; Path=/; Max-Age=0; SameSite=Lax" + secure;
+    }
+    function getKey() {
+      return readCookie(COOKIE_KEY) || localStorage.getItem(LS_KEY) || sessionStorage.getItem(LS_KEY) || "";
+    }
+    function setKey(v) {
+      writeCookie(COOKIE_KEY, v, COOKIE_DAYS);
+      try { localStorage.setItem(LS_KEY, v); } catch (_) {}
+      try { sessionStorage.setItem(LS_KEY, v); } catch (_) {}
+    }
+    function clearKey() {
+      clearCookie(COOKIE_KEY);
+      try { localStorage.removeItem(LS_KEY); } catch (_) {}
+      try { sessionStorage.removeItem(LS_KEY); } catch (_) {}
+    }
+
+    async function api(path, opts = {}) {
+      const headers = Object.assign({ "X-Api-Key": getKey() }, opts.headers || {});
+      if (opts.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+      const res = await fetch(apiBase() + path, { ...opts, headers });
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { detail: text }; }
+      if (!res.ok) {
+        const detail = (data && (data.detail || data.error)) || res.statusText;
+        const err = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }
+
+    function fmtTs(ts) {
+      if (ts == null || ts === "") return "—";
+      const n = typeof ts === "number" ? ts : Number(ts);
+      if (!Number.isFinite(n)) return "—";
+      // support seconds or ms
+      const ms = n > 1e12 ? n : n * 1000;
+      const d = new Date(ms);
+      if (Number.isNaN(d.getTime())) return "—";
+      return d.toLocaleString(undefined, {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+    }
+    function pill(el, text, cls) {
+      el.textContent = text;
+      el.className = "pill " + (cls || "");
+    }
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
+    }
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/`/g, "&#96;");
+    }
+    function unlockUI(ok) {
+      document.body.classList.toggle("gate-mode", !ok);
+      $("gateMain").classList.toggle("hidden", ok);
+      $("appShell").classList.toggle("hidden", !ok);
+      $("appHeader").classList.toggle("hidden", !ok);
+      const hist = apiBase() + "/history";
+      $("historyLink").href = hist;
+      $("historyLink2").href = hist;
+    }
+
+    function renderMarkdown(text, isError) {
+      const raw = String(text ?? "");
+      state.rawOutput = raw;
+      const box = $("resultDetail");
+      if (!raw.trim()) {
+        box.className = "result-box placeholder";
+        box.textContent = "(empty)";
+        return;
+      }
+      box.className = "result-box";
+      const src = isError ? ("### Error\n\n```\n" + raw + "\n```") : raw;
+      if (window.marked && typeof marked.parse === "function") {
+        box.innerHTML = '<div class="md-body">' + marked.parse(src) + "</div>";
+      } else {
+        box.textContent = raw;
+      }
+    }
+
+    async function unlock() {
+      $("gateErr").textContent = "";
+      const key = $("apiKey").value.trim();
+      if (!key) { $("gateErr").textContent = "API secret required"; return; }
+      setKey(key);
+      try {
+        await refresh();
+        unlockUI(true);
+      } catch (e) {
+        clearKey();
+        unlockUI(false);
+        $("gateErr").textContent = e.status === 401 ? "Invalid API secret" : String(e.message || e);
+      }
+    }
+
+    function fillModels(models) {
+      const sel = $("jobModel");
+      const cur = sel.value;
+      sel.innerHTML = "";
+      (models || []).forEach((m) => {
+        const o = document.createElement("option");
+        o.value = m; o.textContent = m; sel.appendChild(o);
+      });
+      if (cur && models && models.includes(cur)) sel.value = cur;
+      else if (models && models[0]) sel.value = models[0];
+    }
+
+    function updateScheduleHint(cron) {
+      const v = (cron || "").trim();
+      const tz = state.timezone || "UTC";
+      if (!v) {
+        $("scheduleHint").textContent = "Enter a schedule to see it in plain language";
+        return;
+      }
+      let hint = "Custom schedule — saved as cron: " + v;
+      if (v === "0 * * * *") hint = "Plain language: Every hour";
+      else if (/^0 \d{1,2} \* \* \*$/.test(v)) {
+        const h = v.split(/\s+/)[1];
+        hint = "Plain language: Every day at " + String(h).padStart(2, "0") + ":00 (" + tz + ")";
+      } else if (v === "*/5 * * * *") hint = "Plain language: Every 5 minutes";
+      else if (v === "0 */2 * * *") hint = "Plain language: Every 2 hours";
+      $("scheduleHint").textContent = hint;
+    }
+
+    function el(id) {
+      return document.getElementById(id);
+    }
+    function setVal(id, value) {
+      const node = el(id);
+      if (!node) return;
+      if (node.type === "checkbox") node.checked = !!value;
+      else node.value = value == null ? "" : value;
+    }
+    function setText(id, value) {
+      const node = el(id);
+      if (node) node.textContent = value == null ? "" : String(value);
+    }
+    function focusTaskForm(mode) {
+      const title = el("formTitle");
+      const name = el("jobName");
+      const anchor = el("taskFormAnchor") || title;
+      const panel = title && title.closest ? title.closest(".panel") : null;
+      const body = title && title.closest ? title.closest(".panel-body") : null;
+      try {
+        if (body && anchor) {
+          const bodyRect = body.getBoundingClientRect();
+          const aRect = anchor.getBoundingClientRect();
+          const top = body.scrollTop + (aRect.top - bodyRect.top) - 8;
+          body.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+        } else if (anchor && anchor.scrollIntoView) {
+          anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      } catch (_) {}
+      if (panel) {
+        panel.classList.add("form-focus");
+        setTimeout(() => panel.classList.remove("form-focus"), 1600);
+      }
+      if (title) {
+        title.classList.add("form-title-flash");
+        setTimeout(() => title.classList.remove("form-title-flash"), 1600);
+      }
+      setTimeout(() => { try { if (name) name.focus({ preventScroll: true }); } catch (_) { if (name) name.focus(); } }, 320);
+      if (mode === "new") toast("New task — form opened on the right");
+      if (mode === "edit") toast("Editing — form opened on the right");
+    }
+
+    function resetForm(ev) {
+      if (ev && ev.preventDefault) ev.preventDefault();
+      state.selectedJobId = null;
+      setText("formTitle", "New task");
+      setVal("jobId", "");
+      setVal("jobName", "");
+      setVal("jobSchedule", "");
+      setVal("jobPrompt", "");
+      setVal("jobEmail", "");
+      setVal("slackOnSuccess", false);
+      setVal("slackOnFailure", true);
+      setVal("jobModelMode", "inherit");
+      if (state.models[0]) setVal("jobModel", state.models[0]);
+      updateScheduleHint("");
+      renderTasks();
+      focusTaskForm("new");
+    }
+
+    function editJob(job) {
+      if (!job) return;
+      state.selectedJobId = job.id;
+      setText("formTitle", "Edit task");
+      setVal("jobId", job.id);
+      setVal("jobName", job.name || "");
+      setVal("jobSchedule", job.schedule || "");
+      setVal("jobPrompt", job.prompt_template || "");
+      setVal("jobEmail", job.notify_email || "");
+      setVal("slackOnSuccess", !!job.slack_on_success);
+      setVal("slackOnFailure", job.slack_on_failure !== false);
+      setVal("jobModelMode", job.model_mode || "inherit");
+      setVal("jobModel", job.model || state.models[0] || "");
+      updateScheduleHint(job.schedule || "");
+      renderTasks();
+      showLatestForJob(job.id);
+      focusTaskForm("edit");
+    }
+
+    async function saveJob() {
+      const id = $("jobId").value;
+      const body = {
+        name: (el("jobName") && el("jobName").value || "").trim(),
+        prompt_template: (el("jobPrompt") && el("jobPrompt").value || "").trim(),
+        schedule: (el("jobSchedule") && el("jobSchedule").value || "").trim() || null,
+        model: (el("jobModel") && el("jobModel").value) || null,
+        model_mode: (el("jobModelMode") && el("jobModelMode").value) || "inherit",
+        notify_email: (el("jobEmail") && el("jobEmail").value || "").trim(),
+        slack_on_success: !!(el("slackOnSuccess") && el("slackOnSuccess").checked),
+        slack_on_failure: !!(el("slackOnFailure") && el("slackOnFailure").checked),
+      };
+      // Do NOT force enabled:true on edit — that re-enabled paused tasks (bug).
+      if (!body.name || !body.prompt_template) { toast("Name and prompt required", false); return; }
+      try {
+        if (id) {
+          await api("/api/jobs/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(body) });
+          toast("Saved");
+        } else {
+          const data = await api("/api/jobs", { method: "POST", body: JSON.stringify({ ...body, enabled: true }) });
+          state.selectedJobId = data.job && data.job.id;
+          toast("Created");
+        }
+        await refresh();
+      } catch (e) { toast(String(e.message || e), false); }
+    }
+
+    async function toggleJob(job) {
+      try {
+        await api("/api/jobs/" + encodeURIComponent(job.id), {
+          method: "PATCH", body: JSON.stringify({ enabled: !job.enabled }),
+        });
+        toast(job.enabled ? "Paused" : "Enabled");
+        await refresh();
+      } catch (e) { toast(String(e.message || e), false); }
+    }
+
+    async function deleteJob(job) {
+      if (!confirm('Delete task "' + job.name + '"? Run history is kept.')) return;
+      try {
+        await api("/api/jobs/" + encodeURIComponent(job.id), { method: "DELETE" });
+        if (state.selectedJobId === job.id) resetForm();
+        toast("Deleted");
+        await refresh();
+      } catch (e) { toast(String(e.message || e), false); }
+    }
+
+    async function runNow(job) {
+      if (!confirm('Run "' + job.name + '" now?')) return;
+      $("resultMeta").textContent = "Running " + job.name + "…";
+      renderMarkdown("Working…");
+      try {
+        const data = await api("/api/jobs/" + encodeURIComponent(job.id) + "/run", {
+          method: "POST",
+          headers: { "Idempotency-Key": "dashboard-" + job.id + "-" + Date.now() },
+        });
+        showRun(data.run || {});
+        const ok = (data.run && data.run.status) === "succeeded";
+        toast(ok ? "Run succeeded" : ("Run " + ((data.run && data.run.status) || "finished")), ok);
+        await refresh();
+      } catch (e) {
+        renderMarkdown(String(e.message || e), true);
+        toast(String(e.message || e), false);
+      }
+    }
+
+    function showRun(r) {
+      if (!r) {
+        $("resultMeta").textContent = "No runs yet.";
+        const box = $("resultDetail");
+        box.className = "result-box placeholder";
+        box.textContent = "Select a task and Run now.";
+        state.rawOutput = "";
+        return;
+      }
+      state.latestRun = r;
+      const name = r.job_name || state.jobNames[r.job_id] || (r.job_id || "").slice(0, 8);
+      const modelBits = [];
+      if (r.llm_provider) modelBits.push(r.llm_provider);
+      if (r.model_effective || r.model_requested) modelBits.push(r.model_effective || r.model_requested);
+      if (r.tokens_in != null || r.tokens_out != null) {
+        modelBits.push((r.tokens_in || 0) + "→" + (r.tokens_out || 0) + " tok");
+      }
+      $("resultMeta").textContent =
+        name + " · " + (r.status || "—") + " · " + fmtTs(r.started_at) +
+        (r.id ? " · " + String(r.id).slice(0, 8) + "…" : "") +
+        (modelBits.length ? " · " + modelBits.join(" · ") : "");
+      if (r.error) renderMarkdown(r.error, true);
+      else renderMarkdown(r.result || "");
+    }
+
+    async function showLatestForJob(jobId) {
+      try {
+        const data = await api("/api/jobs/" + encodeURIComponent(jobId) + "/runs?limit=1");
+        const run = (data.runs || [])[0];
+        if (run) showRun({ ...run, job_name: state.jobNames[jobId] });
+        else {
+          $("resultMeta").textContent = (state.jobNames[jobId] || "Task") + " · no runs yet";
+          const box = $("resultDetail");
+          box.className = "result-box placeholder";
+          box.textContent = "No past results for this task.";
+          state.rawOutput = "";
+        }
+      } catch (e) { toast(String(e.message || e), false); }
+    }
+
+    const ICONS = {
+      calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+      clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+      history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>',
+      status: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l2.5 2.5L16 9"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+    };
+
+    function statusClass(status) {
+      if (status === "succeeded") return "ok";
+      if (status === "failed") return "bad";
+      return "warn";
+    }
+
+    function healthClass(health) {
+      if (health === "healthy") return "ok";
+      if (health === "failing") return "bad";
+      if (health === "degraded" || health === "paused" || health === "idle") return "warn";
+      return "warn";
+    }
+
+    function fmtCost(cents, conf) {
+      if (cents == null || cents === "") return "—";
+      const n = Number(cents);
+      if (Number.isNaN(n)) return "—";
+      const dollars = (n / 100).toFixed(n >= 100 ? 2 : 3);
+      const tag = conf === "metered" ? "" : (conf === "estimate" ? " est." : "");
+      return "$" + dollars + tag;
+    }
+
+    function renderSchedulesPanel() {
+      const root = $("schedulesPanel");
+      const schedules = state.schedules || [];
+      const runs = state.scheduleRuns || [];
+      if (!root) return;
+
+      if (!schedules.length) {
+        root.innerHTML = "<div class='empty'>No schedules in compatibility view yet.</div>";
+        pill($("compatPill"), "compat · empty", "warn");
+        return;
+      }
+
+      const failing = schedules.filter((s) => s.health === "failing").length;
+      const degraded = schedules.filter((s) => s.health === "degraded").length;
+      const healthy = schedules.filter((s) => s.health === "healthy").length;
+      const paused = schedules.filter((s) => s.paused).length;
+      const overdue = schedules.filter((s) => s.due_state === "overdue").length;
+      const providers = Array.from(new Set(schedules.map((s) => s.provider).filter(Boolean)));
+
+      pill(
+        $("compatPill"),
+        "compat · " + schedules.length + " sched",
+        failing || overdue ? "bad" : (degraded ? "warn" : "ok")
+      );
+
+      let html = "<div class='compat-banner'>" +
+        "<span class='pill ok'>mode compatibility</span>" +
+        "<span class='pill " + (healthy ? "ok" : "warn") + "'>" + healthy + " healthy</span>" +
+        "<span class='pill " + (degraded ? "warn" : "ok") + "'>" + degraded + " degraded</span>" +
+        "<span class='pill " + (failing ? "bad" : "ok") + "'>" + failing + " failing</span>" +
+        "<span class='pill " + (overdue ? "bad" : "ok") + "'>" + overdue + " overdue</span>" +
+        "<span class='pill warn'>" + paused + " paused</span>" +
+        "<span class='pill'>" + escapeHtml(providers.join(", ") || "—") + "</span>" +
+        "<span class='muted'>Read-only · legacy jobs adapter · does not change execution</span>" +
+        "</div>";
+
+      html += "<table class='sched-table'><thead><tr>" +
+        "<th>Schedule</th><th>Provider</th><th>Health</th><th>Due</th><th>Next</th><th>Cost</th><th>Runs</th>" +
+        "</tr></thead><tbody>";
+
+      schedules.forEach((s) => {
+        const stats = s.run_stats || {};
+        const rate = stats.success_rate != null
+          ? Math.round(Number(stats.success_rate) * 100) + "%"
+          : "—";
+        const due = s.due_state || "unknown";
+        const dueCls = due === "overdue" ? "bad" : (due === "on_track" ? "ok" : "warn");
+        html += "<tr>" +
+          "<td><strong>" + escapeHtml(s.name || s.id) + "</strong>" +
+            "<div class='sched-mini'>" + escapeHtml(s.schedule_human || "—") +
+            " · " + escapeHtml(s.compatibility_mode || "compatibility") + "</div></td>" +
+          "<td><span class='pill'>" + escapeHtml(s.provider || "—") + "</span>" +
+            "<div class='sched-mini'>" + escapeHtml(s.model || "") + "</div></td>" +
+          "<td><span class='pill " + healthClass(s.health) + "'>" +
+            escapeHtml(s.health || "unknown") + "</span>" +
+            "<div class='sched-mini'>" +
+            escapeHtml(s.last_run_status_normalized || s.last_run_status || "no runs") +
+            "</div></td>" +
+          "<td><span class='pill " + dueCls + "'>" + escapeHtml(due) + "</span>" +
+            (s.seconds_overdue != null
+              ? "<div class='sched-mini'>" + escapeHtml(String(Math.round(s.seconds_overdue / 3600))) + "h late</div>"
+              : "") +
+          "</td>" +
+          "<td>" + escapeHtml(s.paused ? "Paused" : fmtTs(s.next_run_ts)) + "</td>" +
+          "<td class='cost-cell'>" + escapeHtml(fmtCost(s.estimated_cost_cents, s.cost_confidence)) +
+            "<div class='sched-mini'>" + escapeHtml(s.cost_confidence || "") + "</div></td>" +
+          "<td>" + escapeHtml(String(stats.total != null ? stats.total : 0)) +
+            " · " + escapeHtml(rate) +
+            (stats.consecutive_failures
+              ? " · <span style='color:var(--bad)'>" +
+                escapeHtml(String(stats.consecutive_failures)) + " fail streak</span>"
+              : "") +
+            "</td></tr>";
+      });
+      html += "</tbody></table>";
+
+      const upcoming = state.scheduleUpcoming || [];
+      if (upcoming.length) {
+        html += "<h2 style='margin:0.85rem 0 0.35rem;font-size:.72rem;letter-spacing:.08em;" +
+          "text-transform:uppercase;color:var(--muted)'>Upcoming fires (projected)</h2>";
+        html += "<table class='sched-table'><thead><tr>" +
+          "<th>When</th><th>Schedule</th><th>Provider</th><th>Est. cost</th>" +
+          "</tr></thead><tbody>";
+        upcoming.slice(0, 12).forEach((e) => {
+          html += "<tr>" +
+            "<td>" + escapeHtml(fmtTs(e.fire_ts)) +
+              "<div class='sched-mini'>" + escapeHtml(e.timezone || "") + "</div></td>" +
+            "<td>" + escapeHtml(e.schedule_name || e.schedule_id || "—") +
+              "<div class='sched-mini mono'>" + escapeHtml(e.cron || "") + "</div></td>" +
+            "<td><span class='pill'>" + escapeHtml(e.provider || "—") + "</span></td>" +
+            "<td class='cost-cell'>" +
+              escapeHtml(fmtCost(e.estimated_cost_cents, e.cost_confidence)) + "</td>" +
+            "</tr>";
+        });
+        html += "</tbody></table>";
+        html += "<div class='muted' style='font-size:.72rem;margin:.25rem 0 .5rem'>" +
+          "Projected only · does not dispatch · GET /api/schedules/upcoming</div>";
+      }
+
+      if (runs.length) {
+        html += "<h2 style='margin:0.85rem 0 0.35rem;font-size:.72rem;letter-spacing:.08em;" +
+          "text-transform:uppercase;color:var(--muted)'>Normalized run history</h2>";
+        html += "<table class='sched-table'><thead><tr>" +
+          "<th>When</th><th>Schedule</th><th>Status</th><th>Provider</th><th>Cost</th><th>Tokens</th>" +
+          "</tr></thead><tbody>";
+        runs.slice(0, 12).forEach((r) => {
+          html += "<tr>" +
+            "<td>" + escapeHtml(fmtTs(r.started_at)) +
+              (r.duration_ms != null
+                ? "<div class='sched-mini'>" + escapeHtml(String(r.duration_ms)) + " ms</div>"
+                : "") +
+            "</td>" +
+            "<td>" + escapeHtml(r.schedule_name || r.schedule_id || "—") + "</td>" +
+            "<td><span class='pill " + statusClass(r.status) + "'>" +
+              escapeHtml(r.status || "unknown") + "</span></td>" +
+            "<td>" + escapeHtml(r.provider || "—") +
+              (r.model ? "<div class='sched-mini'>" + escapeHtml(r.model) + "</div>" : "") +
+            "</td>" +
+            "<td class='cost-cell'>" +
+              escapeHtml(fmtCost(r.cost_cents, r.cost_confidence)) + "</td>" +
+            "<td class='sched-mini'>" +
+              escapeHtml(
+                (r.tokens_in != null || r.tokens_out != null)
+                  ? String(r.tokens_in || 0) + " / " + String(r.tokens_out || 0)
+                  : "—"
+              ) +
+            "</td></tr>";
+        });
+        html += "</tbody></table>";
+      }
+
+      root.innerHTML = html;
+    }
+
+    function renderTasks() {
+      const root = $("tasksList");
+      root.innerHTML = "";
+      if (!state.jobs.length) {
+        root.innerHTML = "<div class='empty'>No scheduled tasks yet. Create one on the right.</div>";
+        return;
+      }
+
+      const wrap = document.createElement("div");
+      wrap.style.minHeight = "100%";
+      wrap.style.display = "flex";
+      wrap.style.flexDirection = "column";
+
+      const scroll = document.createElement("div");
+      scroll.style.flex = "1";
+      scroll.style.overflow = "auto";
+
+      const table = document.createElement("table");
+      table.className = "tasks-table";
+      table.innerHTML =
+        "<thead><tr>" +
+        "<th>Task</th>" +
+        "<th><span class='icon-cell'>" + ICONS.calendar + " Schedule</span></th>" +
+        "<th><span class='icon-cell'>" + ICONS.clock + " Next</span></th>" +
+        "<th><span class='icon-cell'>" + ICONS.history + " Last</span></th>" +
+        "<th>Provider</th>" +
+        "<th><span class='icon-cell'>" + ICONS.status + " Status</span></th>" +
+        "<th></th>" +
+        "</tr></thead>";
+      const tbody = document.createElement("tbody");
+
+      state.jobs.forEach((j) => {
+        const tr = document.createElement("tr");
+        tr.className = "task-row" + (state.selectedJobId === j.id ? " active" : "");
+        const last = j.last_run;
+        const sw = j.scheduled_work || {};
+        const lastStatus = sw.last_run_status_normalized || (last ? last.status : null);
+        const human = j.schedule_human || j.schedule || "Not scheduled";
+        const lastWhen = last ? fmtTs(last.started_at) : "Never";
+        const nextWhen = j.enabled ? fmtTs(j.next_run_ts) : "Paused";
+        const health = sw.health || (!j.enabled ? "paused" : (lastStatus || "idle"));
+        const statusLabel = !j.enabled ? "Paused" : (sw.health || lastStatus || "No runs");
+        const statusPillCls = healthClass(health);
+        const cron = j.schedule_cron || j.schedule || "";
+        const provider = sw.provider || "—";
+        const cost = fmtCost(sw.estimated_cost_cents, sw.cost_confidence);
+
+        tr.innerHTML =
+          "<td class='name-cell'>" + escapeHtml(j.name) +
+            "<span class='sub'>" + escapeHtml(j.model_mode || "inherit") + " · " + escapeHtml(j.model || "") +
+            (j.notify_email ? " · mail" : "") +
+            (j.slack_on_failure || j.slack_on_success ? " · slack" : "") +
+            " · " + escapeHtml(cost) +
+            "</span></td>" +
+          "<td title=\"" + escapeAttr(cron || "no cron") + "\">" +
+            "<span class='icon-cell'>" + ICONS.calendar + " " + escapeHtml(human) + "</span></td>" +
+          "<td><span class='icon-cell'>" + ICONS.clock + " " + escapeHtml(nextWhen) + "</span></td>" +
+          "<td><span class='icon-cell'>" + ICONS.history + " " + escapeHtml(lastWhen) + "</span></td>" +
+          "<td><span class='pill'>" + escapeHtml(provider) + "</span></td>" +
+          "<td><span class='pill " + statusPillCls + "'>" + escapeHtml(statusLabel) + "</span></td>" +
+          "<td><div class='actions'></div></td>";
+
+        const actions = tr.querySelector(".actions");
+        const mk = (label, fn, cls, iconHtml) => {
+          const b = document.createElement("button");
+          if (cls) b.className = cls;
+          b.innerHTML = (iconHtml || "") + (label ? " " + escapeHtml(label) : "");
+          b.title = label || "";
+          b.addEventListener("click", (e) => { e.stopPropagation(); fn(); });
+          actions.appendChild(b);
+        };
+        mk("Run", () => runNow(j), "primary", ICONS.play);
+        mk(j.enabled ? "Pause" : "Go", () => toggleJob(j), "");
+        mk("Edit", () => editJob(j), "");
+        mk("Del", () => deleteJob(j), "danger");
+        tr.addEventListener("click", () => editJob(j));
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(tbody);
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
+
+      const foot = document.createElement("div");
+      foot.className = "table-foot";
+      foot.textContent = "Hover schedule for raw cron · timezone " + (state.timezone || "UTC") +
+        " · provider/cost from ORCH-73 compatibility adapter";
+      wrap.appendChild(foot);
+      root.appendChild(wrap);
+    }
+
+    function renderStatus(overview) {
+      const st = overview.status || {};
+      const auth = st.auth || {};
+      const llm = st.llm || {};
+      const db = st.database || {};
+      const mem = st.memory || {};
+      const svcOk = overview.service_ok;
+      pill($("svcPill"), svcOk ? "service ok" : "down", svcOk ? "ok" : "bad");
+      pill($("authPill"), auth.needs_reauth ? "reauth needed" : (auth.healthy ? "auth ok" : "auth down"),
+        auth.needs_reauth ? "warn" : (auth.healthy ? "ok" : "bad"));
+      const llmLabel = (llm.provider || "llm") + (llm.healthy ? " ok" : " down") +
+        (llm.mode ? " · " + llm.mode : "");
+      pill($("llmPill"), llmLabel, llm.healthy ? "ok" : "bad");
+      pill($("dbPill"), (db.provider || "db") + (db.ok ? " ok" : " down") +
+        (db.latency_ms != null ? " · " + db.latency_ms + "ms" : ""),
+        db.ok ? "ok" : "bad");
+      const last = st.last_run;
+      $("statusKv").innerHTML =
+        "<div>Health</div><div>" + (svcOk ? "ok" : "down") + "</div>" +
+        "<div>Scheduled</div><div>" + (overview.jobs || []).length + "</div>" +
+        "<div>Timezone</div><div class='mono'>" + escapeHtml(overview.timezone || state.timezone || "UTC") + "</div>" +
+        "<div>Auth</div><div>" + escapeHtml(auth.provider_type || "—") + (auth.healthy ? " · healthy" : " · down") + "</div>" +
+        "<div>LLM</div><div>" + escapeHtml(llm.provider || "—") + " · " + escapeHtml(llm.mode || "—") +
+          " · " + escapeHtml(llm.default_model || "") + "</div>" +
+        "<div>Database</div><div>" + escapeHtml(db.provider || "—") +
+          (db.ok ? " · healthy" : " · down") +
+          (db.latency_ms != null ? " · " + db.latency_ms + "ms" : "") + "</div>" +
+        "<div>Memory</div><div class='muted'>" +
+          "shared " + escapeHtml(String(mem.shared != null ? mem.shared : 0)) +
+          " · private " + escapeHtml(String(mem.private != null ? mem.private : 0)) +
+          " · job " + escapeHtml(String(mem.jobs_with_memory != null ? mem.jobs_with_memory : "—")) +
+          " · " + escapeHtml(String(mem.log_entries != null ? mem.log_entries : "—")) + " log</div>" +
+        "<div>Last run</div><div class='muted'>" + (last ? escapeHtml((last.status || "") + " · " + fmtTs(last.started_at) +
+          (last.model_effective ? " · " + last.model_effective : "")) : "—") + "</div>";
+    }
+
+    async function loadLlmSettings() {
+      try {
+        const data = await api("/api/settings/llm");
+        $("llmProvider").value = data.provider || "openrouter";
+        $("llmMode").value = data.model_mode || "auto";
+        $("llmDefaultModel").value = data.default_model || "";
+        $("llmOrKey").value = "";
+        $("llmOrKey").placeholder = data.openrouter_api_key_set
+          ? ("Set · " + (data.openrouter_api_key_masked || "••••"))
+          : "Paste OpenRouter key";
+        const st = data.status || {};
+        $("llmSettingsBox").innerHTML =
+          (st.healthy ? '<span class="pill ok">LLM healthy</span>' : '<span class="pill bad">LLM down</span>') +
+          " <span class='muted'>" + escapeHtml(st.provider || "") + " · " + escapeHtml(st.mode || "") +
+          " · " + escapeHtml(st.default_model || "") + "</span>";
+        $("llmSettingsNote").textContent = data.note || "";
+      } catch (e) {
+        $("llmSettingsBox").textContent = "Could not load LLM settings.";
+      }
+    }
+
+    async function saveLlmSettings() {
+      try {
+        const body = {
+          provider: $("llmProvider").value,
+          model_mode: $("llmMode").value,
+          default_model: $("llmDefaultModel").value,
+        };
+        const key = ($("llmOrKey").value || "").trim();
+        if (key) body.openrouter_api_key = key;
+        await api("/api/settings/llm", { method: "PUT", body: JSON.stringify(body) });
+        toast("LLM settings saved (process)", true);
+        $("llmOrKey").value = "";
+        await loadLlmSettings();
+        await refresh();
+      } catch (e) {
+        toast(String(e.message || e), false);
+      }
+    }
+
+    async function testLlmSettings() {
+      try {
+        $("llmTestBtn").disabled = true;
+        const data = await api("/api/settings/llm/test", { method: "POST" });
+        toast(
+          (data.ok ? "LLM ok · " : "LLM failed · ") +
+            (data.model || "") +
+            (data.latency_ms != null ? " · " + data.latency_ms + "ms" : "") +
+            (data.message ? " · " + data.message : ""),
+          !!data.ok
+        );
+        await loadLlmSettings();
+      } catch (e) {
+        toast(String(e.message || e), false);
+      } finally {
+        $("llmTestBtn").disabled = false;
+      }
+    }
+
+    async function loadDbSettings() {
+      try {
+        const data = await api("/api/settings/database");
+        const st = data.status || {};
+        $("dbSettingsBox").innerHTML =
+          (st.ok ? '<span class="pill ok">DB healthy</span>' : '<span class="pill bad">DB down</span>') +
+          " <span class='muted'>" + escapeHtml(data.provider || st.provider || "sqlite") +
+          (st.latency_ms != null ? " · " + st.latency_ms + "ms" : "") +
+          (st.path_or_dsn ? " · " + escapeHtml(String(st.path_or_dsn).split(/[/\\]/).slice(-2).join("/")) : "") +
+          "</span>" +
+          "<div class='muted' style='margin-top:.35rem'>" + escapeHtml(data.note || "") + "</div>";
+      } catch (e) {
+        $("dbSettingsBox").textContent = "Could not load database settings.";
+      }
+    }
+
+    async function testDbSettings() {
+      try {
+        $("dbTestBtn").disabled = true;
+        const data = await api("/api/settings/database/test", { method: "POST" });
+        toast(
+          (data.ok ? "DB ok" : "DB failed") +
+            (data.latency_ms != null ? " · " + data.latency_ms + "ms" : "") +
+            (data.detail ? " · " + data.detail : ""),
+          !!data.ok
+        );
+        await loadDbSettings();
+        await refresh();
+      } catch (e) {
+        toast(String(e.message || e), false);
+      } finally {
+        $("dbTestBtn").disabled = false;
+      }
+    }
+
+    async function loadNotifySettings() {
+      try {
+        const data = await api("/api/settings/notifications");
+        const n = data.notifications || {};
+        state.slackConfigured = !!n.slack_configured;
+        const el = $("notifySettings");
+        const mode = n.slack_mode || (n.slack_configured ? "on" : "none");
+        const slackLine = n.slack_configured
+          ? '<span class="pill ok">Slack ' + escapeHtml(mode) +
+            (n.slack_channel ? " · " + escapeHtml(n.slack_channel) : "") + "</span>"
+          : '<span class="pill warn">Slack not configured</span>';
+        const emailLine = n.email_configured
+          ? '<span class="pill ok">Email configured</span>'
+          : '<span class="pill warn">Email not configured</span>';
+        let diag = "";
+        if (n.slack_last_diagnostic) {
+          const ok = n.slack_last_ok === true;
+          diag = "<div style='margin-top:.35rem'>Last Slack: <strong>" +
+            (ok ? "ok" : "error") + "</strong> — " + escapeHtml(n.slack_last_diagnostic) + "</div>";
+        }
+        el.innerHTML = slackLine + " " + emailLine + diag +
+          "<div style='margin-top:.35rem' class='muted'>Use bot token (xoxb-) + channel — secrets stay on the server only.</div>";
+        $("slackTestBtn").disabled = !n.slack_configured;
+        $("slackTestBtn").title = n.slack_configured
+          ? "Send a test message to Slack"
+          : "Configure SLACK_BOT_TOKEN + SLACK_CHANNEL on the server first";
+      } catch (e) {
+        $("notifySettings").textContent = "Could not load notification settings.";
+        $("slackTestBtn").disabled = true;
+      }
+    }
+
+    async function refresh() {
+      const overview = await api("/api/dashboard/overview");
+      state.jobs = overview.jobs || [];
+      state.schedules = overview.schedules || [];
+      state.scheduleRuns = overview.schedule_runs || [];
+      state.scheduleUpcoming = overview.schedule_upcoming || [];
+      state.models = (overview.status && overview.status.models) || [];
+      state.jobNames = overview.job_names || {};
+      state.timezone = overview.timezone || "UTC";
+      (overview.recent_runs || []).forEach((r) => {
+        if (r.job_id && r.job_name) state.jobNames[r.job_id] = r.job_name;
+      });
+      fillModels(state.models);
+      renderStatus(overview);
+      renderTasks();
+      renderSchedulesPanel();
+      await loadNotifySettings();
+      await loadLlmSettings();
+      await loadDbSettings();
+
+      // Keep selection if job still exists
+      if (state.selectedJobId && !state.jobs.some((j) => j.id === state.selectedJobId)) {
+        state.selectedJobId = null;
+        $("formTitle").textContent = "New task";
+        $("jobId").value = "";
+      }
+
+      if (state.selectedJobId) {
+        const job = state.jobs.find((j) => j.id === state.selectedJobId);
+        if (job) {
+          // refresh form fields from server without losing scroll too much
+          $("jobName").value = job.name || "";
+          $("jobSchedule").value = job.schedule || "";
+          $("jobPrompt").value = job.prompt_template || "";
+          $("jobEmail").value = job.notify_email || "";
+          $("slackOnSuccess").checked = !!job.slack_on_success;
+          $("slackOnFailure").checked = job.slack_on_failure !== false;
+          $("jobModelMode").value = job.model_mode || "inherit";
+          if (job.model) $("jobModel").value = job.model;
+          updateScheduleHint(job.schedule || "");
+          $("formTitle").textContent = "Edit task";
+        }
+        await showLatestForJob(state.selectedJobId);
+      } else if ((overview.recent_runs || []).length) {
+        showRun(overview.recent_runs[0]);
+      } else if (overview.status && overview.status.last_run) {
+        showRun(overview.status.last_run);
+      } else {
+        showRun(null);
+      }
+    }
+
+    $("unlockBtn").addEventListener("click", unlock);
+    $("apiKey").addEventListener("keydown", (e) => { if (e.key === "Enter") unlock(); });
+    $("refreshBtn").addEventListener("click", () => refresh().catch((e) => toast(String(e.message || e), false)));
+    $("logoutBtn").addEventListener("click", () => {
+      clearKey();
+      unlockUI(false);
+      $("apiKey").value = "";
+    });
+    function onClick(id, fn) {
+      const node = el(id);
+      if (!node) { console.warn("missing element", id); return; }
+      node.addEventListener("click", (e) => {
+        try { fn(e); }
+        catch (err) { console.error(id, err); toast(String(err.message || err), false); }
+      });
+    }
+    onClick("saveJobBtn", saveJob);
+    onClick("resetFormBtn", resetForm);
+    onClick("newJobBtn", resetForm);
+    onClick("llmSaveBtn", saveLlmSettings);
+    onClick("llmTestBtn", testLlmSettings);
+    onClick("dbTestBtn", testDbSettings);
+    $("copyResultBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(state.rawOutput || $("resultDetail").innerText || "");
+        toast("Copied");
+      } catch { toast("Copy failed", false); }
+    });
+    $("slackTestBtn").addEventListener("click", async () => {
+      if ($("slackTestBtn").disabled) return;
+      $("slackTestBtn").disabled = true;
+      try {
+        const r = await api("/api/settings/slack/test", { method: "POST" });
+        toast(r.ok ? "Test Slack sent" : ("Slack test failed: " + (r.diagnostic || "")), !!r.ok);
+      } catch (e) {
+        toast(String(e.message || e), false);
+      } finally {
+        await loadNotifySettings();
+      }
+    });
+    $("jobSchedule").addEventListener("input", () => updateScheduleHint($("jobSchedule").value));
+
+    if (getKey()) {
+      unlockUI(true);
+      refresh().catch(() => { clearKey(); unlockUI(false); });
+    }
+  </script>
+</body>
+</html>

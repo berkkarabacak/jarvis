@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis's screen</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #0d0f12; color: #f4f6f8; }
+    body { font: 15px/1.4 system-ui, sans-serif; }
+    #live, #shot { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
+    #shot { object-fit: contain; }
+    #down {
+      position: absolute; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      padding: 28px; text-align: center;
+    }
+    #down.is-open { display: flex; }
+    .lead { font-size: 20px; font-weight: 650; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <iframe id="live" title="Jarvis's screen" hidden></iframe>
+  <img id="shot" alt="" hidden>
+  <div id="down">
+    <div>
+      <p class="lead">Jarvis's computer is not running.</p>
+      <p>This is his live screen. Not a recording.</p>
+    </div>
+  </div>
+  <script>
+    (function () {
+      function picturePref() {
+        try {
+          var fromUrl = new URLSearchParams(location.search || "").get("picture");
+          if (fromUrl === "clear" || fromUrl === "smooth") return fromUrl;
+        } catch (e1) {}
+        try {
+          var raw = localStorage.getItem("jarvis.talk.prefs");
+          var data = raw ? JSON.parse(raw) : null;
+          if (data && (data.picture === "clear" || data.picture === "smooth")) return data.picture;
+        } catch (e2) {}
+        return "clear";
+      }
+      var picture = picturePref();
+      var quality = picture === "smooth" ? "4" : "8";
+      var compression = picture === "smooth" ? "6" : "2";
+      var LINUX_SESSION = "/jarvis/novnc/vnc.html?autoconnect=1&resize=scale&quality=" + quality + "&compression=" + compression + "&path=jarvis/novnc/websockify";
+      var SESSION = LINUX_SESSION;
+      var live = document.getElementById("live");
+      var shot = document.getElementById("shot");
+      var down = document.getElementById("down");
+      var timer = null;
+      document.documentElement.setAttribute("data-picture", picture);
+      if (shot) shot.style.imageRendering = picture === "smooth" ? "auto" : "crisp-edges";
+
+      function showLive() {
+        down.classList.remove("is-open");
+        shot.hidden = true;
+        live.hidden = false;
+        if (live.getAttribute("src") !== SESSION) live.setAttribute("src", SESSION);
+      }
+      function showShot() {
+        down.classList.remove("is-open");
+        live.hidden = true;
+        live.removeAttribute("src");
+        shot.hidden = false;
+        shot.src = "/jarvis/api/jarvis/screen.png?t=" + Date.now();
+      }
+      function showDown() {
+        live.hidden = true;
+        live.removeAttribute("src");
+        shot.hidden = true;
+        down.classList.add("is-open");
+      }
+      function tickShot() {
+        if (shot.hidden) return;
+        shot.src = "/jarvis/api/jarvis/screen.png?t=" + Date.now();
+      }
+      function load() {
+        fetch("/jarvis/api/jarvis/computer/screen", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data && data.session_url) SESSION = String(data.session_url);
+            else if (data && data.kind === "android" && data.url) SESSION = String(data.watch_path || "/jarvis/android/");
+            else SESSION = LINUX_SESSION;
+            if (data && data.running) {
+              showLive();
+              return;
+            }
+            return fetch("/jarvis/api/jarvis/computer/screen/start", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: "{}"
+            }).then(function (r) { return r.json(); }).then(function (started) {
+              if (started && started.running) showLive();
+              else showShot();
+            });
+          })
+          .catch(function () { showShot(); });
+      }
+      live.addEventListener("error", function () { showShot(); });
+      shot.addEventListener("error", function () { showDown(); });
+      shot.addEventListener("load", function () {
+        if (!timer) timer = setInterval(tickShot, 1200);
+      });
+      load();
+    })();
+  </script>
+</body>
+</html>

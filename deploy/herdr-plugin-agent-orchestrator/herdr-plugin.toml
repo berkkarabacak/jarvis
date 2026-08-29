@@ -1,0 +1,17 @@
+# Herdr plugin skeleton — triggers Agent Orchestrator jobs from Herdr.
+# Install: herdr plugin link ./deploy/herdr-plugin-agent-orchestrator
+# Config (plugin config dir): ORCH_URL, ORCH_API_KEY
+
+id = "local.agent-orchestrator"
+name = "Agent Orchestrator"
+version = "0.1.0"
+description = "Run Agent Orchestrator jobs via POST /api/jobs/{id}/run"
+
+[[actions]]
+id = "run-job"
+name = "Run orchestrator job"
+description = "POST ORCH_URL/api/jobs/{job_id}/run with X-Api-Key"
+# Implementation depends on Herdr plugin runtime; shell example:
+#   curl -sS -X POST "$ORCH_URL/api/jobs/$JOB_ID/run" \
+#     -H "X-Api-Key: $ORCH_API_KEY" \
+#     -H "Idempotency-Key: herdr-$(date +%s)"

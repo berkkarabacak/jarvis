@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis</title>
+  <!--
+    Operator only: Berk sets the talk secret on the hosted server
+    or in the private build env. Users never see it.
+    Packaged start skips this window.
+  -->
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      font: 16px/1.45 system-ui, "Segoe UI", sans-serif;
+      background: #12263a;
+      color: #f4f7fb;
+    }
+    main {
+      min-height: 100%;
+      padding: 28px 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 650;
+    }
+    p { margin: 0; color: #d5deea; }
+    .plans {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .plan {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid #7ea0c4;
+      background: #0c1a29;
+      font-weight: 650;
+    }
+    .plan[data-current="1"] {
+      background: #f2c14e;
+      color: #1a1406;
+      border-color: #f2c14e;
+    }
+    button {
+      margin-top: 8px;
+      min-height: 48px;
+      border: 0;
+      border-radius: 999px;
+      background: #f2c14e;
+      color: #1a1406;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hint { font-size: 14px; color: #b9c7d6; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Welcome to Jarvis</h1>
+    <p>You can talk now. Nothing to paste.</p>
+    <p>Plans</p>
+    <div class="plans" role="list">
+      <span class="plan" data-current="1" role="listitem">Free</span>
+      <span class="plan" role="listitem">$3</span>
+      <span class="plan" role="listitem">$8</span>
+    </div>
+    <p class="hint">Free talks now. Pay for $3 or $8 is coming on berkly's site — not a charge in this window.</p>
+    <p class="hint" id="workspace">Your files stay in Documents\Jarvis</p>
+    <button id="open" type="button">Open Jarvis</button>
+  </main>
+  <script>
+    const wsEl = document.getElementById("workspace");
+    const openEl = document.getElementById("open");
+
+    async function init() {
+      try {
+        const hint = await window.jarvisFirstRun.workspaceHint();
+        if (hint && hint.text) wsEl.textContent = hint.text;
+      } catch (_) {}
+    }
+
+    openEl.addEventListener("click", async () => {
+      openEl.disabled = true;
+      try {
+        if (window.jarvisFirstRun && window.jarvisFirstRun.continue) {
+          await window.jarvisFirstRun.continue();
+        }
+      } catch (_) {
+        openEl.disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

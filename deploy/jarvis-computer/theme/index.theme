@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=JarvisWin
+Comment=Windows-like look for Jarvis's Linux computer (ORCH-402)
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=JarvisWin
+MetacityTheme=JarvisWin
+IconTheme=JarvisWin
+ButtonLayout=menu:minimize,maximize,close

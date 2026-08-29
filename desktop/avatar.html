@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font: 15px/1.35 system-ui, "Segoe UI", sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #bubble {
+      display: none;
+      position: absolute;
+      left: 8px;
+      right: 96px;
+      top: 8px;
+      bottom: 16px;
+      padding: 8px 10px 10px;
+      border-radius: 14px;
+      background: #12263a;
+      color: #f4f7fb;
+      border: 2px solid #f2c14e;
+      box-shadow: 0 8px 20px rgba(10, 16, 28, 0.35);
+    }
+    body.is-open #bubble { display: block; }
+    #bubble::after {
+      content: "";
+      position: absolute;
+      right: -8px;
+      bottom: 28px;
+      width: 12px;
+      height: 12px;
+      background: #12263a;
+      border-right: 2px solid #f2c14e;
+      border-bottom: 2px solid #f2c14e;
+      transform: rotate(-45deg);
+    }
+    #bubble-head {
+      display: flex;
+      align-items: center;
+      height: 16px;
+    }
+    #bubble-head svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+    #bubble-line {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-top: 3px;
+      color: #d5deea;
+      font-size: 12px;
+      min-height: 2.6em;
+    }
+    #ask-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    #ask {
+      flex: 1;
+      min-width: 0;
+      height: 28px;
+      border: 1px solid #3d5a78;
+      border-radius: 8px;
+      background: #0c1a29;
+      color: #f4f7fb;
+      padding: 0 8px;
+      font: 12px/1.2 system-ui, "Segoe UI", sans-serif;
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    #ask:focus { border-color: #8ec5ff; }
+    #ask-go {
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 8px;
+      background: #f2c14e;
+      color: #12263a;
+      font: 700 14px/1 system-ui, "Segoe UI", sans-serif;
+      cursor: pointer;
+    }
+    #avatar {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 88px;
+      height: 88px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: grab;
+    }
+    #avatar:active { cursor: grabbing; }
+    #close, #mute, #expand {
+      position: absolute;
+      top: 2px;
+      z-index: 3;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      border: 1px solid #f2c14e;
+      border-radius: 6px;
+      background: #12263a;
+      color: #f2c14e;
+      font: 700 14px/1 system-ui, "Segoe UI", sans-serif;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+    #close { right: 2px; }
+    #mute { right: 50px; }
+    #expand {
+      display: none;
+      right: 26px;
+      z-index: 2;
+      font-size: 13px;
+    }
+    body.is-open #expand { display: grid; }
+    #close:focus-visible, #mute:focus-visible, #expand:focus-visible {
+      outline: 2px solid #8ec5ff;
+      outline-offset: 1px;
+    }
+    #mute svg { width: 14px; height: 14px; display: block; }
+    #mute .icon-off { display: none; }
+    body.is-muted #mute .icon-on { display: none; }
+    body.is-muted #mute .icon-off { display: block; }
+    #avatar:focus-visible {
+      outline: 3px solid #8ec5ff;
+      outline-offset: 1px;
+      border-radius: 50%;
+    }
+    #avatar svg {
+      width: 88px;
+      height: 88px;
+      display: block;
+      overflow: visible;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="bubble" role="status">
+      <div id="bubble-head" aria-hidden="true">
+        <svg viewBox="0 0 16 16" role="img">
+          <path d="M8 2.2a2.4 2.4 0 0 0-2.4 2.4v2.8a2.4 2.4 0 1 0 4.8 0V4.6A2.4 2.4 0 0 0 8 2.2z" fill="#f2c14e"/>
+          <path d="M3.4 7.2a.7.7 0 0 1 1.4 0 3.2 3.2 0 1 0 6.4 0 .7.7 0 1 1 1.4 0 4.6 4.6 0 0 1-3.9 4.55V13h1.5a.7.7 0 1 1 0 1.4H5.8a.7.7 0 1 1 0-1.4h1.5v-1.25A4.6 4.6 0 0 1 3.4 7.2z" fill="#f2c14e"/>
+        </svg>
+      </div>
+      <span id="bubble-line">Click or speak</span>
+      <form id="ask-row" autocomplete="off">
+        <input id="ask" type="text" maxlength="240" placeholder="" aria-label="Ask Jarvis" title="Ask Jarvis" />
+        <button type="submit" id="ask-go" aria-label="Send" title="Send">→</button>
+      </form>
+    </div>
+    <button type="button" id="mute" aria-label="Mute Jarvis" title="Mute Jarvis">
+      <svg class="icon-on" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 6.2h2.3L8.2 3.6v8.8L4.8 9.8H2.5z" fill="currentColor"/>
+        <path d="M10.4 6.1a2.6 2.6 0 0 1 0 3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        <path d="M12 4.6a4.6 4.6 0 0 1 0 6.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <svg class="icon-off" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M2.5 6.2h2.3L8.2 3.6v8.8L4.8 9.8H2.5z" fill="currentColor"/>
+        <path d="M10.2 5.2l4.2 5.6M14.4 5.2l-4.2 5.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <button type="button" id="close" aria-label="Quit Jarvis" title="Quit Jarvis">×</button>
+    <button type="button" id="expand" aria-label="Open Jarvis" title="Open Jarvis">⤢</button>
+    <button type="button" id="avatar" aria-label="Talk to Jarvis" aria-expanded="false">
+      <svg viewBox="0 0 88 88" role="img" aria-hidden="true">
+        <defs>
+          <linearGradient id="ring" x1="12" y1="10" x2="76" y2="78" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#60A5FA"/>
+            <stop offset="1" stop-color="#C084FC"/>
+          </linearGradient>
+        </defs>
+        <circle cx="44" cy="46" r="30" fill="#12263a"/>
+        <circle cx="44" cy="46" r="30" fill="none" stroke="url(#ring)" stroke-width="3"/>
+        <circle cx="44" cy="46" r="30" fill="none" stroke="#f2c14e" stroke-width="1.2" opacity=".85"/>
+        <rect x="42.2" y="10" width="3.6" height="10" rx="1.8" fill="#f2c14e"/>
+        <circle cx="44" cy="10" r="3.4" fill="#f2c14e"/>
+        <rect x="28" y="36" width="32" height="18" rx="9" fill="#0c1a29"/>
+        <circle cx="36.5" cy="45" r="4.2" fill="#f4f7fb"/>
+        <circle cx="51.5" cy="45" r="4.2" fill="#f4f7fb"/>
+        <circle cx="36.5" cy="45" r="1.8" fill="#1e4d7b"/>
+        <circle cx="51.5" cy="45" r="1.8" fill="#1e4d7b"/>
+        <path d="M36 58c2.4 3.2 13.6 3.2 16 0" fill="none" stroke="#f2c14e" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+  <script>
+    const avatar = document.getElementById("avatar");
+    const expand = document.getElementById("expand");
+    const closeBtn = document.getElementById("close");
+    const muteBtn = document.getElementById("mute");
+    const body = document.body;
+    const line = document.getElementById("bubble-line");
+    const ask = document.getElementById("ask");
+    const askRow = document.getElementById("ask-row");
+    let down = null;
+    let moved = false;
+    let rec = null;
+    let recOn = false;
+    let canListen = true;
+    let muted = false;
+
+    function setOpen(open) {
+      body.classList.toggle("is-open", !!open);
+      avatar.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    function speechCtor() {
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+
+    function applyMuted(state) {
+      muted = !!(state && state.muted);
+      body.classList.toggle("is-muted", muted);
+      const label = muted ? "Unmute Jarvis" : "Mute Jarvis";
+      muteBtn.setAttribute("aria-label", label);
+      muteBtn.setAttribute("title", label);
+      // Speak-back is neural TTS / Realtime on the Talk page. Never SAPI.
+    }
+
+    function stopListen() {
+      recOn = false;
+      try { if (rec) rec.stop(); } catch (_) {}
+      rec = null;
+    }
+
+    function startListen() {
+      const Ctor = speechCtor();
+      if (!Ctor || recOn) return;
+      recOn = true;
+      rec = new Ctor();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.lang = "en-US";
+      rec.onresult = function (e) {
+        const said = ((e.results[0] && e.results[0][0] && e.results[0][0].transcript) || "").trim();
+        if (!said || !window.jarvisAvatar) return;
+        renderTalk({ status: "thinking", you: said });
+        void window.jarvisAvatar.ask(said);
+      };
+      rec.onerror = function () {
+        if (recOn) renderTalk({ status: "listening" });
+      };
+      rec.onend = function () {
+        if (!recOn) return;
+        try { rec.start(); } catch (_) {}
+      };
+      try { rec.start(); } catch (_) { recOn = false; }
+    }
+
+    function talkPathFromHealth(health) {
+      const h = health && typeof health === "object" ? health : {};
+      const listenMode = String(h.listen_mode || "");
+      const speakMode = String(h.speak_mode || "");
+      const openrouter = h.openrouter === true;
+      const hear =
+        h.can_listen === true ||
+        openrouter ||
+        listenMode === "browser_speech";
+      const useBrowser =
+        listenMode === "browser_speech" ||
+        speakMode === "openrouter_tts" ||
+        speakMode === "hosted_tts";
+      const mintRealtime =
+        !useBrowser && h.realtime === true && listenMode === "openai_realtime";
+      return {
+        canListen: mintRealtime || hear || useBrowser,
+        mintRealtime: mintRealtime,
+      };
+    }
+
+    async function maybeListen() {
+      let health = { can_listen: true, realtime: false, listen_mode: "browser_speech" };
+      try {
+        if (window.jarvisAvatar && window.jarvisAvatar.health) {
+          health = await window.jarvisAvatar.health() || health;
+        }
+      } catch (_) {}
+      const path = talkPathFromHealth(health);
+      canListen = path.canListen === true;
+      if (path.mintRealtime) return;
+      if (canListen === false) {
+        renderTalk({ status: "unavailable" });
+        return;
+      }
+      startListen();
+      renderTalk({ status: "listening" });
+    }
+
+    function talkLine(state) {
+      const status = (state && state.status) || "";
+      const reply = String((state && state.reply) || "").trim();
+      const you = String((state && state.you) || "").trim();
+      if (reply) return reply;
+      if (status === "listening") return "Listening…";
+      if (status === "thinking") return you || "Thinking…";
+      if (status === "unavailable") return "Can't hear right now";
+      if (status === "error") return canListen === false ? "Can't hear right now" : "Listening…";
+      if (you) return you;
+      return "Click or speak";
+    }
+
+    function renderTalk(state) {
+      if (!state) return;
+      if (typeof state.open === "boolean") setOpen(state.open);
+      line.textContent = talkLine(state);
+      if (state && typeof state.muted === "boolean") applyMuted(state);
+      // Speak-back is Realtime WebRTC or neural /api/jarvis/speak on the Talk
+      // page. Mute silences that path. Never play Windows SAPI here.
+    }
+
+    avatar.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      down = { x: e.screenX, y: e.screenY, lastX: e.screenX, lastY: e.screenY };
+      moved = false;
+      try { avatar.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    avatar.addEventListener("pointermove", (e) => {
+      if (!down || !window.jarvisAvatar) return;
+      const dx = e.screenX - down.lastX;
+      const dy = e.screenY - down.lastY;
+      if (Math.abs(e.screenX - down.x) > 5 || Math.abs(e.screenY - down.y) > 5) {
+        moved = true;
+      }
+      if (dx || dy) {
+        down.lastX = e.screenX;
+        down.lastY = e.screenY;
+        void window.jarvisAvatar.moveBy(dx, dy);
+      }
+    });
+
+    async function finishPointer(e) {
+      if (!down) return;
+      down = null;
+      if (moved) return;
+      if (!window.jarvisAvatar) return;
+      const state = await window.jarvisAvatar.clicked();
+      setOpen(state && state.open);
+      if (state && state.open) {
+        renderTalk({ status: "listening" });
+        void maybeListen();
+      } else {
+        stopListen();
+        renderTalk({ status: "idle" });
+      }
+    }
+
+    avatar.addEventListener("pointerup", finishPointer);
+    avatar.addEventListener("pointercancel", () => { down = null; });
+
+    function bindChrome(el, onClick) {
+      el.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+      });
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick(e);
+      });
+    }
+
+    bindChrome(expand, () => {
+      if (window.jarvisAvatar && window.jarvisAvatar.expand) {
+        void window.jarvisAvatar.expand();
+      }
+    });
+    bindChrome(closeBtn, () => {
+      if (window.jarvisAvatar && window.jarvisAvatar.quit) {
+        void window.jarvisAvatar.quit();
+      }
+    });
+    bindChrome(muteBtn, () => {
+      if (window.jarvisAvatar && window.jarvisAvatar.setMuted) {
+        void window.jarvisAvatar.setMuted(!muted);
+      }
+    });
+
+    ask.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      if (window.jarvisAvatar && window.jarvisAvatar.typeFocus) {
+        void window.jarvisAvatar.typeFocus();
+      }
+    });
+
+    async function submitAsk(e) {
+      if (e) e.preventDefault();
+      const text = (ask.value || "").trim();
+      if (!text || !window.jarvisAvatar) return;
+      ask.value = "";
+      renderTalk({ status: "thinking", you: text });
+      await window.jarvisAvatar.ask(text);
+      if (window.jarvisAvatar.typeBlur) void window.jarvisAvatar.typeBlur();
+    }
+
+    askRow.addEventListener("submit", (e) => { void submitAsk(e); });
+
+    if (window.jarvisAvatar && window.jarvisAvatar.onBubble) {
+      window.jarvisAvatar.onBubble(function (state) {
+        setOpen(state && state.open);
+        if (state && state.open && line.textContent === "Click or speak") {
+          renderTalk({ status: "listening" });
+        }
+      });
+    }
+    if (window.jarvisAvatar && window.jarvisAvatar.onTalk) {
+      window.jarvisAvatar.onTalk(renderTalk);
+    }
+    if (window.jarvisAvatar && window.jarvisAvatar.onMuted) {
+      window.jarvisAvatar.onMuted(applyMuted);
+    }
+    if (window.jarvisAvatar && window.jarvisAvatar.getMuted) {
+      void window.jarvisAvatar.getMuted().then(applyMuted).catch(function () {});
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+# ORCH-461 — Jarvis's Android computer.
+# A second machine class. Not the Play Store phone app (ORCH-382).
+# Linux (deploy/jarvis-computer) stays the default box.
+# Look / tap / type use docker exec into jarvis-android — never jarvis-computer.
+# Watch is localhost only (6081), same Talk iframe path as Linux noVNC.
+
+name: jarvis-android
+
+services:
+  jarvis-android:
+    image: ${JARVIS_ANDROID_IMAGE:-redroid/redroid:11.0.0-latest}
+    container_name: jarvis-android
+    hostname: jarvis-android
+    privileged: true
+    restart: unless-stopped
+    volumes:
+      - jarvis-android-data:/data
+    # Local-only ADB. Do not publish on all interfaces.
+    ports:
+      - "127.0.0.1:5555:5555"
+    command:
+      - androidboot.redroid_width=720
+      - androidboot.redroid_height=1280
+      - androidboot.redroid_fps=30
+      - androidboot.redroid_gpu_mode=guest
+
+  jarvis-android-watch:
+    build:
+      context: ./watch
+      dockerfile: Dockerfile
+    image: jarvis-android-watch:local
+    container_name: jarvis-android-watch
+    hostname: jarvis-android-watch
+    restart: unless-stopped
+    depends_on:
+      - jarvis-android
+    environment:
+      ANDROID_ADB: "jarvis-android:5555"
+    # Local-only watch. Same idea as Linux 6080 — Berk watches this screen.
+    ports:
+      - "127.0.0.1:6081:6081"
+
+volumes:
+  jarvis-android-data:
+    name: jarvis-android-data

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Image Viewer
+Comment=View image files
+Exec=ristretto %F
+Icon=org.xfce.ristretto
+Terminal=false
+Categories=Graphics;Viewer;
+StartupNotify=true
+MimeType=image/jpeg;image/png;image/gif;image/webp;image/bmp;

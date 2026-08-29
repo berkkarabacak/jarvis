@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Grok Automater">
+  <defs>
+    <linearGradient id="g" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#60A5FA"/>
+      <stop offset=".55" stop-color="#818CF8"/>
+      <stop offset="1" stop-color="#C084FC"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="18" y1="16" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E0F2FE"/>
+      <stop offset="1" stop-color="#DDD6FE"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0B1220"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#g)" opacity=".22"/>
+  <!-- orbit ring -->
+  <circle cx="32" cy="32" r="20" fill="none" stroke="url(#g)" stroke-width="2.2" opacity=".9"/>
+  <circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="1" opacity=".12"/>
+  <!-- spark / star -->
+  <g filter="url(#soft)">
+    <path d="M32 14.5c.7 5.2 4.3 8.8 9.5 9.5-5.2.7-8.8 4.3-9.5 9.5-.7-5.2-4.3-8.8-9.5-9.5 5.2-.7 8.8-4.3 9.5-9.5Z" fill="url(#g2)"/>
+    <circle cx="32" cy="32" r="4.2" fill="#fff" opacity=".95"/>
+  </g>
+  <!-- clock ticks for scheduler -->
+  <g stroke="#93C5FD" stroke-width="1.6" stroke-linecap="round" opacity=".85">
+    <path d="M32 10.5v3.2"/>
+    <path d="M32 50.3v3.2"/>
+    <path d="M10.5 32h3.2"/>
+    <path d="M50.3 32h3.2"/>
+  </g>
+  <!-- hand -->
+  <path d="M32 32l7.2-4.2" stroke="#F8FAFC" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

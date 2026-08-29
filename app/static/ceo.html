@@ -1,0 +1,2823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Jarvis</title>
+  <meta name="theme-color" content="#1e4d7b" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: #1e4d7b;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    #wall {
+      position: fixed; inset: 0; z-index: 0;
+      background-position: center;
+      background-size: cover;
+      transition: opacity 1.2s ease;
+      background-image:
+        radial-gradient(ellipse 90% 50% at 70% 12%, rgba(255, 213, 154, 0.85) 0%, transparent 52%),
+        linear-gradient(180deg, #1e4d7b 0%, #5b9bc6 38%, #e0b36a 68%, #3f6b3a 100%);
+    }
+    #wall.s1 {
+      background-image:
+        radial-gradient(ellipse 70% 40% at 20% 25%, rgba(255, 180, 120, 0.45), transparent 55%),
+        linear-gradient(165deg, #1a1040 0%, #3d2a6b 35%, #c4785a 65%, #2a1810 100%);
+    }
+    #wall.s2 {
+      background-image:
+        radial-gradient(ellipse 100% 60% at 50% 0%, rgba(120, 180, 255, 0.4), transparent 55%),
+        linear-gradient(180deg, #87b5d9 0%, #b8d4e8 40%, #6a8f5a 70%, #2d4a28 100%);
+    }
+    #wall.s3 {
+      background-image:
+        radial-gradient(ellipse 80% 45% at 80% 20%, rgba(255, 240, 200, 0.5), transparent 50%),
+        linear-gradient(180deg, #0a1628 0%, #1a3a4a 40%, #3d6b5c 70%, #1a2818 100%);
+    }
+    #voiceDock {
+      position: fixed; z-index: 2;
+      top: 50%; left: 50%;
+      width: min(28vw, 200px); height: min(28vw, 200px);
+      transform: translate(-50%, -50%);
+      border: 0; padding: 0; background: transparent;
+      cursor: pointer; border-radius: 50%; outline: none;
+    }
+    #voiceDock svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    #ring {
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 10;
+      stroke-linecap: round;
+      transition: stroke 0.25s ease;
+    }
+    /* Minimal status: circle color only — no bars/text chrome */
+    body[data-rt="live"] #ring { stroke: #ffffff; }
+    body[data-rt="connecting"] #ring { stroke: #93c5fd; }
+    body[data-rt="error"] #ring { stroke: #fca5a5; }
+
+    #stopBtn {
+      position: fixed; z-index: 30;
+      left: 50%; bottom: max(28px, env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      display: none;
+      width: 52px; height: 52px; min-width: 52px; min-height: 52px;
+      padding: 0; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.85);
+      background: rgba(20, 24, 32, .55);
+      color: #fff; font: 650 18px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer;
+      text-shadow: 0 1px 6px rgba(0,0,0,.65);
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    }
+    #stopBtn::after {
+      content: "";
+      width: 16px; height: 16px;
+      border-radius: 3px; background: #fff;
+    }
+    body[data-rt="connecting"] #stopBtn,
+    body[data-rt="live"] #stopBtn { display: grid; place-items: center; }
+    #stopBtn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+    #confirmPanel {
+      position: fixed; inset: 0; z-index: 50;
+      display: none;
+      align-items: center; justify-content: center;
+      padding: 24px;
+      background: rgba(0, 0, 0, .62);
+    }
+    #confirmPanel.is-open { display: flex; }
+    #confirmCard {
+      width: min(560px, 100%);
+      padding: 28px 24px 22px;
+      border-radius: 18px;
+      background: #0b1220;
+      border: 2px solid #fff;
+      color: #fff;
+      text-align: center;
+      box-shadow: 0 16px 48px rgba(0,0,0,.45);
+    }
+    #confirmText {
+      font: 650 22px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0 0 16px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #confirmCountdown {
+      font: 800 36px/1.15 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      margin: 0 0 22px;
+      letter-spacing: .02em;
+      color: #fff;
+    }
+    #confirmActions {
+      display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+    }
+    #confirmAllow, #confirmCancel {
+      min-width: 132px; min-height: 52px;
+      padding: 12px 22px; border-radius: 12px;
+      font: 700 18px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer; border: 2px solid transparent;
+    }
+    #confirmAllow {
+      background: #f8fafc; color: #0b1220; border-color: #f8fafc;
+    }
+    #confirmCancel {
+      background: transparent; color: #fff; border-color: #fff;
+    }
+    #confirmAllow:focus-visible, #confirmCancel:focus-visible {
+      outline: 3px solid #93c5fd; outline-offset: 2px;
+    }
+    #sink { display: none; }
+  </style>
+  <!-- iris-usage-overlay ORCH-313 start -->
+  <style>
+    /* Settings + usage overlay. Everything here is translucent so the
+       wallpaper reads straight through it; contrast comes from text shadow,
+       not from an opaque panel. One Settings control, top-right: a circular
+       gear icon (no leftover #iu-gear, no “Settings” pill). The usage menu
+       (Usage / Voice / Wallpaper / About) is icon-first and opens on pointer
+       proximity. IDs are prefixed iu- to avoid clashing. */
+    #iu-menu {
+      position: fixed; top: 57px; right: 15px; z-index: 41; min-width: 220px;
+      padding: 6px; border-radius: 12px;
+      background: rgba(12,16,24,.24);
+      border: 1px solid rgba(255,255,255,.14);
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      opacity: 0; transform: translateY(-6px);
+      transition: opacity .28s ease, transform .28s ease;
+      pointer-events: none;
+      font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    body.iu-open #iu-menu { opacity: 1; transform: none; pointer-events: auto; }
+    body.iu-settings-open #iu-menu { opacity: 0; pointer-events: none; }
+
+    .iu-item {
+      display: flex; align-items: center; justify-content: center; gap: 0;
+      width: 40px; height: 40px; padding: 0; border-radius: 8px;
+      color: rgba(255,255,255,.92); text-shadow: 0 1px 6px rgba(0,0,0,.7);
+      cursor: default; white-space: nowrap;
+    }
+    .iu-item[data-enabled="1"]:hover { background: rgba(255,255,255,.10); }
+    .iu-item[data-enabled="0"] { opacity: .38; }
+    .iu-item .iu-ico { font-size: 18px; line-height: 1; }
+    .iu-item .iu-tag { font-size: 10px; opacity: .55; }
+
+    #iu-usage {
+      max-height: 0; overflow: hidden; opacity: 0; padding: 0 11px;
+      transition: max-height .3s ease, opacity .3s ease, padding .3s ease;
+    }
+    #iu-usage.iu-show, .iu-panel.iu-show { max-height: 220px; opacity: 1; padding: 2px 11px 10px; }
+    .iu-panel {
+      max-height: 0; overflow: hidden; opacity: 0; padding: 0 11px;
+      transition: max-height .3s ease, opacity .3s ease, padding .3s ease;
+    }
+    .iu-cost {
+      font-size: 21px; font-weight: 650; color: #fff;
+      text-shadow: 0 1px 9px rgba(0,0,0,.8); font-variant-numeric: tabular-nums;
+    }
+    .iu-sub { font-size: 11px; color: rgba(255,255,255,.72);
+      text-shadow: 0 1px 6px rgba(0,0,0,.7); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    .iu-est { font-size: 10px; color: rgba(255,255,255,.5); margin-top: 5px; }
+    .iu-row {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+    }
+    .iu-chip {
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.92);
+      text-shadow: 0 1px 6px rgba(0,0,0,.7);
+      border-radius: 999px;
+      padding: 5px 10px;
+      font: 600 11px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer;
+    }
+    .iu-chip[data-on="1"] {
+      background: rgba(255,255,255,.22);
+      border-color: rgba(255,255,255,.55);
+    }
+    .iu-chip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .iu-about-line { margin-top: 4px; }
+
+    /* ORCH-322 — larger Settings sheet (still translucent over wallpaper) */
+    #iu-settings-sheet {
+      position: fixed; top: 56px; right: 15px; z-index: 42;
+      width: min(420px, calc(100vw - 30px));
+      max-height: min(82vh, 720px);
+      overflow: auto;
+      padding: 14px 14px 16px;
+      border-radius: 14px;
+      background: rgba(12,16,24,.32);
+      border: 1px solid rgba(255,255,255,.16);
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      color: rgba(255,255,255,.92);
+      text-shadow: 0 1px 6px rgba(0,0,0,.7);
+      font: 500 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      opacity: 0; transform: translateY(-8px);
+      transition: opacity .28s ease, transform .28s ease;
+      pointer-events: none;
+    }
+    body.iu-settings-open #iu-settings-sheet {
+      opacity: 1; transform: none; pointer-events: auto;
+    }
+    #iu-settings-sheet .iu-set-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      margin-bottom: 10px;
+    }
+    #iu-settings-sheet .iu-set-title { font-size: 15px; font-weight: 650; }
+    #iu-settings-sheet .iu-set-close {
+      width: 32px; height: 32px; padding: 0;
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.92);
+      border-radius: 999px;
+      font: 650 16px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer;
+      display: grid; place-items: center;
+    }
+    #iu-settings-sheet .iu-set-sec {
+      margin-top: 12px; padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,.10);
+    }
+    #iu-settings-sheet .iu-set-label {
+      font-size: 11px; letter-spacing: .02em; text-transform: uppercase;
+      color: rgba(255,255,255,.62); margin-bottom: 6px;
+    }
+    #iu-settings-sheet .iu-set-blurb {
+      font-size: 11px; color: rgba(255,255,255,.68); margin: 4px 0 8px;
+    }
+    #iu-settings-sheet select,
+    #iu-settings-sheet input[type="text"],
+    #iu-settings-sheet input[type="number"],
+    #iu-settings-sheet input[type="password"] {
+      width: 100%; box-sizing: border-box;
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.94);
+      border-radius: 8px;
+      padding: 7px 9px;
+      font: 500 12px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #iu-settings-sheet select option { color: #111; }
+    #iu-settings-sheet .iu-set-profiles { display: grid; gap: 6px; }
+    #iu-settings-sheet .iu-set-profile {
+      display: block; width: 100%; text-align: left;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.06);
+      color: rgba(255,255,255,.92);
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font: 500 12px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #iu-settings-sheet .iu-set-profile[data-on="1"] {
+      background: rgba(255,255,255,.18);
+      border-color: rgba(255,255,255,.50);
+    }
+    #iu-settings-sheet .iu-set-profile strong { display: block; margin-bottom: 2px; }
+    #iu-settings-sheet .iu-set-profile span { font-size: 11px; color: rgba(255,255,255,.68); }
+    #iu-settings-sheet .iu-set-secrets, #iu-settings-sheet .iu-set-audit {
+      font-size: 11px; color: rgba(255,255,255,.75);
+      font-variant-numeric: tabular-nums;
+    }
+    #iu-settings-sheet .iu-set-secrets div, #iu-settings-sheet .iu-set-audit div {
+      margin-top: 3px;
+    }
+    #iu-settings-sheet .iu-set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    #iu-settings-sheet .iu-set-conn { font-size: 12px; display: grid; gap: 8px; }
+    #iu-settings-sheet .iu-set-conn-row {
+      border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 8px;
+      background: rgba(0,0,0,.18);
+    }
+    #iu-settings-sheet .iu-set-conn-row strong { display: block; margin-bottom: 2px; }
+    #iu-settings-sheet .iu-set-conn-meta { font-size: 11px; color: rgba(255,255,255,.62); }
+    #iu-settings-sheet .iu-set-conn-err { font-size: 11px; color: rgba(255,160,160,.9); margin-top: 3px; }
+    #iu-settings-sheet .iu-set-conn-form { display: grid; gap: 6px; margin-top: 6px; }
+    #iu-settings-sheet .iu-set-conn-form input, #iu-settings-sheet .iu-set-conn-form select {
+      width: 100%; box-sizing: border-box; border-radius: 6px; border: 1px solid rgba(255,255,255,.18);
+      background: rgba(0,0,0,.25); color: #fff; padding: 6px 8px; font-size: 12px;
+    }
+    #iu-settings-sheet .iu-set-conn-form label { font-size: 11px; color: rgba(255,255,255,.7); display: flex; gap: 6px; align-items: center; }
+    #iu-settings-sheet .iu-set-status {
+
+      margin-top: 8px; font-size: 11px; color: rgba(255,255,255,.62);
+      min-height: 1.2em;
+    }
+    #iu-settings-backdrop {
+      position: fixed; inset: 0; z-index: 41;
+      background: rgba(0,0,0,.12);
+      opacity: 0; pointer-events: none;
+      transition: opacity .28s ease;
+    }
+    body.iu-settings-open #iu-settings-backdrop {
+      opacity: 1; pointer-events: auto;
+    }
+    #iu-settings-fab {
+      position: fixed; top: 16px; right: 16px; z-index: 45;
+      width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(12,16,24,.32);
+      color: rgba(255,255,255,.94);
+      text-shadow: 0 1px 6px rgba(0,0,0,.7);
+      font: 650 20px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      cursor: pointer;
+      display: grid; place-items: center;
+    }
+    #iu-settings-fab:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      #iu-menu, #iu-usage, .iu-panel, #iu-settings-sheet, #iu-settings-backdrop, #iu-settings-fab { transition: none; }
+    }
+  </style>
+  <script>
+    (function () {
+      "use strict";
+
+      // ---- usage accounting ---------------------------------------------
+      // The dollar figure is an ESTIMATE. Token COUNTS come straight from the
+      // OpenAI Realtime `response.done` events, so they are ground truth; the
+      // rates below are approximate and easy to edit. Cached-input discounts
+      // are intentionally ignored, which errs toward over-stating spend.
+      var RATES_USD_PER_MTOK = { audioIn: 10, audioOut: 20, textIn: 0.6, textOut: 2.4 };
+      var acc = { audioIn: 0, audioOut: 0, textIn: 0, textOut: 0, turns: 0 };
+
+      try {
+        var saved = JSON.parse(sessionStorage.getItem("iu-acc") || "null");
+        if (saved) { for (var k in acc) if (typeof saved[k] === "number") acc[k] = saved[k]; }
+      } catch (_) {}
+
+      function persist() { try { sessionStorage.setItem("iu-acc", JSON.stringify(acc)); } catch (_) {} }
+
+      function ingest(usage) {
+        if (!usage) return;
+        var i = usage.input_token_details || {};
+        var o = usage.output_token_details || {};
+        if (i.audio_tokens != null || i.text_tokens != null) {
+          acc.audioIn += i.audio_tokens || 0;
+          acc.textIn += i.text_tokens || 0;
+        } else {
+          acc.textIn += usage.input_tokens || 0;
+        }
+        if (o.audio_tokens != null || o.text_tokens != null) {
+          acc.audioOut += o.audio_tokens || 0;
+          acc.textOut += o.text_tokens || 0;
+        } else {
+          acc.textOut += usage.output_tokens || 0;
+        }
+        acc.turns += 1;
+        persist();
+        if (document.body && document.body.classList.contains("iu-open")) render();
+      }
+
+      function costUSD() {
+        var r = RATES_USD_PER_MTOK;
+        return (acc.audioIn * r.audioIn + acc.audioOut * r.audioOut +
+                acc.textIn * r.textIn + acc.textOut * r.textOut) / 1e6;
+      }
+
+      function fmt(n) { return (n || 0).toLocaleString("en-US"); }
+
+      // Test/automation seam and a place other code can push usage.
+      window.IrisUsage = {
+        ingest: ingest,
+        snapshot: function () { var s = {}; for (var k in acc) s[k] = acc[k]; s.costUSD = costUSD(); return s; },
+      };
+
+      // ---- observe the realtime data channel ----------------------------
+      // Wrap createDataChannel so we see `response.done` usage without editing
+      // the page's connect() logic. Runs at <head> parse, before that runs.
+      try {
+        var RP = window.RTCPeerConnection && window.RTCPeerConnection.prototype;
+        if (RP && !RP.__iuPatched) {
+          var orig = RP.createDataChannel;
+          RP.createDataChannel = function () {
+            var ch = orig.apply(this, arguments);
+            try {
+              ch.addEventListener("message", function (e) {
+                var m; try { m = JSON.parse(e.data); } catch (_) { return; }
+                if (m && m.type === "response.done" && m.response && m.response.usage) {
+                  ingest(m.response.usage);
+                }
+              });
+            } catch (_) {}
+            return ch;
+          };
+          RP.__iuPatched = true;
+        }
+      } catch (_) {}
+
+      // ---- settings (Voice / Wallpaper / About) -------------------------
+      var VOICES = ["marin", "alloy", "ash", "ballad", "cedar", "coral", "echo", "sage", "shimmer", "verse"];
+      var WALLS = [
+        { id: "s0", label: "Coast", cls: "" },
+        { id: "s1", label: "Dusk", cls: "s1" },
+        { id: "s2", label: "Lake", cls: "s2" },
+        { id: "s3", label: "Night", cls: "s3" },
+      ];
+      var settings = { voice: "marin", wall: "s0", wallAuto: true };
+      try {
+        var sSaved = JSON.parse(localStorage.getItem("iu-settings") || "null");
+        if (sSaved && typeof sSaved === "object") {
+          if (VOICES.indexOf(sSaved.voice) >= 0) settings.voice = sSaved.voice;
+          if (["s0", "s1", "s2", "s3"].indexOf(sSaved.wall) >= 0) settings.wall = sSaved.wall;
+          if (typeof sSaved.wallAuto === "boolean") settings.wallAuto = sSaved.wallAuto;
+        }
+      } catch (_) {}
+
+      function saveSettings() {
+        try { localStorage.setItem("iu-settings", JSON.stringify(settings)); } catch (_) {}
+        try {
+          window.dispatchEvent(new CustomEvent("iu-settings", { detail: Object.assign({}, settings) }));
+        } catch (_) {}
+      }
+
+      function applyWallNow() {
+        var wall = document.getElementById("wall");
+        if (!wall) return;
+        var meta = WALLS.filter(function (w) { return w.id === settings.wall; })[0] || WALLS[0];
+        wall.className = "";
+        if (meta.cls) wall.classList.add(meta.cls);
+        else wall.removeAttribute("class");
+      }
+
+      function preferredVoice() { return settings.voice; }
+
+      window.IrisSettings = {
+        get: function () { return Object.assign({}, settings); },
+        setVoice: function (v) {
+          if (VOICES.indexOf(v) < 0) return settings;
+          settings.voice = v;
+          saveSettings();
+          return Object.assign({}, settings);
+        },
+        setWall: function (id, auto) {
+          if (["s0", "s1", "s2", "s3"].indexOf(id) >= 0) settings.wall = id;
+          if (typeof auto === "boolean") settings.wallAuto = auto;
+          saveSettings();
+          applyWallNow();
+          return Object.assign({}, settings);
+        },
+        voices: VOICES.slice(),
+        walls: WALLS.map(function (w) { return { id: w.id, label: w.label }; }),
+      };
+
+      // ---- overlay UI ----------------------------------------------------
+      var costEl, subEl, aboutEl, panels = {};
+
+      function render() {
+        if (!costEl) return;
+        var c = costUSD();
+        costEl.textContent = "≈ $" + c.toFixed(c < 1 ? 4 : 2);
+        var totIn = acc.audioIn + acc.textIn, totOut = acc.audioOut + acc.textOut;
+        subEl.textContent = fmt(totIn) + " in · " + fmt(totOut) + " out · " +
+          acc.turns + (acc.turns === 1 ? " turn" : " turns");
+      }
+
+      function hidePanels(exceptId) {
+        Object.keys(panels).forEach(function (id) {
+          if (id !== exceptId) panels[id].classList.remove("iu-show");
+        });
+      }
+
+
+      function build() {
+        var menu = document.createElement("div");
+        menu.id = "iu-menu";
+        menu.setAttribute("role", "menu");
+
+        var IU_ICONS = {
+          Usage: "$",
+          Voice: "♪",
+          Wallpaper: "▣",
+          About: "i",
+          "Open Jarvis's screen": "▢"
+        };
+
+        function item(label, enabled, panelId) {
+          var el = document.createElement("div");
+          el.className = "iu-item";
+          el.dataset.enabled = enabled ? "1" : "0";
+          el.setAttribute("role", "menuitem");
+          el.setAttribute("aria-label", label);
+          el.setAttribute("title", label);
+          var glyph = document.createElement("span");
+          glyph.className = "iu-ico";
+          glyph.setAttribute("aria-hidden", "true");
+          glyph.textContent = IU_ICONS[label] || "•";
+          el.appendChild(glyph);
+          if (!enabled) {
+            var tag = document.createElement("span");
+            tag.className = "iu-tag";
+            tag.textContent = "soon";
+            el.appendChild(tag);
+          }
+          if (panelId) el.dataset.panel = panelId;
+          return el;
+        }
+
+        function attachPanel(label, panelId, fill) {
+          var it = item(label, true, panelId);
+          menu.appendChild(it);
+          var panel = document.createElement("div");
+          panel.id = panelId;
+          if (panelId !== "iu-usage") panel.classList.add("iu-panel");
+          fill(panel);
+          menu.appendChild(panel);
+          panels[panelId] = panel;
+          it.addEventListener("pointerenter", function () {
+            hidePanels(panelId);
+            panel.classList.add("iu-show");
+            if (panelId === "iu-usage") render();
+            if (panelId === "iu-about") refreshAbout();
+          });
+          return panel;
+        }
+
+        // Usage
+        attachPanel("Usage", "iu-usage", function (usage) {
+          usage.id = "iu-usage";
+          costEl = document.createElement("div"); costEl.className = "iu-cost";
+          subEl = document.createElement("div"); subEl.className = "iu-sub";
+          var est = document.createElement("div"); est.className = "iu-est";
+          est.textContent = "estimate · this session";
+          usage.appendChild(costEl); usage.appendChild(subEl); usage.appendChild(est);
+        });
+
+        // Voice
+        attachPanel("Voice", "iu-voice", function (panel) {
+          var hint = document.createElement("div");
+          hint.className = "iu-est";
+          hint.textContent = "Realtime voice · applies on next connect";
+          panel.appendChild(hint);
+          var row = document.createElement("div");
+          row.className = "iu-row";
+          VOICES.forEach(function (v) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-chip";
+            b.dataset.id = v;
+            b.textContent = v;
+            b.dataset.on = v === settings.voice ? "1" : "0";
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              settings.voice = v;
+              saveSettings();
+              Array.prototype.forEach.call(row.children, function (c) {
+                c.dataset.on = c.dataset.id === settings.voice ? "1" : "0";
+              });
+              // Best-effort live update if a data channel is open.
+              try {
+                var dc = window.__jarvisDC;
+                if (dc && dc.readyState === "open") {
+                  dc.send(JSON.stringify({
+                    type: "session.update",
+                    session: { audio: { output: { voice: v } } },
+                  }));
+                  hint.textContent = "Realtime voice · updated live (" + v + ")";
+                } else {
+                  hint.textContent = "Realtime voice · saved · reconnect to apply";
+                }
+              } catch (_) {
+                hint.textContent = "Realtime voice · saved · reconnect to apply";
+              }
+            });
+            row.appendChild(b);
+          });
+          panel.appendChild(row);
+        });
+
+        // Wallpaper
+        attachPanel("Wallpaper", "iu-wall", function (panel) {
+          var hint = document.createElement("div");
+          hint.className = "iu-est";
+          hint.textContent = settings.wallAuto ? "auto-rotates every 45s" : "manual scene";
+          panel.appendChild(hint);
+          var row = document.createElement("div");
+          row.className = "iu-row";
+          WALLS.forEach(function (w) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-chip";
+            b.dataset.id = w.id;
+            b.textContent = w.label;
+            b.dataset.on = w.id === settings.wall ? "1" : "0";
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              settings.wall = w.id;
+              settings.wallAuto = false;
+              saveSettings();
+              applyWallNow();
+              hint.textContent = "manual scene";
+              Array.prototype.forEach.call(row.children, function (c) {
+                c.dataset.on = c.dataset.id === settings.wall ? "1" : "0";
+              });
+              autoBtn.dataset.on = "0";
+            });
+            row.appendChild(b);
+          });
+          panel.appendChild(row);
+          var autoBtn = document.createElement("button");
+          autoBtn.type = "button";
+          autoBtn.className = "iu-chip";
+          autoBtn.textContent = "Auto-rotate";
+          autoBtn.dataset.on = settings.wallAuto ? "1" : "0";
+          autoBtn.style.marginTop = "8px";
+          autoBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            settings.wallAuto = !settings.wallAuto;
+            saveSettings();
+            autoBtn.dataset.on = settings.wallAuto ? "1" : "0";
+            hint.textContent = settings.wallAuto ? "auto-rotates every 45s" : "manual scene";
+            if (!settings.wallAuto) applyWallNow();
+          });
+          panel.appendChild(autoBtn);
+        });
+
+        // About
+        attachPanel("About", "iu-about", function (panel) {
+          aboutEl = document.createElement("div");
+          aboutEl.className = "iu-sub";
+          aboutEl.appendChild(document.createTextNode("Jarvis · local voice colleague"));
+          panel.appendChild(aboutEl);
+          var line2 = document.createElement("div");
+          line2.className = "iu-est iu-about-line";
+          line2.id = "iu-about-detail";
+          line2.textContent = "Loading…";
+          panel.appendChild(line2);
+        });
+
+        function refreshAbout() {
+          var el = document.getElementById("iu-about-detail");
+          if (!el) return;
+          var path = location.pathname.replace(/\/+$/, "");
+          var base = path.endsWith("/ceo") ? (path.slice(0, -"/ceo".length) || "") : "";
+          fetch(base + "/api/jarvis/health", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (h) {
+              var bits = [];
+              bits.push(
+                h.realtime
+                  ? "Realtime ready"
+                  : (h.can_listen ? "Listening ready" : "Can't talk right now")
+              );
+              if (h.workspace) bits.push(String(h.workspace));
+              bits.push("voice " + settings.voice);
+              el.textContent = bits.join(" · ");
+            })
+            .catch(function () {
+              el.textContent = "voice " + settings.voice + " · health unavailable";
+            });
+        }
+
+        // ORCH-410 — on-demand live desktop (same localhost:6080 session)
+        var screenItem = item("Open Jarvis's screen", true, "iu-jarvis-screen");
+        screenItem.id = "iu-open-jarvis-screen";
+        screenItem.setAttribute("role", "menuitem");
+        screenItem.style.cursor = "pointer";
+        menu.appendChild(screenItem);
+        screenItem.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          openJarvisScreen();
+        });
+
+        function openJarvisScreen() {
+          hidePanels(null);
+          document.body.classList.remove("iu-open");
+          if (window.jarvisDesktop && typeof window.jarvisDesktop.openScreen === "function") {
+            window.jarvisDesktop.openScreen();
+            return;
+          }
+          var path = location.pathname.replace(/\/+$/, "");
+          var base = path.endsWith("/ceo") ? (path.slice(0, -"/ceo".length) || "") : "";
+          window.open(base + "/ceo/jarvis-screen", "jarvis-screen");
+        }
+
+        // ORCH-322 — Settings (larger dismissible sheet). One top-right
+        // button only; do not add a left/sidebar Settings control.
+        var backdrop = document.createElement("div");
+        backdrop.id = "iu-settings-backdrop";
+        backdrop.setAttribute("aria-hidden", "true");
+
+        var sheet = document.createElement("div");
+        sheet.id = "iu-settings-sheet";
+        sheet.setAttribute("role", "dialog");
+        sheet.setAttribute("aria-label", "Settings");
+
+        var head = document.createElement("div");
+        head.className = "iu-set-head";
+        var title = document.createElement("div");
+        title.className = "iu-set-title";
+        title.textContent = "Settings";
+        var closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.className = "iu-set-close";
+        closeBtn.textContent = "×";
+        closeBtn.setAttribute("aria-label", "Close");
+        closeBtn.setAttribute("title", "Close");
+        head.appendChild(title);
+        head.appendChild(closeBtn);
+        sheet.appendChild(head);
+
+        function sec(label) {
+          var wrap = document.createElement("div");
+          wrap.className = "iu-set-sec";
+          var lab = document.createElement("div");
+          lab.className = "iu-set-label";
+          lab.textContent = label;
+          wrap.appendChild(lab);
+          sheet.appendChild(wrap);
+          return wrap;
+        }
+
+        var budgetSec = sec("Budget");
+        var budgetBlurb = document.createElement("div");
+        budgetBlurb.className = "iu-set-blurb";
+        budgetBlurb.textContent = "Spending limit. How much Jarvis may spend. Leave blank for the usual daily/monthly cap.";
+        budgetSec.appendChild(budgetBlurb);
+        var monthLab = document.createElement("div");
+        monthLab.className = "iu-set-label";
+        monthLab.textContent = "Monthly cap";
+        budgetSec.appendChild(monthLab);
+        var monthInput = document.createElement("input");
+        monthInput.type = "number";
+        monthInput.min = "0";
+        monthInput.step = "1";
+        monthInput.name = "monthly_budget_usd";
+        monthInput.placeholder = "Monthly limit in dollars";
+        monthInput.setAttribute("aria-label", "Monthly spending limit");
+        budgetSec.appendChild(monthInput);
+        var dayLab = document.createElement("div");
+        dayLab.className = "iu-set-label";
+        dayLab.textContent = "Daily cap";
+        dayLab.style.marginTop = "6px";
+        budgetSec.appendChild(dayLab);
+        var dayInput = document.createElement("input");
+        dayInput.type = "number";
+        dayInput.min = "0";
+        dayInput.step = "0.5";
+        dayInput.name = "daily_budget_usd";
+        dayInput.placeholder = "Daily limit in dollars";
+        dayInput.setAttribute("aria-label", "Daily spending limit");
+        budgetSec.appendChild(dayInput);
+        var spendBox = document.createElement("div");
+        spendBox.className = "iu-set-blurb";
+        spendBox.setAttribute("data-budget-spend", "1");
+        spendBox.textContent = "Spent so far will show here after you save a limit.";
+        budgetSec.appendChild(spendBox);
+
+        var planSec = sec("Subscribe");
+        planSec.id = "iu-subscribe";
+        var planBlurb = document.createElement("div");
+        planBlurb.className = "iu-set-blurb";
+        planBlurb.textContent = "Pick $3 or $8. Free is the try-Jarvis plan. Talk works on Free now.";
+        planSec.appendChild(planBlurb);
+        var planCurrent = document.createElement("div");
+        planCurrent.className = "iu-set-blurb";
+        planCurrent.id = "iu-plan-current";
+        planCurrent.textContent = "Current plan: Free";
+        planSec.appendChild(planCurrent);
+        var planBox = document.createElement("div");
+        planBox.className = "iu-set-profiles";
+        planBox.id = "iu-plan-box";
+        planSec.appendChild(planBox);
+        var selectedPlan = "free";
+        var PLAN_CHOICES = [
+          { id: "free", label: "Free", allows: "Talk now. Tiny spend cap." },
+          { id: "3", label: "$3", allows: "Spend limit." },
+          { id: "8", label: "$8", allows: "Spend limit." }
+        ];
+        var payHint = document.createElement("div");
+        payHint.className = "iu-set-blurb";
+        payHint.id = "iu-plan-pay-hint";
+        payHint.textContent = "Pay is coming on berkly's site. This window does not charge a card.";
+        planSec.appendChild(payHint);
+        var payBtn = document.createElement("button");
+        payBtn.type = "button";
+        payBtn.className = "iu-chip";
+        payBtn.id = "iu-plan-pay";
+        payBtn.textContent = "Pay";
+        payBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          payHint.textContent = "Card checkout is coming. Berk will host it. Free talks now.";
+        });
+        planSec.appendChild(payBtn);
+        function renderPlans(current) {
+          selectedPlan = current || "free";
+          while (planBox.firstChild) planBox.removeChild(planBox.firstChild);
+          PLAN_CHOICES.forEach(function (item) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-chip";
+            b.textContent = item.id === selectedPlan ? item.label + " · current" : item.label;
+            b.dataset.on = item.id === selectedPlan ? "1" : "0";
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              selectedPlan = item.id;
+              planCurrent.textContent = "Current plan: " + item.label;
+              renderPlans(item.id);
+              if (item.id === "free") {
+                payHint.textContent = "Free talks now. Pay for $3 or $8 is coming.";
+              } else {
+                payHint.textContent = "Pay is coming on berkly's site. This window does not charge a card.";
+              }
+            });
+            planBox.appendChild(b);
+          });
+          var chosen = PLAN_CHOICES.filter(function (p) { return p.id === selectedPlan; })[0];
+          if (chosen) {
+            var d = document.createElement("div");
+            d.className = "iu-set-blurb";
+            d.textContent = chosen.allows;
+            planBox.appendChild(d);
+          }
+        }
+        renderPlans("free");
+
+        var speedSec = sec("Speed");
+        var speedBlurb = document.createElement("div");
+        speedBlurb.className = "iu-set-blurb";
+        speedBlurb.textContent = "How fast models should work. This is not how often I look at the screen.";
+        speedSec.appendChild(speedBlurb);
+        var speedSel = document.createElement("select");
+        speedSel.name = "model_speed";
+        speedSel.setAttribute("aria-label", "Speed");
+        speedSec.appendChild(speedSel);
+        var MODEL_SPEEDS = [
+          { id: "fast", label: "Fast" },
+          { id: "balanced", label: "Normal" },
+          { id: "careful", label: "Careful" }
+        ];
+        function fillModelSpeed(current) {
+          while (speedSel.firstChild) speedSel.removeChild(speedSel.firstChild);
+          MODEL_SPEEDS.forEach(function (item) {
+            var opt = document.createElement("option");
+            opt.value = item.id;
+            opt.textContent = item.label;
+            if (item.id === current) opt.selected = true;
+            speedSel.appendChild(opt);
+          });
+        }
+        fillModelSpeed("balanced");
+
+        var qualitySec = sec("How Jarvis thinks");
+        var qualityBlurb = document.createElement("div");
+        qualityBlurb.className = "iu-set-blurb";
+        qualityBlurb.textContent = "Quality vs price. Fast / Balanced / Smart — not how often I look at the screen.";
+        qualitySec.appendChild(qualityBlurb);
+        var prefSel = document.createElement("select");
+        prefSel.name = "model_preference";
+        prefSel.setAttribute("aria-label", "Quality vs price");
+        prefSel.style.display = "none";
+        qualitySec.appendChild(prefSel);
+        var MODEL_PREFS = [
+          { id: "cheap_fast", label: "Cheaper" },
+          { id: "balanced", label: "Balanced" },
+          { id: "quality", label: "Smarter" }
+        ];
+        function fillPreference(current) {
+          while (prefSel.firstChild) prefSel.removeChild(prefSel.firstChild);
+          MODEL_PREFS.forEach(function (item) {
+            var opt = document.createElement("option");
+            opt.value = item.id;
+            opt.textContent = item.label;
+            if (item.id === current) opt.selected = true;
+            prefSel.appendChild(opt);
+          });
+        }
+        fillPreference("balanced");
+        var qualityBox = document.createElement("div");
+        qualityBox.className = "iu-set-profiles";
+        qualitySec.appendChild(qualityBox);
+        var selectedQuality = "balanced";
+        var QUALITY_CHOICES = [
+          { id: "fast", label: "Fast", allows: "Cheaper and quicker. Good for everyday asks." },
+          { id: "balanced", label: "Balanced", allows: "A middle path — not the cheapest, not the most expensive." },
+          { id: "smart", label: "Smart", allows: "Thinks harder. May cost more." }
+        ];
+
+        var computerSec = sec("Which computer Jarvis uses");
+        var computerBlurb = document.createElement("div");
+        computerBlurb.className = "iu-set-blurb";
+        computerBlurb.textContent = "Linux is the usual desktop. Android is a phone-shaped box he can tap. Same Jarvis, same memory. Not the phone app.";
+        computerSec.appendChild(computerBlurb);
+        var computerBox = document.createElement("div");
+        computerBox.className = "iu-set-profiles";
+        computerSec.appendChild(computerBox);
+        var selectedComputer = "linux";
+        var COMPUTER_CHOICES = [
+          { id: "linux", label: "Linux", allows: "The usual desktop. Chrome, notepad, files." },
+          { id: "android", label: "Android", allows: "A phone-shaped box he can tap. Same Jarvis, different computer." }
+        ];
+        function renderComputer(list, current) {
+          while (computerBox.firstChild) computerBox.removeChild(computerBox.firstChild);
+          selectedComputer = current === "android" ? "android" : "linux";
+          var choices = (list && list.length) ? list : COMPUTER_CHOICES;
+          choices.forEach(function (p) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-set-profile";
+            b.dataset.id = p.id;
+            b.dataset.on = p.id === selectedComputer ? "1" : "0";
+            var strong = document.createElement("strong");
+            strong.textContent = p.label || p.id;
+            var span = document.createElement("span");
+            span.textContent = p.allows || "";
+            b.appendChild(strong);
+            b.appendChild(span);
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              selectedComputer = p.id;
+              Array.prototype.forEach.call(computerBox.children, function (c) {
+                c.dataset.on = c.dataset.id === selectedComputer ? "1" : "0";
+              });
+              persistJarvis({ computer_kind: selectedComputer });
+            });
+            computerBox.appendChild(b);
+          });
+        }
+        renderComputer(COMPUTER_CHOICES, "linux");
+
+        var lookSec = sec("How often I look at the screen");
+        var lookBlurb = document.createElement("div");
+        lookBlurb.className = "iu-set-blurb";
+        lookBlurb.textContent = "Off means I only look when a job needs a picture. This is separate from Fast / Balanced / Smart.";
+        lookSec.appendChild(lookBlurb);
+        var lookSel = document.createElement("select");
+        lookSel.setAttribute("aria-label", "How often I look at the screen");
+        lookSec.appendChild(lookSel);
+
+        var approveSec = sec("Approve wait (seconds)");
+        var approveBlurb = document.createElement("div");
+        approveBlurb.className = "iu-set-blurb";
+        approveBlurb.textContent = "How long Allow waits before it accepts on its own. Default 10.";
+        approveSec.appendChild(approveBlurb);
+        var approveInput = document.createElement("input");
+        approveInput.type = "number";
+        approveInput.min = "1";
+        approveInput.max = "120";
+        approveInput.step = "1";
+        approveInput.name = "approve_countdown_sec";
+        approveInput.placeholder = "10";
+        approveInput.setAttribute("aria-label", "Approve wait (seconds)");
+        approveSec.appendChild(approveInput);
+
+        var lockSec = sec("Always use the same model");
+        var lockBlurb = document.createElement("div");
+        lockBlurb.className = "iu-set-blurb";
+        lockBlurb.textContent = "Optional. Turn this on only if you want Jarvis to keep one model. Leave off so Fast / Balanced / Smart can choose.";
+        lockSec.appendChild(lockBlurb);
+        var lockToggle = document.createElement("input");
+        lockToggle.type = "checkbox";
+        lockToggle.setAttribute("aria-label", "Always use the same model");
+        var lockLab = document.createElement("label");
+        lockLab.appendChild(lockToggle);
+        lockLab.appendChild(document.createTextNode(" Lock the model"));
+        lockSec.appendChild(lockLab);
+        var pinInput = document.createElement("input");
+        pinInput.type = "password";
+        pinInput.inputMode = "numeric";
+        pinInput.maxLength = 4;
+        pinInput.autocomplete = "off";
+        pinInput.placeholder = "Optional 4-digit PIN";
+        pinInput.setAttribute("aria-label", "PIN to change the model lock");
+        pinInput.style.marginTop = "6px";
+        lockSec.appendChild(pinInput);
+        var pinHint = document.createElement("div");
+        pinHint.className = "iu-set-blurb";
+        pinHint.textContent = "PIN is optional. Enter it to change the lock if one is already set.";
+        lockSec.appendChild(pinHint);
+
+        var providerSec = sec("Advanced");
+        var advBlurb = document.createElement("div");
+        advBlurb.className = "iu-set-blurb";
+        advBlurb.textContent = "Most people can skip this.";
+        providerSec.appendChild(advBlurb);
+        var providerSel = document.createElement("select");
+        providerSel.setAttribute("aria-label", "Provider");
+        providerSec.appendChild(providerSel);
+        var modelInput = document.createElement("input");
+        modelInput.type = "text";
+        modelInput.setAttribute("aria-label", "Locked model (advanced)");
+        modelInput.style.marginTop = "6px";
+        modelInput.placeholder = "Only if you lock one model";
+        providerSec.appendChild(modelInput);
+
+        var voiceSec = sec("Voice");
+        var voiceSel = document.createElement("select");
+        voiceSel.setAttribute("aria-label", "Realtime voice");
+        voiceSec.appendChild(voiceSel);
+        var voiceHint = document.createElement("div");
+        voiceHint.className = "iu-set-blurb";
+        voiceHint.textContent = "Saved on the server · applies on next connect";
+        voiceSec.appendChild(voiceHint);
+        var LOOK_SPEEDS = [
+          { id: "off", label: "Off" },
+          { id: "30s", label: "Every 30 seconds" },
+          { id: "10s", label: "Every 10 seconds" },
+          { id: "1s", label: "Every second" }
+        ];
+        function fillLookSpeed(current) {
+          while (lookSel.firstChild) lookSel.removeChild(lookSel.firstChild);
+          LOOK_SPEEDS.forEach(function (item) {
+            var opt = document.createElement("option");
+            opt.value = item.id;
+            opt.textContent = item.label;
+            if (item.id === current) opt.selected = true;
+            lookSel.appendChild(opt);
+          });
+        }
+        fillLookSpeed("off");
+
+        var profileSec = sec("Permission profile");
+        var profileBlurb = document.createElement("div");
+        profileBlurb.className = "iu-set-blurb";
+        profileBlurb.textContent = "Controls what Jarvis may do without asking.";
+        profileSec.appendChild(profileBlurb);
+        var profileBox = document.createElement("div");
+        profileBox.className = "iu-set-profiles";
+        profileSec.appendChild(profileBox);
+        var selectedProfile = "personal";
+
+        var desktopMode = /(?:\?|&)desktop=1(?:&|$)/.test(location.search || "");
+        var secretsBox = null;
+        if (!desktopMode) {
+          var secretsSec = sec("API keys");
+          secretsBox = document.createElement("div");
+          secretsBox.className = "iu-set-secrets";
+          secretsSec.appendChild(secretsBox);
+        }
+
+        var connSec = sec("Connectors");
+        var connBox = document.createElement("div");
+        connBox.className = "iu-set-conn";
+        var connEmpty = document.createElement("div");
+        connEmpty.className = "iu-est";
+        connEmpty.textContent = "None yet";
+        connBox.appendChild(connEmpty);
+        connSec.appendChild(connBox);
+        var connForm = document.createElement("div");
+        connForm.className = "iu-set-conn-form";
+        function connField(label, el) {
+          var wrap = document.createElement("div");
+          var lab = document.createElement("div");
+          lab.className = "iu-set-label";
+          lab.textContent = label;
+          wrap.appendChild(lab);
+          wrap.appendChild(el);
+          return wrap;
+        }
+        var connName = document.createElement("input");
+        connName.type = "text";
+        connName.placeholder = "Name";
+        connName.setAttribute("aria-label", "Connector name");
+        var connTransport = document.createElement("select");
+        connTransport.setAttribute("aria-label", "Transport");
+        [["stdio","Local (stdio)"],["http","Remote (HTTP)"]].forEach(function (pair) {
+          var o = document.createElement("option"); o.value = pair[0]; o.textContent = pair[1];
+          connTransport.appendChild(o);
+        });
+        var connCommand = document.createElement("input");
+        connCommand.type = "text";
+        connCommand.placeholder = "Command (e.g. python)";
+        connCommand.setAttribute("aria-label", "Command");
+        var connArgs = document.createElement("input");
+        connArgs.type = "text";
+        connArgs.placeholder = "Args (space-separated)";
+        connArgs.setAttribute("aria-label", "Args");
+        var connUrl = document.createElement("input");
+        connUrl.type = "text";
+        connUrl.placeholder = "https://mcp.example/rpc";
+        connUrl.setAttribute("aria-label", "URL");
+        var connToken = document.createElement("input");
+        connToken.type = "password";
+        connToken.placeholder = "Bearer token (optional, never shown again)";
+        connToken.setAttribute("aria-label", "Token");
+        connToken.autocomplete = "off";
+        var connTrusted = document.createElement("input");
+        connTrusted.type = "checkbox";
+        var connTrustedLab = document.createElement("label");
+        connTrustedLab.appendChild(connTrusted);
+        connTrustedLab.appendChild(document.createTextNode("Trusted (apply max tier)"));
+        var connMaxTier = document.createElement("select");
+        connMaxTier.setAttribute("aria-label", "Max auto tier");
+        ["L1","L2","L3","L5"].forEach(function (t) {
+          var o = document.createElement("option"); o.value = t; o.textContent = "Max tier " + t;
+          if (t === "L2") o.selected = true;
+          connMaxTier.appendChild(o);
+        });
+        var connAddBtn = document.createElement("button");
+        connAddBtn.type = "button";
+        connAddBtn.className = "iu-chip";
+        connAddBtn.textContent = "Add connector";
+        connForm.appendChild(connField("Name", connName));
+        connForm.appendChild(connField("Transport", connTransport));
+        connForm.appendChild(connField("Command", connCommand));
+        connForm.appendChild(connField("Args", connArgs));
+        connForm.appendChild(connField("URL", connUrl));
+        connForm.appendChild(connField("Token", connToken));
+        connForm.appendChild(connTrustedLab);
+        connForm.appendChild(connField("Max tier when trusted", connMaxTier));
+        connForm.appendChild(connAddBtn);
+        connSec.appendChild(connForm);
+        var presetBox = document.createElement("div");
+        presetBox.className = "iu-set-actions";
+        var presetHint = document.createElement("div");
+        presetHint.className = "iu-set-blurb";
+        presetHint.textContent = "Official read-only presets. Tokens are never shown again; scopes appear below once registered.";
+        connSec.appendChild(presetHint);
+        ["github", "slack"].forEach(function (pid) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "iu-chip";
+          b.textContent = pid === "github" ? "Add GitHub (read-only)" : "Add Slack (read-only)";
+          b.addEventListener("click", function (e) {
+            e.preventDefault();
+            var tokenVal = connToken.value || "";
+            setStatus("Registering " + pid + "…");
+            fetch(apiRoot() + "/api/jarvis/mcp/presets/" + encodeURIComponent(pid), {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token: tokenVal || null, refresh: false, enabled: true })
+            }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+              .then(function (res) {
+                if (!res.ok) { setStatus((res.d && res.d.detail) || "Preset failed"); return; }
+                connToken.value = "";
+                setStatus((pid === "github" ? "GitHub" : "Slack") + " connector ready (add token if needed)");
+                loadSettings();
+              })
+              .catch(function () { setStatus("Preset failed"); });
+          });
+          presetBox.appendChild(b);
+        });
+        connSec.appendChild(presetBox);
+        function syncConnTransport() {
+          var http = connTransport.value === "http";
+          connCommand.parentNode.style.display = http ? "none" : "";
+          connArgs.parentNode.style.display = http ? "none" : "";
+          connUrl.parentNode.style.display = http ? "" : "none";
+        }
+        connTransport.addEventListener("change", syncConnTransport);
+        syncConnTransport();
+
+        var auditSec = sec("Audit log");
+        var auditBox = document.createElement("div");
+        auditBox.className = "iu-set-audit";
+        auditSec.appendChild(auditBox);
+        var auditActions = document.createElement("div");
+        auditActions.className = "iu-set-actions";
+        var verifyBtn = document.createElement("button");
+        verifyBtn.type = "button";
+        verifyBtn.className = "iu-chip";
+        verifyBtn.textContent = "Verify chain";
+        var refreshAuditBtn = document.createElement("button");
+        refreshAuditBtn.type = "button";
+        refreshAuditBtn.className = "iu-chip";
+        refreshAuditBtn.textContent = "Refresh";
+        auditActions.appendChild(verifyBtn);
+        auditActions.appendChild(refreshAuditBtn);
+        auditSec.appendChild(auditActions);
+
+        var actions = document.createElement("div");
+        actions.className = "iu-set-actions";
+        var saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "iu-chip";
+        saveBtn.textContent = "Save changes";
+        actions.appendChild(saveBtn);
+        sheet.appendChild(actions);
+        var statusEl = document.createElement("div");
+        statusEl.className = "iu-set-status";
+        sheet.appendChild(statusEl);
+
+        function apiRoot() {
+          var path = location.pathname.replace(/\/+$/, "");
+          return path.endsWith("/ceo") ? (path.slice(0, -"/ceo".length) || "") : "";
+        }
+
+        function setStatus(msg) { statusEl.textContent = msg || ""; }
+
+        function fillSelect(sel, values, current) {
+          while (sel.firstChild) sel.removeChild(sel.firstChild);
+          (values || []).forEach(function (v) {
+            var opt = document.createElement("option");
+            opt.value = v;
+            opt.textContent = v;
+            if (v === current) opt.selected = true;
+            sel.appendChild(opt);
+          });
+        }
+
+        function renderProfiles(list, current) {
+          while (profileBox.firstChild) profileBox.removeChild(profileBox.firstChild);
+          selectedProfile = current || "personal";
+          (list || []).forEach(function (p) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-set-profile";
+            b.dataset.id = p.id;
+            b.dataset.on = p.id === selectedProfile ? "1" : "0";
+            var strong = document.createElement("strong");
+            strong.textContent = p.label + " · " + (p.max_auto_tier || "");
+            var span = document.createElement("span");
+            span.textContent = p.allows || "";
+            b.appendChild(strong);
+            b.appendChild(span);
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              selectedProfile = p.id;
+              Array.prototype.forEach.call(profileBox.children, function (c) {
+                c.dataset.on = c.dataset.id === selectedProfile ? "1" : "0";
+              });
+              persistJarvis({ permission_profile: selectedProfile });
+            });
+            profileBox.appendChild(b);
+          });
+        }
+
+        function renderQuality(list, current) {
+          while (qualityBox.firstChild) qualityBox.removeChild(qualityBox.firstChild);
+          selectedQuality = current || "balanced";
+          var choices = (list && list.length) ? list : QUALITY_CHOICES;
+          choices.forEach(function (p) {
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-set-profile";
+            b.dataset.id = p.id;
+            b.dataset.on = p.id === selectedQuality ? "1" : "0";
+            var strong = document.createElement("strong");
+            strong.textContent = p.label || p.id;
+            var span = document.createElement("span");
+            span.textContent = p.allows || "";
+            b.appendChild(strong);
+            b.appendChild(span);
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              selectedQuality = p.id;
+              if (prefSel) {
+                prefSel.value = selectedQuality === "fast" ? "cheap_fast" : selectedQuality === "smart" ? "quality" : "balanced";
+              }
+              Array.prototype.forEach.call(qualityBox.children, function (c) {
+                c.dataset.on = c.dataset.id === selectedQuality ? "1" : "0";
+              });
+              persistJarvis({
+                quality_vs_price: selectedQuality,
+                model_preference: prefSel ? prefSel.value : undefined,
+                model_lock: false
+              });
+            });
+            qualityBox.appendChild(b);
+          });
+        }
+
+        function money(n) {
+          if (n == null || n === "") return "no limit";
+          var v = Number(n);
+          if (!isFinite(v)) return "no limit";
+          return "$" + v.toFixed(v >= 10 ? 0 : 2);
+        }
+
+        function renderSpend(budget) {
+          var b = budget || {};
+          var monthLine = "This month: " + money(b.monthly_spent_usd || 0) + " of " + money(b.monthly_cap_usd);
+          var dayLine = "Today: " + money(b.daily_spent_usd || 0) + " of " + money(b.daily_cap_usd);
+          var extra = "";
+          if (b.hit) extra = " Limit reached — Jarvis will stop or use a cheaper model.";
+          else if (b.near_cap) extra = " Getting close to the limit.";
+          spendBox.textContent = monthLine + " · " + dayLine + extra;
+        }
+
+        function renderSecrets(secrets) {
+          if (!secretsBox) return;
+          while (secretsBox.firstChild) secretsBox.removeChild(secretsBox.firstChild);
+          var list = Array.isArray(secrets) ? secrets : [];
+          if (!list.length) {
+            secretsBox.textContent = "No key slots";
+            return;
+          }
+          list.forEach(function (item) {
+            var row = document.createElement("div");
+            var name = (item && item.name) || "key";
+            var flag = !!(item && item.configured);
+            row.textContent = name + " · " + (flag ? "configured" : "not configured");
+            secretsBox.appendChild(row);
+          });
+        }
+
+        function renderAudit(entries) {
+          while (auditBox.firstChild) auditBox.removeChild(auditBox.firstChild);
+          if (!entries || !entries.length) {
+            auditBox.textContent = "No recent entries";
+            return;
+          }
+          entries.slice().reverse().forEach(function (e) {
+            var row = document.createElement("div");
+            var tool = e.tool || e.event || "entry";
+            var src = e.source || "";
+            var ts = e.ts ? new Date(e.ts * 1000).toLocaleString() : "";
+            row.textContent = (ts ? ts + " · " : "") + tool + (src ? " · " + src : "");
+            auditBox.appendChild(row);
+          });
+        }
+
+        function renderConnectors(list, emptyLabel) {
+          while (connBox.firstChild) connBox.removeChild(connBox.firstChild);
+          if (!list || !list.length) {
+            var empty = document.createElement("div");
+            empty.className = "iu-est";
+            empty.textContent = emptyLabel || "None yet";
+            connBox.appendChild(empty);
+            return;
+          }
+          list.forEach(function (c) {
+            var row = document.createElement("div");
+            row.className = "iu-set-conn-row";
+            var title = document.createElement("strong");
+            title.textContent = (c.name || c.id || "connector") + " · " + (c.transport || "?");
+            row.appendChild(title);
+            var meta = document.createElement("div");
+            meta.className = "iu-set-conn-meta";
+            var tools = (c.discovered_tools && c.discovered_tools.length) ? (c.discovered_tools.length + " tools") : "no tools";
+            var trust = c.trusted ? ("trusted max " + (c.max_tier || "L5")) : "untrusted (L5)";
+            var tok = c.has_token ? "token set" : "no token";
+            var ro = c.read_only ? "read-only" : "";
+            meta.textContent = (c.status || "unknown") + " · " + tools + " · " + trust + " · " + tok
+              + (ro ? " · " + ro : "")
+              + (c.enabled === false ? " · disabled" : "");
+            row.appendChild(meta);
+            if (c.granted_scopes && c.granted_scopes.length) {
+              var scopesEl = document.createElement("div");
+              scopesEl.className = "iu-set-conn-scopes";
+              scopesEl.textContent = "Scopes (granted, read-only): " + c.granted_scopes.join(", ");
+              row.appendChild(scopesEl);
+            }
+            if (c.last_error) {
+              var err = document.createElement("div");
+              err.className = "iu-set-conn-err";
+              err.textContent = String(c.last_error).slice(0, 200);
+              row.appendChild(err);
+            }
+            var actions = document.createElement("div");
+            actions.className = "iu-set-actions";
+            var refreshBtn = document.createElement("button");
+            refreshBtn.type = "button";
+            refreshBtn.className = "iu-chip";
+            refreshBtn.textContent = "Refresh";
+            refreshBtn.addEventListener("click", function (e) {
+              e.preventDefault();
+              fetch(apiRoot() + "/api/jarvis/mcp/servers/" + encodeURIComponent(c.id) + "/refresh", {
+                method: "POST", credentials: "same-origin"
+              }).then(function (r) { return r.json(); }).then(function () { loadSettings(); })
+                .catch(function () { setStatus("Refresh failed"); });
+            });
+            var removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "iu-chip";
+            removeBtn.textContent = "Remove";
+            removeBtn.addEventListener("click", function (e) {
+              e.preventDefault();
+              fetch(apiRoot() + "/api/jarvis/mcp/servers/" + encodeURIComponent(c.id), {
+                method: "DELETE", credentials: "same-origin"
+              }).then(function (r) { return r.json(); }).then(function () { loadSettings(); })
+                .catch(function () { setStatus("Remove failed"); });
+            });
+            actions.appendChild(refreshBtn);
+            actions.appendChild(removeBtn);
+            row.appendChild(actions);
+            connBox.appendChild(row);
+          });
+        }
+
+        connAddBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          var transport = connTransport.value;
+          var argsRaw = (connArgs.value || "").trim();
+          var args = argsRaw ? argsRaw.split(/\s+/) : [];
+          var body = {
+            name: (connName.value || "").trim(),
+            transport: transport,
+            enabled: true,
+            trusted: !!connTrusted.checked,
+            max_tier: connMaxTier.value || "L5",
+            refresh: true
+          };
+          if (!body.name) { setStatus("Connector name required"); return; }
+          if (transport === "http") {
+            body.url = (connUrl.value || "").trim();
+            if (!body.url) { setStatus("URL required for HTTP"); return; }
+          } else {
+            body.command = (connCommand.value || "").trim();
+            body.args = args;
+            if (!body.command) { setStatus("Command required for stdio"); return; }
+          }
+          var tokenVal = connToken.value || "";
+          if (tokenVal) body.token = tokenVal;
+          setStatus("Adding connector…");
+          fetch(apiRoot() + "/api/jarvis/mcp/servers", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+            .then(function (res) {
+              if (!res.ok) { setStatus((res.d && res.d.detail) || "Add failed"); return; }
+              connName.value = "";
+              connCommand.value = "";
+              connArgs.value = "";
+              connUrl.value = "";
+              connToken.value = "";
+              connTrusted.checked = false;
+              setStatus("Connector added");
+              loadSettings();
+            })
+            .catch(function () { setStatus("Add failed"); });
+        });
+
+        function loadSettings() {
+
+          setStatus("Loading…");
+          return fetch(apiRoot() + "/api/jarvis/settings", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              fillSelect(providerSel, data.providers || [], data.provider);
+              modelInput.value = data.model_lock ? (data.model || "") : "";
+              fillSelect(voiceSel, data.realtime_voices || VOICES, data.realtime_voice || settings.voice);
+              fillLookSpeed(data.look_speed || "off");
+              fillModelSpeed(data.model_speed || "balanced");
+              renderComputer(data.computer_kinds || COMPUTER_CHOICES, data.computer_kind || "linux");
+              fillPreference(data.model_preference || "balanced");
+              renderQuality(data.quality_vs_price_choices || QUALITY_CHOICES, data.quality_vs_price || "balanced");
+              renderProfiles(data.permission_profiles || [], data.permission_profile);
+              renderSecrets(data.secrets || {});
+              renderConnectors(data.connectors || [], data.connectors_empty || "None yet");
+              monthInput.value = (data.monthly_budget_usd != null) ? data.monthly_budget_usd : "";
+              dayInput.value = (data.daily_budget_usd != null) ? data.daily_budget_usd : "";
+              approveInput.value = (data.approve_countdown_sec != null) ? data.approve_countdown_sec : 10;
+              lockToggle.checked = !!data.model_lock;
+              pinHint.textContent = data.model_lock_pin_set
+                ? "A PIN is set. Enter it to change the lock."
+                : "PIN is optional. Enter it to change the lock if one is already set.";
+              renderSpend(data.budget || {});
+              // Keep local voice chip in sync with server preference.
+              if (data.realtime_voice && VOICES.indexOf(data.realtime_voice) >= 0) {
+                settings.voice = data.realtime_voice;
+                saveSettings();
+              }
+              setStatus("");
+              return data;
+            })
+            .catch(function () { setStatus("Could not load settings"); });
+        }
+
+        function loadAudit() {
+          return fetch(apiRoot() + "/api/jarvis/audit/recent?n=20", { credentials: "same-origin" })
+            .then(function (r) { return r.json(); })
+            .then(function (data) { renderAudit(data.entries || []); })
+            .catch(function () { auditBox.textContent = "Audit unavailable"; });
+        }
+
+        function openSettings() {
+          hidePanels(null);
+          document.body.classList.remove("iu-open");
+          document.body.classList.add("iu-near", "iu-settings-open");
+          loadSettings();
+          loadAudit();
+        }
+        function closeSettings() {
+          document.body.classList.remove("iu-settings-open");
+          setStatus("");
+        }
+
+        closeBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          closeSettings();
+        });
+        backdrop.addEventListener("click", function () { closeSettings(); });
+        window.addEventListener("keydown", function (e) {
+          if (e.key === "Escape" && document.body.classList.contains("iu-settings-open")) {
+            closeSettings();
+          }
+        });
+
+        function persistJarvis(partial) {
+          var body = {};
+          var src = partial && typeof partial === "object" ? partial : {};
+          Object.keys(src).forEach(function (k) {
+            if (src[k] !== undefined) body[k] = src[k];
+          });
+          if (!Object.keys(body).length) return Promise.resolve(null);
+          setStatus("Saving…");
+          return fetch(apiRoot() + "/api/jarvis/settings", {
+            method: "PUT",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (!res.ok) {
+                setStatus("Could not save");
+                return null;
+              }
+              if (res.j.realtime_voice && VOICES.indexOf(res.j.realtime_voice) >= 0) {
+                settings.voice = res.j.realtime_voice;
+                saveSettings();
+              }
+              if (res.j.permission_profiles) {
+                renderProfiles(res.j.permission_profiles, res.j.permission_profile);
+              }
+              if (res.j.quality_vs_price_choices || res.j.quality_vs_price) {
+                renderQuality(res.j.quality_vs_price_choices || QUALITY_CHOICES, res.j.quality_vs_price || selectedQuality);
+              }
+              if (res.j.model_speed) fillModelSpeed(res.j.model_speed);
+              if (res.j.look_speed) fillLookSpeed(res.j.look_speed);
+              if (res.j.computer_kind || res.j.computer_kinds) {
+                renderComputer(res.j.computer_kinds || COMPUTER_CHOICES, res.j.computer_kind || selectedComputer);
+              }
+              if (res.j.realtime_voices || res.j.realtime_voice) {
+                fillSelect(voiceSel, res.j.realtime_voices || VOICES, res.j.realtime_voice || settings.voice);
+              }
+              if (res.j.secrets) renderSecrets(res.j.secrets);
+              if (res.j.budget) renderSpend(res.j.budget);
+              if (res.j.monthly_budget_usd != null) monthInput.value = res.j.monthly_budget_usd;
+              if (res.j.daily_budget_usd != null) dayInput.value = res.j.daily_budget_usd;
+              if (res.j.approve_countdown_sec != null) approveInput.value = res.j.approve_countdown_sec;
+              setStatus("Saved");
+              loadAudit();
+              return res.j;
+            })
+            .catch(function () { setStatus("Could not save"); return null; });
+        }
+
+        function allSettingsBody() {
+          var body = {
+            permission_profile: selectedProfile,
+            provider: providerSel.value,
+            realtime_voice: voiceSel.value,
+            look_speed: lookSel.value,
+            computer_kind: selectedComputer,
+            quality_vs_price: selectedQuality,
+            model_speed: speedSel.value,
+            model_preference: prefSel.value,
+            model_lock: !!lockToggle.checked,
+            monthly_budget_usd: monthInput.value === "" ? 0 : Number(monthInput.value),
+            daily_budget_usd: dayInput.value === "" ? 0 : Number(dayInput.value),
+            approve_countdown_sec: (function () {
+              var n = Number(approveInput.value);
+              if (approveInput.value === "" || n !== n) return 10;
+              if (n < 1) return 1;
+              if (n > 120) return 120;
+              return Math.floor(n);
+            })()
+          };
+          if (lockToggle.checked && (modelInput.value || "").trim()) {
+            body.model = modelInput.value.trim();
+          } else if (!lockToggle.checked) {
+            body.model = null;
+          }
+          if ((pinInput.value || "").trim()) {
+            var pinVal = pinInput.value.trim();
+            body.unlock_pin = pinVal;
+            if (pinVal.length === 4) body.model_lock_pin = pinVal;
+          }
+          return body;
+        }
+
+        speedSel.addEventListener("change", function () {
+          persistJarvis({ model_speed: speedSel.value });
+        });
+        lookSel.addEventListener("change", function () {
+          persistJarvis({ look_speed: lookSel.value });
+        });
+        voiceSel.addEventListener("change", function () {
+          persistJarvis({ realtime_voice: voiceSel.value });
+        });
+        providerSel.addEventListener("change", function () {
+          persistJarvis({ provider: providerSel.value });
+        });
+        monthInput.addEventListener("change", function () {
+          persistJarvis({ monthly_budget_usd: monthInput.value === "" ? 0 : Number(monthInput.value) });
+        });
+        dayInput.addEventListener("change", function () {
+          persistJarvis({ daily_budget_usd: dayInput.value === "" ? 0 : Number(dayInput.value) });
+        });
+        approveInput.addEventListener("change", function () {
+          var n = Number(approveInput.value);
+          if (approveInput.value === "" || n !== n) n = 10;
+          if (n < 1) n = 1;
+          if (n > 120) n = 120;
+          persistJarvis({ approve_countdown_sec: Math.floor(n) });
+        });
+        lockToggle.addEventListener("change", function () {
+          persistJarvis({
+            model_lock: !!lockToggle.checked,
+            model: lockToggle.checked && (modelInput.value || "").trim() ? modelInput.value.trim() : null,
+            unlock_pin: (pinInput.value || "").trim() || undefined
+          });
+        });
+
+        saveBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          persistJarvis(allSettingsBody()).then(function (saved) {
+            if (saved) pinInput.value = "";
+          });
+        });
+
+        verifyBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          setStatus("Verifying…");
+          fetch(apiRoot() + "/api/jarvis/audit/verify", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: "{}",
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              setStatus(data.ok ? "Audit chain intact" : ("Tamper check failed: " + (data.verify_across_rotation && data.verify_across_rotation.reason || "broken")));
+            })
+            .catch(function () { setStatus("Verify failed"); });
+        });
+        refreshAuditBtn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          loadAudit();
+        });
+
+        document.body.appendChild(backdrop);
+        document.body.appendChild(sheet);
+
+        var settingsFab = document.createElement("button");
+        settingsFab.type = "button";
+        settingsFab.id = "iu-settings-fab";
+        settingsFab.textContent = "⚙";
+        settingsFab.setAttribute("aria-label", "Settings");
+        settingsFab.setAttribute("title", "Settings");
+        settingsFab.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          openSettings();
+        });
+        document.body.appendChild(settingsFab);
+
+        document.body.appendChild(menu);
+        applyWallNow();
+        render();
+
+        // ---- reveal usage menu by pointer position (no leftover gear) ----
+        var hideT = 0, hovering = false;
+        function near(e) { return e.clientX > window.innerWidth - 180 && e.clientY < 180; }
+        function openMenu() { document.body.classList.add("iu-near", "iu-open"); render(); }
+        function close() {
+          document.body.classList.remove("iu-near", "iu-open", "iu-settings-open");
+          hidePanels(null);
+        }
+        window.addEventListener("pointermove", function (e) {
+          if (near(e)) {
+            clearTimeout(hideT);
+            document.body.classList.add("iu-near");
+            if (!document.body.classList.contains("iu-settings-open")) openMenu();
+          } else if (!hovering && !document.body.classList.contains("iu-settings-open")) {
+            clearTimeout(hideT); hideT = setTimeout(close, 500);
+          }
+        }, { passive: true });
+        menu.addEventListener("pointerenter", function () { hovering = true; clearTimeout(hideT); });
+        menu.addEventListener("pointerleave", function () { hovering = false; hideT = setTimeout(close, 500); });
+        // Keep usage numbers live while that panel is on screen.
+        setInterval(function () {
+          if (panels["iu-usage"] && panels["iu-usage"].classList.contains("iu-show")) render();
+        }, 1000);
+
+        function shouldOpenSettings() {
+          try {
+            var q = new URLSearchParams(window.location.search || "");
+            if (q.get("settings") === "1" || q.get("settings") === "true") return true;
+            var hash = (window.location.hash || "").replace(/^#/, "");
+            if (hash === "settings") return true;
+          } catch (_) {}
+          return false;
+        }
+        if (shouldOpenSettings()) openSettings();
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", build);
+      } else {
+        build();
+      }
+    })();
+  </script>
+  <!-- iris-usage-overlay ORCH-313 end -->
+</head>
+<body>
+  <div id="wall" aria-hidden="true"></div>
+  <audio id="sink" autoplay playsinline></audio>
+  <button type="button" id="voiceDock" aria-label="Jarvis">
+    <svg viewBox="0 0 1000 1000" aria-hidden="true">
+      <circle id="ring" cx="500" cy="500" r="140" vector-effect="non-scaling-stroke" />
+    </svg>
+  </button>
+
+  <button type="button" id="stopBtn" aria-label="Stop" title="Stop"></button>
+  <div id="confirmPanel" role="dialog" aria-modal="true" aria-labelledby="confirmText" hidden>
+    <div id="confirmCard">
+      <p id="confirmText"></p>
+      <p id="confirmCountdown" aria-live="polite"></p>
+      <div id="confirmActions">
+        <button type="button" id="confirmAllow">Allow</button>
+        <button type="button" id="confirmCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* Jarvis voice: OpenRouter-only is enough to talk (Web Speech + /ask +
+       neural /speak). OpenAI Realtime is an optional upgrade when health
+       says listen_mode=openai_realtime. Never mint a session just because
+       the Realtime flag is on. Never Windows SAPI. ==GRoK==
+       UI: landscape wallpaper + empty white center circle only. */
+
+    const BASE_R = 140, MAX_R = 230, W = 14, ZETA = 0.85, H = 1 / 60;
+    const wall = document.getElementById("wall");
+    const ring = document.getElementById("ring");
+    const dock = document.getElementById("voiceDock");
+    const sink = document.getElementById("sink");
+
+    let radius = BASE_R, vel = 0, target = BASE_R;
+    let live = false;
+    let pc = null, dc = null, micStream = null, outSource = null;
+    let audioCtx = null, inAnalyser = null, outAnalyser = null, inBuf = null, outBuf = null;
+    let attempt = 0, pending = false, greeted = false, wallIdx = 0;
+    const pendingArgs = new Map(); // call_id -> {name, args text}
+    const handledCalls = new Set(); // dedupe function_call_arguments.done vs output_item.done
+    let pendingAvatarAsk = null;
+    let avatarReplyBuf = "";
+    let listenMode = "unknown";
+    let canListen = false;
+    let mintRealtime = false;
+    let browserRec = null;
+    let browserListenOn = false;
+    let outputMuted = false;
+
+    function talkPathFromHealth(health) {
+      const h = health && typeof health === "object" ? health : {};
+      const nextListen = String(h.listen_mode || "");
+      const speakMode = String(h.speak_mode || "");
+      const openrouter = h.openrouter === true;
+      const hear =
+        h.can_listen === true ||
+        openrouter ||
+        nextListen === "browser_speech";
+      const speak =
+        h.can_speak === true ||
+        speakMode === "openrouter_tts" ||
+        speakMode === "openai_tts" ||
+        speakMode === "openai_realtime";
+      const useBrowser =
+        nextListen === "browser_speech" || speakMode === "openrouter_tts";
+      const useRealtime =
+        !useBrowser && h.realtime === true && nextListen === "openai_realtime";
+      if (useRealtime) {
+        return {
+          path: "openai_realtime",
+          listenMode: "openai_realtime",
+          canListen: true,
+          canSpeak: true,
+          mintRealtime: true,
+        };
+      }
+      if (hear || useBrowser) {
+        return {
+          path: "browser_speech",
+          listenMode: "browser_speech",
+          canListen: true,
+          canSpeak: !!speak,
+          mintRealtime: false,
+        };
+      }
+      return {
+        path: "none",
+        listenMode: "none",
+        canListen: false,
+        canSpeak: false,
+        mintRealtime: false,
+      };
+    }
+
+    function applyTalkPath(health) {
+      const path = talkPathFromHealth(health);
+      canListen = path.canListen;
+      listenMode = path.listenMode;
+      mintRealtime = path.mintRealtime === true;
+      return path;
+    }
+
+    function apiBase() {
+      const path = location.pathname.replace(/\/+$/, "");
+      if (path.endsWith("/ceo")) return path.slice(0, -"/ceo".length) || "";
+      return "";
+    }
+
+    // ORCH-398: mini avatar shows a short line; never raise this window.
+    function reportAvatarTalk(partial) {
+      if (!window.jarvisDesktop || typeof window.jarvisDesktop.reportTalk !== "function") return;
+      try { window.jarvisDesktop.reportTalk(partial || {}); } catch (_) {}
+    }
+
+    function sendUserTextFromAvatar(text) {
+      const clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      if (!clean) return;
+      if (activeConfirmId) {
+        void onUserTranscript(clean);
+        return;
+      }
+      clearRealtimeTaint(clean);
+      if (listenMode !== "openai_realtime") {
+        void askViaOpenRouter(clean);
+        return;
+      }
+      if (!dc || dc.readyState !== "open") {
+        pendingAvatarAsk = clean;
+        void focusVoice("avatar");
+        return;
+      }
+      pendingAvatarAsk = null;
+      try {
+        dc.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: clean }],
+          },
+        }));
+        dc.send(JSON.stringify({ type: "response.create" }));
+      } catch (_) {}
+    }
+
+    async function refreshListenHealth() {
+      try {
+        const res = await fetch(apiBase() + "/api/jarvis/health", { credentials: "same-origin" });
+        const h = await res.json();
+        applyTalkPath(h);
+      } catch (_) {
+        canListen = false;
+        listenMode = "none";
+        mintRealtime = false;
+      }
+      return { canListen: canListen, listenMode: listenMode, mintRealtime: mintRealtime };
+    }
+
+    function speechCtor() {
+      return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+
+    let neuralUtterance = null;
+
+    function stopNeuralUtterance() {
+      if (!neuralUtterance) return;
+      try { neuralUtterance.pause(); } catch (_) {}
+      try { URL.revokeObjectURL(neuralUtterance.src); } catch (_) {}
+      neuralUtterance = null;
+    }
+
+    function applyOutputMute(muted) {
+      outputMuted = !!(muted && typeof muted === "object" ? muted.muted : muted);
+      if (sink) {
+        sink.muted = outputMuted;
+        sink.volume = outputMuted ? 0 : 1;
+      }
+      if (outputMuted) {
+        stopNeuralUtterance();
+        if (dc && dc.readyState === "open") {
+          try { dc.send(JSON.stringify({ type: "response.cancel" })); } catch (_) {}
+        }
+      }
+    }
+
+    async function speakNeural(text) {
+      if (outputMuted) return false;
+      const clean = String(text || "").replace(/\s+/g, " ").trim();
+      if (!clean) return false;
+      try {
+        const voicePref = (window.IrisSettings && window.IrisSettings.get && window.IrisSettings.get().voice) || null;
+        const res = await fetch(apiBase() + "/api/jarvis/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(voicePref ? { text: clean, voice: voicePref } : { text: clean }),
+        });
+        if (!res.ok) return false;
+        const buf = await res.arrayBuffer();
+        if (!buf || buf.byteLength < 16) return false;
+        const blob = new Blob([buf], { type: res.headers.get("content-type") || "audio/mpeg" });
+        const url = URL.createObjectURL(blob);
+        if (neuralUtterance) {
+          try { neuralUtterance.pause(); } catch (_) {}
+          try { URL.revokeObjectURL(neuralUtterance.src); } catch (_) {}
+        }
+        neuralUtterance = new Audio(url);
+        neuralUtterance.onended = function () {
+          try { URL.revokeObjectURL(url); } catch (_) {}
+        };
+        if (outputMuted) {
+          stopNeuralUtterance();
+          return false;
+        }
+        await neuralUtterance.play();
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function stopBrowserListen() {
+      browserListenOn = false;
+      try { if (browserRec) browserRec.stop(); } catch (_) {}
+      browserRec = null;
+    }
+
+    function startBrowserListen() {
+      const Ctor = speechCtor();
+      if (!Ctor) {
+        setRt("live");
+        reportAvatarTalk({ status: "listening" });
+        return;
+      }
+      if (browserRec && browserListenOn) {
+        setRt("live");
+        reportAvatarTalk({ status: "listening" });
+        return;
+      }
+      stopBrowserListen();
+      browserListenOn = true;
+      browserRec = new Ctor();
+      browserRec.continuous = false;
+      browserRec.interimResults = false;
+      browserRec.lang = "en-US";
+      browserRec.onresult = function (e) {
+        const said = ((e.results[0] && e.results[0][0] && e.results[0][0].transcript) || "").trim();
+        let conf;
+        if (e.results[0] && e.results[0][0] && typeof e.results[0][0].confidence === "number") {
+          conf = e.results[0][0].confidence;
+        }
+        if (said) void handleBrowserUtterance(said, conf);
+      };
+      browserRec.onerror = function () {
+        if (browserListenOn) reportAvatarTalk({ status: "listening" });
+      };
+      browserRec.onend = function () {
+        if (!browserListenOn) return;
+        try { browserRec.start(); } catch (_) {
+          setTimeout(function () {
+            if (browserListenOn) try { browserRec.start(); } catch (__) {}
+          }, 250);
+        }
+        reportAvatarTalk({ status: "listening" });
+      };
+      try { browserRec.start(); } catch (_) {}
+      setRt("live");
+      reportAvatarTalk({ status: "listening" });
+    }
+
+    async function handleBrowserUtterance(said, confidence) {
+      if (activeConfirmId) {
+        await onUserTranscript(said, confidence);
+        return;
+      }
+      await askViaOpenRouter(said);
+    }
+
+    async function askViaOpenRouter(text) {
+      const clean = String(text || "").replace(/\s+/g, " ").trim().slice(0, 240);
+      if (!clean) return;
+      if (activeConfirmId) {
+        await onUserTranscript(clean);
+        return;
+      }
+      clearRealtimeTaint(clean);
+      reportAvatarTalk({ status: "thinking", you: clean });
+      try {
+        const res = await fetch(apiBase() + "/api/jarvis/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ text: clean }),
+        });
+        const data = await res.json().catch(function () { return {}; });
+        const ui = data.ui != null ? data.ui : data.result;
+        if (ui && ui.needs_confirm) {
+          showConfirmPanel(ui);
+          speakCode(ui.nonce_prompt);
+        }
+        const reply = String((data.reply || (ui && ui.summary) || "")).trim();
+        if (reply) {
+          reportAvatarTalk({ status: "idle", reply: reply });
+          // Realtime WebRTC already speaks. Never fall back to OS/SAPI TTS.
+          if (listenMode !== "openai_realtime") void speakNeural(reply);
+        } else {
+          reportAvatarTalk({ status: "listening" });
+        }
+      } catch (_) {
+        reportAvatarTalk({ status: "listening" });
+      }
+    }
+
+    function assistantTalkFromEvent(event) {
+      if (!event || !event.type) return null;
+      if (
+        event.type === "response.audio_transcript.delta" ||
+        event.type === "response.output_audio_transcript.delta" ||
+        event.type === "response.text.delta" ||
+        event.type === "response.output_text.delta"
+      ) {
+        return { kind: "delta", text: String(event.delta || event.transcript || "") };
+      }
+      if (
+        event.type === "response.audio_transcript.done" ||
+        event.type === "response.output_audio_transcript.done" ||
+        event.type === "response.text.done" ||
+        event.type === "response.output_text.done"
+      ) {
+        return { kind: "done", text: String(event.transcript || event.text || "") };
+      }
+      if (event.type === "response.output_item.done" && event.item && event.item.type === "message") {
+        const parts = Array.isArray(event.item.content) ? event.item.content : [];
+        const text = parts
+          .map(function (p) { return (p && (p.transcript || p.text)) || ""; })
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (text) return { kind: "done", text: text };
+      }
+      return null;
+    }
+
+    // ORCH-297: a fresh user utterance clears taint (fire-and-forget).
+    function clearRealtimeTaint(goal) {
+      try {
+        const body = { source: "realtime" };
+        if (goal) body.goal = String(goal).slice(0, 4000);
+        fetch(apiBase() + "/api/jarvis/taint/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(body),
+        }).catch(function () {});
+      } catch (_) {}
+    }
+
+    function tick() {
+      let energy = 0;
+      if (live && inAnalyser && inBuf) {
+        inAnalyser.getFloatTimeDomainData(inBuf);
+        let s = 0;
+        for (let i = 0; i < inBuf.length; i++) s += inBuf[i] * inBuf[i];
+        energy = Math.min(1, Math.sqrt(s / inBuf.length) * 3.2);
+      }
+      if (live && outAnalyser && outBuf) {
+        outAnalyser.getFloatTimeDomainData(outBuf);
+        let s = 0;
+        for (let i = 0; i < outBuf.length; i++) s += outBuf[i] * outBuf[i];
+        energy = Math.max(energy, Math.min(1, Math.sqrt(s / outBuf.length) * 2.4));
+      }
+      const breath = (!live ? (Math.sin(performance.now() / 900) + 1) * 4 : 0);
+      target = BASE_R + energy * (MAX_R - BASE_R) + breath;
+      vel += (-W * W * (radius - target) - 2 * ZETA * W * vel) * H;
+      radius += vel * H;
+      ring.setAttribute("r", radius.toFixed(2));
+      requestAnimationFrame(tick);
+    }
+
+    function rotateWall() {
+      const prefs = (window.IrisSettings && window.IrisSettings.get && window.IrisSettings.get()) || null;
+      if (prefs && prefs.wallAuto === false) {
+        // Manual wallpaper from settings — do not auto-advance.
+        const map = { s0: "", s1: "s1", s2: "s2", s3: "s3" };
+        const cls = map[prefs.wall] || "";
+        wall.className = "";
+        if (cls) wall.classList.add(cls);
+        else wall.removeAttribute("class");
+        return;
+      }
+      wall.className = "";
+      const scenes = ["", "s1", "s2", "s3"];
+      wall.classList.add(scenes[wallIdx % scenes.length] || "s1");
+      if (!scenes[wallIdx % scenes.length]) wall.removeAttribute("class");
+      wallIdx++;
+    }
+    setInterval(rotateWall, 45000);
+    window.addEventListener("iu-settings", function () { rotateWall(); });
+
+    function makeAnalyser(ctx) {
+      const a = ctx.createAnalyser();
+      a.fftSize = 1024;
+      a.smoothingTimeConstant = 0.82;
+      return a;
+    }
+
+    const confirmPanel = document.getElementById("confirmPanel");
+    const confirmText = document.getElementById("confirmText");
+    const confirmCountdown = document.getElementById("confirmCountdown");
+    const confirmAllow = document.getElementById("confirmAllow");
+    const confirmCancel = document.getElementById("confirmCancel");
+    const stopBtn = document.getElementById("stopBtn");
+    // ORCH-301: panel is a parallel UI path; voice hears nonce_prompt via Realtime.
+    let activeConfirmId = null;
+    let confirmBusy = false;
+    let confirmSettled = false;
+    let confirmTick = null;
+    const confirmQueue = [];
+
+    function stopConfirmCountdown() {
+      if (confirmTick) {
+        clearInterval(confirmTick);
+        confirmTick = null;
+      }
+    }
+
+    function hideConfirmPanel() {
+      stopConfirmCountdown();
+      if (confirmPanel) {
+        confirmPanel.classList.remove("is-open");
+        confirmPanel.hidden = true;
+      }
+      if (confirmText) confirmText.textContent = "";
+      if (confirmCountdown) confirmCountdown.textContent = "";
+    }
+
+    function hideConfirm(_resolveAs) {
+      // Back-compat name used by teardown/Stop.
+      const cid = activeConfirmId;
+      hideConfirmPanel();
+      activeConfirmId = null;
+      confirmBusy = false;
+      confirmSettled = true;
+      confirmQueue.length = 0;
+      if (cid && _resolveAs === "deny") {
+        void postConfirm(cid, "deny").catch(function () {});
+      }
+    }
+
+    function remainingSeconds(payload) {
+      const until = payload && payload.auto_approve_at != null
+        ? Number(payload.auto_approve_at) * 1000
+        : 0;
+      if (until) return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+      const n = Number(payload && payload.approve_countdown_sec);
+      if (n === n && n >= 1) return Math.min(120, Math.floor(n));
+      return 10;
+    }
+
+    function renderConfirmCountdown(n) {
+      if (!confirmCountdown) return;
+      confirmCountdown.textContent = n > 0
+        ? ("Accepting in " + n + "…")
+        : "Accepting now…";
+    }
+
+    function startConfirmCountdown(payload) {
+      stopConfirmCountdown();
+      const until = payload && payload.auto_approve_at != null
+        ? Number(payload.auto_approve_at) * 1000
+        : 0;
+      let n = remainingSeconds(payload);
+      renderConfirmCountdown(n);
+      confirmTick = setInterval(function () {
+        if (until) n = remainingSeconds(payload);
+        else n -= 1;
+        if (n <= 0) {
+          stopConfirmCountdown();
+          renderConfirmCountdown(0);
+          void finishUiConfirm("approve");
+          return;
+        }
+        renderConfirmCountdown(n);
+      }, until ? 250 : 1000);
+    }
+
+    function showConfirmPanel(payload) {
+      const summary =
+        (payload && (payload.action_summary || payload.user_prompt)) ||
+        "Allow this action?";
+      const hint = " Say the code Jarvis reads aloud, or tap Allow.";
+      confirmQueue.push({ payload, summary: String(summary) + hint });
+      pumpConfirm();
+    }
+
+    function pumpConfirm() {
+      if (confirmBusy) return;
+      const next = confirmQueue.shift();
+      if (!next) return;
+      confirmBusy = true;
+      confirmSettled = false;
+      activeConfirmId = (next.payload && next.payload.confirm_id) || activeConfirmId;
+      if (confirmText) confirmText.textContent = String(next.summary);
+      if (confirmPanel) {
+        confirmPanel.hidden = false;
+        confirmPanel.classList.add("is-open");
+      }
+      startConfirmCountdown(next.payload || {});
+    }
+
+    function injectUiConfirmNote(text) {
+      if (!dc || dc.readyState !== "open") return;
+      clearRealtimeTaint();
+      try {
+        dc.send(JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: String(text).slice(0, 6000) }],
+          },
+        }));
+        dc.send(JSON.stringify({ type: "response.create" }));
+      } catch (_) {}
+    }
+
+    async function finishUiConfirm(decision) {
+      if (confirmSettled) return;
+      confirmSettled = true;
+      const cid = activeConfirmId;
+      hideConfirmPanel();
+      confirmBusy = false;
+      activeConfirmId = null;
+      if (!cid) {
+        pumpConfirm();
+        return;
+      }
+      try {
+        if (decision === "approve") {
+          const result = await postConfirm(cid, "approve");
+          injectUiConfirmNote(
+            "[UI Allow] I tapped Allow. Tool result: " + JSON.stringify(result).slice(0, 4000)
+          );
+        } else {
+          try { await postConfirm(cid, "deny"); } catch (_) {}
+          injectUiConfirmNote("[UI Cancel] I tapped Cancel. Do not run that action.");
+        }
+      } finally {
+        pumpConfirm();
+      }
+    }
+
+    function teardown() {
+      live = false;
+      try { dc && dc.close(); } catch (_) {}
+      try { pc && pc.close(); } catch (_) {}
+      dc = null; pc = null;
+      try { outSource && outSource.disconnect(); } catch (_) {}
+      outSource = null;
+      sink.srcObject = null;
+      hideConfirm("deny");
+    }
+
+    function stopTracks() {
+      try {
+        if (micStream) micStream.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      micStream = null;
+      try {
+        if (sink && sink.srcObject && sink.srcObject.getTracks) {
+          sink.srcObject.getTracks().forEach((t) => t.stop());
+        }
+      } catch (_) {}
+    }
+
+    function stopSession() {
+      // User Stop: no auto-retry; tear down mic + WebRTC fully.
+      fatal = true;
+      pending = false;
+      stopBrowserListen();
+      stopTracks();
+      teardown();
+      setRt("");
+    }
+
+    async function postConfirm(confirmId, decision) {
+      const res = await fetch(apiBase() + "/api/jarvis/tools/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ confirm_id: confirmId, decision }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: data.detail || res.statusText, decision };
+      return data.result != null ? data.result : data;
+    }
+
+    // ORCH-319 -----------------------------------------------------------
+    // The one-time code must reach the user's ears without passing through
+    // the model, and come back as speech the model did not author. So the
+    // page speaks the readback itself, and resolves the answer from the raw
+    // transcription event rather than from a tool call.
+
+    // Ignore ASR for a beat after we speak the code ourselves. Echo cancellation
+    // is not a security boundary — without this, speakers + mic can approve from
+    // our own readback (ORCH-319 residual).
+    let codeSpokenUntil = 0;
+
+    function speakCode(text) {
+      if (!text || outputMuted) return;
+      // Cover typical utterance length + a little slack. Neural TTS duration
+      // tightens this once metadata is known. Never use OS/SAPI voices.
+      codeSpokenUntil = Date.now() + Math.min(8000, 1200 + String(text).length * 55);
+      void speakNeural(text).then(function (played) {
+        if (!played || !neuralUtterance) return;
+        const dur = neuralUtterance.duration;
+        if (typeof dur === "number" && dur > 0 && dur < 20) {
+          codeSpokenUntil = Date.now() + Math.min(8000, 400 + dur * 1000);
+        }
+      });
+    }
+
+    async function postSpokenConfirm(transcript, confidence) {
+      const body = { decision: "confirm", utterance: String(transcript || "") };
+      if (typeof confidence === "number") body.confidence = confidence;
+      const res = await fetch(apiBase() + "/api/jarvis/tools/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      return data.result != null ? data.result : data;
+    }
+
+    async function onUserTranscript(transcript, confidence) {
+      // Only meaningful while something is waiting; otherwise this is just
+      // ordinary speech and the model handles it as usual.
+      if (!activeConfirmId || !transcript) return;
+      if (Date.now() < codeSpokenUntil) return;
+      let result;
+      try {
+        result = await postSpokenConfirm(transcript, confidence);
+      } catch (_) {
+        return;
+      }
+      const outcome = String((result && result.outcome) || "").toLowerCase();
+      if (result && result.ok) {
+        confirmSettled = true;
+        hideConfirmPanel();
+        activeConfirmId = null;
+        confirmBusy = false;
+        injectUiConfirmNote(
+          "[confirmed by voice] The user spoke the code. Tool result: " +
+            JSON.stringify(result).slice(0, 4000)
+        );
+        pumpConfirm();
+        return;
+      }
+      // Wrong or unclear: keep the panel up so Allow still works, and re-read
+      // the code. "ignored" means they were talking about something else —
+      // say nothing, or every stray sentence becomes a nagging re-prompt.
+      if (outcome && outcome !== "ignored" && result && result.message) {
+        speakCode(result.message);
+      }
+    }
+
+    async function runTool(name, args) {
+      const res = await fetch(apiBase() + "/api/jarvis/tools/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ name, arguments: args || {} }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return JSON.stringify({ ok: false, error: data.detail || res.statusText });
+      // ORCH-319: `result` is the server's model-safe projection and is the
+      // only thing that may be forwarded; `ui` carries the code and
+      // confirm_id, for this page alone. Forwarding `result` blindly is now
+      // the correct behaviour rather than something the page must remember.
+      const payload = data.result != null ? data.result : data;
+      const uiPayload = data.ui != null ? data.ui : payload;
+      // Voice confirm tools: clear UI panel when nonce resolved or cancelled.
+      // Keep it open on bare-confirm refusal / code mismatch so Allow still works.
+      if ((name === "confirm_action" || name === "confirm_pending") && payload) {
+        const err = String(payload.error || "").toLowerCase();
+        const outcome = String(payload.outcome || "").toLowerCase();
+        // Refusals that leave the action still waiting: keep the panel up so
+        // Allow keeps working. "needs_user" is ORCH-319's refusal of a
+        // model-authored approval — the commonest case now, so if it is
+        // missing here the panel closes on an action that never ran.
+        const softFail =
+          err.includes("bare confirm") ||
+          err.includes("cannot approve") ||
+          ["needs_user", "mismatch", "unclear", "ignored", "spent", "expired"].indexOf(
+            outcome
+          ) >= 0;
+        if (payload.needs_confirm !== true && !softFail) {
+          hideConfirmPanel();
+          activeConfirmId = null;
+          confirmBusy = false;
+        }
+      }
+      if (uiPayload && uiPayload.needs_confirm) {
+        // Panel gets the full payload (it needs confirm_id for Allow); the
+        // page speaks the code itself so it never enters model context.
+        showConfirmPanel(uiPayload);
+        speakCode(uiPayload.nonce_prompt);
+        return JSON.stringify(payload);
+      }
+      return JSON.stringify(payload);
+    }
+
+    function sendToolResult(callId, output) {
+      if (!dc || dc.readyState !== "open") return;
+      dc.send(JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "function_call_output",
+          call_id: callId,
+          output: String(output).slice(0, 12000),
+        },
+      }));
+      dc.send(JSON.stringify({ type: "response.create" }));
+    }
+
+    async function executeFunctionCall(id, name, args) {
+      if (!id || handledCalls.has(id)) return;
+      handledCalls.add(id);
+      try {
+        const output = await runTool(name, args || {});
+        sendToolResult(id, output);
+      } catch (err) {
+        sendToolResult(id, JSON.stringify({ ok: false, error: String(err && err.message || err) }));
+      }
+    }
+
+    async function handleRealtimeEvent(event) {
+      // ORCH-297: completed user speech = fresh trusted intent (clear taint).
+      // ORCH-319: the same transcript is the only channel that may settle a
+      // pending confirmation — never a model tool call.
+      const isUserSpeech =
+        event.type === "conversation.item.input_audio_transcription.completed" ||
+        event.type === "conversation.item.input_audio_transcription.done" ||
+        (event.type === "conversation.item.added" &&
+          event.item &&
+          event.item.role === "user" &&
+          event.item.type === "message");
+      if (isUserSpeech) {
+        const spoken = event.transcript
+          || (event.item && event.item.content && event.item.content[0] && event.item.content[0].transcript)
+          || (event.item && event.item.content && event.item.content[0] && event.item.content[0].text)
+          || "";
+        clearRealtimeTaint(spoken);
+      }
+      if (
+        event.type === "conversation.item.input_audio_transcription.completed" ||
+        event.type === "conversation.item.input_audio_transcription.done"
+      ) {
+        const said = event.transcript || "";
+        let conf;
+        if (typeof event.confidence === "number") conf = event.confidence;
+        else if (event.logprobs && event.logprobs.length) {
+          // Mean token logprob -> rough 0..1 confidence for MIN_CONFIDENCE.
+          const mean =
+            event.logprobs.reduce((a, l) => a + (l.logprob || 0), 0) /
+            event.logprobs.length;
+          conf = Math.exp(mean);
+        }
+        await onUserTranscript(said, conf);
+        if (said) reportAvatarTalk({ status: "thinking", you: said });
+        // Fall through — tool-call events are separate types.
+      }
+      if (event.type === "response.created") {
+        avatarReplyBuf = "";
+        reportAvatarTalk({ status: "thinking" });
+      }
+      const avatarTalk = assistantTalkFromEvent(event);
+      if (avatarTalk) {
+        if (avatarTalk.kind === "delta") {
+          avatarReplyBuf += avatarTalk.text;
+          reportAvatarTalk({ status: "speaking", reply: avatarReplyBuf });
+        } else if (avatarTalk.text || avatarReplyBuf) {
+          avatarReplyBuf = avatarTalk.text || avatarReplyBuf;
+          reportAvatarTalk({ status: "idle", reply: avatarReplyBuf });
+        }
+      }
+      // Tool call streaming (GA Realtime event names)
+      if (event.type === "response.function_call_arguments.delta") {
+        const id = event.call_id || event.item_id;
+        if (!id) return;
+        const cur = pendingArgs.get(id) || { name: event.name || "", args: "" };
+        if (event.name) cur.name = event.name;
+        cur.args += event.delta || "";
+        pendingArgs.set(id, cur);
+        return;
+      }
+      if (event.type === "response.function_call_arguments.done") {
+        const id = event.call_id || event.item_id;
+        const cur = pendingArgs.get(id) || { name: event.name || "", args: event.arguments || "" };
+        if (event.name) cur.name = event.name;
+        if (event.arguments) cur.args = event.arguments;
+        pendingArgs.delete(id);
+        let args = {};
+        try { args = JSON.parse(cur.args || "{}"); } catch (_) { args = {}; }
+        const name = cur.name || event.name || "";
+        await executeFunctionCall(id, name, args);
+        return;
+      }
+      // Some API versions nest function call on response.output_item.done
+      if (event.type === "response.output_item.done" && event.item && event.item.type === "function_call") {
+        const item = event.item;
+        const id = item.call_id || item.id;
+        let args = {};
+        try { args = JSON.parse(item.arguments || "{}"); } catch (_) {}
+        await executeFunctionCall(id, item.name, args);
+      }
+    }
+
+    const MAX_ATTEMPTS = 8;
+    let fatal = false;
+
+    function setRt(state) {
+      document.body.dataset.rt = state || "";
+      if (state === "error") {
+        // OpenRouter-only installs can still listen. Never tell the avatar
+        // "Can't hear" when can_listen is true.
+        reportAvatarTalk({ status: canListen ? "listening" : "unavailable" });
+      }
+    }
+
+    function retry(reason) {
+      if (fatal || pending) return;
+      if (attempt >= MAX_ATTEMPTS) {
+        fatal = true;
+        setRt("error");
+        console.error("[jarvis] giving up after", attempt, "attempts:", reason);
+        return;
+      }
+      pending = true;
+      setRt("connecting");
+      teardown();
+      attempt++;
+      const delay = Math.min(800 * 2 ** (attempt - 1), 30000);
+      setTimeout(connect, delay);
+    }
+
+    function startOpenRouterTalk() {
+      listenMode = "browser_speech";
+      mintRealtime = false;
+      canListen = true;
+      startBrowserListen();
+    }
+
+    async function connect() {
+      if (fatal) return;
+      if (listenMode === "unknown") await refreshListenHealth();
+      if (!mintRealtime) {
+        if (canListen) {
+          startBrowserListen();
+          return;
+        }
+        setRt("error");
+        return;
+      }
+      pending = false;
+      setRt("connecting");
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          inAnalyser = makeAnalyser(audioCtx);
+          outAnalyser = makeAnalyser(audioCtx);
+          inBuf = new Float32Array(inAnalyser.fftSize);
+          outBuf = new Float32Array(outAnalyser.fftSize);
+        }
+        if (audioCtx.state === "suspended") await audioCtx.resume();
+        if (!micStream) {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
+          audioCtx.createMediaStreamSource(micStream).connect(inAnalyser);
+        }
+      } catch (_) {
+        await refreshListenHealth();
+        if (canListen) {
+          startOpenRouterTalk();
+          return;
+        }
+        setRt("error");
+        // Wait for click on circle to retry mic permission
+        return;
+      }
+
+      let token;
+      try {
+        const voicePref = (window.IrisSettings && window.IrisSettings.get && window.IrisSettings.get().voice) || null;
+        const res = await fetch(apiBase() + "/api/jarvis/realtime/session", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify((function () {
+            var loc = "";
+            var tz = "";
+            try { loc = String(navigator.language || "").trim(); } catch (e) {}
+            try { tz = String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").trim(); } catch (e) {}
+            var out = { locale: loc, timezone: tz };
+            if (voicePref) out.voice = voicePref;
+            return out;
+          })()),
+        });
+        token = await res.json().catch(() => ({}));
+        if (!res.ok || !token.value) {
+          // Optional upgrade failed. OpenRouter-only talk must continue.
+          await refreshListenHealth();
+          const fallback =
+            canListen ||
+            token.fallback === "browser_speech" ||
+            token.listen_mode === "browser_speech" ||
+            token.can_listen === true ||
+            token.openrouter === true ||
+            token.speak_mode === "openrouter_tts";
+          if (fallback) {
+            startOpenRouterTalk();
+            return;
+          }
+          fatal = true;
+          setRt("error");
+          return;
+        }
+      } catch (err) {
+        await refreshListenHealth();
+        if (canListen) {
+          startOpenRouterTalk();
+          return;
+        }
+        console.error("[jarvis-token]", err);
+        setRt("error");
+        return;
+      }
+
+      pc = new RTCPeerConnection();
+      pc.ontrack = (e) => {
+        const [stream] = e.streams;
+        sink.srcObject = stream;
+        applyOutputMute(outputMuted);
+        sink.play().catch(() => {});
+        try { outSource && outSource.disconnect(); } catch (_) {}
+        outSource = audioCtx.createMediaStreamSource(stream);
+        outSource.connect(outAnalyser);
+      };
+      pc.addTrack(micStream.getAudioTracks()[0], micStream);
+
+      dc = pc.createDataChannel("oai-events");
+      window.__jarvisDC = dc;
+      dc.onopen = () => {
+        if (!token.applied && token.session) {
+          dc.send(JSON.stringify({ type: "session.update", session: token.session }));
+        }
+        if (pendingAvatarAsk) {
+          const queued = pendingAvatarAsk;
+          pendingAvatarAsk = null;
+          sendUserTextFromAvatar(queued);
+        } else if (!greeted) {
+          greeted = true;
+          dc.send(JSON.stringify({ type: "response.create" }));
+        }
+        attempt = 0;
+        live = true;
+        setRt("live");
+      };
+      dc.onmessage = (e) => {
+        let event;
+        try { event = JSON.parse(e.data); } catch (_) { return; }
+        if (event.type === "error") {
+          console.error("[realtime]", event.error);
+          return;
+        }
+        void handleRealtimeEvent(event);
+      };
+      pc.onconnectionstatechange = () => {
+        if (fatal || !pc) return;
+        if (["failed", "disconnected"].includes(pc.connectionState)) {
+          live = false;
+          setRt("connecting");
+          retry("pc:" + pc.connectionState);
+        }
+      };
+
+      try {
+        await pc.setLocalDescription(await pc.createOffer());
+        const res = await fetch("https://api.openai.com/v1/realtime/calls", {
+          method: "POST",
+          body: pc.localDescription.sdp,
+          headers: {
+            Authorization: "Bearer " + token.value,
+            "Content-Type": "application/sdp",
+          },
+        });
+        if (!res.ok) throw new Error("sdp " + res.status + " " + (await res.text()).slice(0, 200));
+        await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
+      } catch (err) {
+        console.error("[connect]", err);
+        retry("sdp");
+      }
+    }
+
+    async function focusVoice(origin) {
+      fatal = false;
+      if (listenMode === "unknown") await refreshListenHealth();
+      if (!mintRealtime) {
+        if (!canListen) {
+          setRt("error");
+          return;
+        }
+        // Avatar click listens in avatar.html (the window that was clicked).
+        // Talk-page / dock click listens here.
+        if (origin === "avatar") {
+          setRt("live");
+          reportAvatarTalk({ status: "listening" });
+          return;
+        }
+        startBrowserListen();
+        return;
+      }
+      if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
+      if (!live && !pending) {
+        attempt = 0;
+        void connect();
+      }
+    }
+
+    dock.addEventListener("click", () => { void focusVoice("dock"); });
+
+    // ORCH-397 / ORCH-398: mini avatar talks without raising this window.
+    if (window.jarvisDesktop && typeof window.jarvisDesktop.onFocusVoice === "function") {
+      window.jarvisDesktop.onFocusVoice(function () {
+        reportAvatarTalk({ status: "listening" });
+        void focusVoice("avatar");
+      });
+    }
+    if (window.jarvisDesktop && typeof window.jarvisDesktop.onAvatarAsk === "function") {
+      window.jarvisDesktop.onAvatarAsk(function (text) {
+        const clean = String(text || "").trim();
+        if (!clean) return;
+        reportAvatarTalk({ status: "thinking", you: clean });
+        sendUserTextFromAvatar(clean);
+      });
+    }
+    if (window.jarvisDesktop && typeof window.jarvisDesktop.onMuted === "function") {
+      window.jarvisDesktop.onMuted(applyOutputMute);
+    }
+    if (window.jarvisDesktop && typeof window.jarvisDesktop.getMuted === "function") {
+      void window.jarvisDesktop.getMuted().then(applyOutputMute).catch(function () {});
+    }
+
+    if (stopBtn) {
+      stopBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        stopSession();
+      });
+    }
+    if (confirmAllow) {
+      confirmAllow.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void finishUiConfirm("approve");
+      });
+    }
+    if (confirmCancel) {
+      confirmCancel.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void finishUiConfirm("deny");
+      });
+    }
+
+    addEventListener("pagehide", () => {
+      stopTracks();
+      teardown();
+    });
+    requestAnimationFrame(tick);
+
+    // Auto-start after first user gesture anywhere (required for mic)
+    const boot = () => {
+      document.removeEventListener("pointerdown", boot);
+      fatal = false;
+      attempt = 0;
+      void connect();
+    };
+    document.addEventListener("pointerdown", boot, { once: true });
+    // Realtime: best-effort immediate start. OpenRouter-only: stay ready
+    // and listen after one click — never report the unavailable/deaf status.
+    void refreshListenHealth().then(function () {
+      if (mintRealtime) void connect();
+    });
+  </script>
+</body>
+</html>

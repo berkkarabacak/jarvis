@@ -1,0 +1,17 @@
+{
+  "name": "Agent Orchestrator",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "api-server",
+      "command": ".venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8787",
+      "description": "FastAPI server (Agent Orchestrator). Health: GET /health, UI: /dashboard and /ceo, API docs: /docs. Set OPENROUTER_API_KEY and API_SECRET via Secrets to enable live LLM features."
+    }
+  ],
+  "ports": [
+    {
+      "name": "api",
+      "port": 8787
+    }
+  ]
+}

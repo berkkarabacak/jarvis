@@ -1,0 +1,11 @@
+# Copy to local.properties (gitignored) or export ANDROID_HOME.
+# sdk.dir=/home/you/Android/Sdk
+#
+# Optional release upload key (never commit the keystore or passwords).
+# If these are unset, release AABs are signed with the Android debug keystore
+# so `./gradlew :app:bundleRelease` works. That AAB is prep only — Play App
+# Signing / a real upload key happens after the Play developer account exists.
+# STORE_FILE=/absolute/path/to/upload-keystore.jks
+# STORE_PASSWORD=
+# KEY_ALIAS=
+# KEY_PASSWORD=

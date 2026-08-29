@@ -1,0 +1,40 @@
+# Windows one-click installer (ORCH-359). Used by scripts/windows/build-installer.ps1.
+# Do not point extraResources at missing folders unless the payload has been staged.
+appId: com.jarvis.desktop
+productName: Jarvis
+copyright: Jarvis
+directories:
+  output: dist
+files:
+  - main.js
+  - mini-avatar.js
+  - packaged-python.js
+  - talk-policy.js
+  - preload.js
+  - first-run.html
+  - first-run-preload.js
+  - avatar.html
+  - avatar-preload.js
+  - jarvis-tray.png
+  - package.json
+extraResources:
+  - from: ../dist/installer-payload/python
+    to: python
+  - from: ../dist/installer-payload/backend
+    to: backend
+win:
+  target:
+    - nsis
+  artifactName: Jarvis-Setup.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Jarvis
+  uninstallDisplayName: Jarvis
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  include: nsis/jarvis-install-dir.nsh
+  artifactName: Jarvis-Setup.${ext}

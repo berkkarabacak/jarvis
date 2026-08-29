@@ -1,0 +1,16 @@
+[Unit]
+Description=Agent Orchestrator (multi-provider scheduled agent runner)
+After=network.target
+
+[Service]
+User=berkkarabacak
+WorkingDirectory=/home/berkkarabacak/GrokAutomater
+EnvironmentFile=/home/berkkarabacak/GrokAutomater/.env
+ExecStart=/home/berkkarabacak/GrokAutomater/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8895
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
