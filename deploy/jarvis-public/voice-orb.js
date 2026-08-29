@@ -211,7 +211,8 @@
   function makeCanvas(host) {
     var canvas = document.createElement("canvas");
     canvas.setAttribute("aria-hidden", "true");
-    canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:block;";
+    var px = Math.max(host.clientWidth || 0, host.clientHeight || 0, 72);
+    canvas.style.cssText = "display:block;width:" + px + "px;height:" + px + "px;pointer-events:none;";
     host.appendChild(canvas);
     return canvas;
   }
@@ -606,7 +607,12 @@
     opts = opts || {};
     var state = opts.state || "listening";
     var size = opts.size === "hero" || opts.size === "mini" ? opts.size : "float";
-    host.style.position = host.style.position || "relative";
+    if (!host.style.position) host.style.position = "relative";
+    if (!host.clientWidth || !host.clientHeight) {
+      host.style.display = "block";
+      if (!host.style.width) host.style.width = "72px";
+      if (!host.style.height) host.style.height = "72px";
+    }
     var canvas = host.querySelector("canvas") || makeCanvas(host);
     canvas.className = "orb-canvas";
     function getState() { return state; }

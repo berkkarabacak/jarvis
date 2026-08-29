@@ -275,6 +275,9 @@ def test_public_talk_orb_is_aura_sphere_not_stain():
     assert "background: transparent" in mic_css
     assert "box-shadow: none" in mic_css
     assert '#mic[data-voice="idle"]' not in page
+    orb_css = page.split("#orb {", 1)[1].split("}", 1)[0]
+    assert "width: 72px" in orb_css
+    assert "height: 72px" in orb_css
     assert "function simplex3" in js
     assert "function fbm3" in js
     sphere = js.split("function paintAuraSphere", 1)[1].split("function startCanvas2D", 1)[0]
