@@ -259,8 +259,41 @@ def test_public_talk_aura_orb_sources_and_script():
     assert 'id="orb"' in page
     assert 'src="/jarvis/voice-orb.js"' in page
     assert 'class="voice-bar"' not in page
+    assert "function simplex3" in js
+    assert "function fbm3" in js
+    assert "paintAuraSphere" in js
     _assert_no_secret_values(js)
     _assert_no_secret_values(page)
+
+
+def test_public_talk_orb_is_aura_sphere_not_stain():
+    page = PAGE.read_text(encoding="utf-8")
+    js = (ROOT / "deploy" / "jarvis-public" / "voice-orb.js").read_text(encoding="utf-8")
+    mic_css = page.split("#mic {", 1)[1].split("}", 1)[0]
+    assert "radial-gradient" not in mic_css
+    assert "rgba(8, 10, 16" not in page
+    assert "background: transparent" in mic_css
+    assert "box-shadow: none" in mic_css
+    assert '#mic[data-voice="idle"]' not in page
+    assert "function simplex3" in js
+    assert "function fbm3" in js
+    sphere = js.split("function paintAuraSphere", 1)[1].split("function startCanvas2D", 1)[0]
+    assert "simplex" in js.lower()
+    assert "fbm3(" in sphere
+    assert "nx * cur.intensity * 1.5" in sphere
+    two_d = js.split("function startCanvas2D", 1)[1].split("function mount", 1)[0]
+    assert "paintAuraSphere" in two_d
+    assert 'rgba(" + gR + "," + gG + "," + gB + ",0.15)"' not in js
+    assert "wide &&" not in js
+    assert ">= 140" not in js
+    assert "isWebGLAvailable()" in js.split("function mount", 1)[1]
+    assert "#431407" not in js
+    assert "#064E3B" not in js
+    assert "#38BDF8" in js
+    assert "#818CF8" in js
+    assert "#8B5CF6" in js
+    assert "#C084FC" in js
+    assert "#312E81" in js
 
 
 def test_public_talk_his_computer_v2_chrome_slice():
