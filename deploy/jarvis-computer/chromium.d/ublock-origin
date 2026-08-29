@@ -1,0 +1,3 @@
+# Vendored uBlock Origin. Also force-installed via /etc/chromium/policies/managed.
+# Sourced by Debian's /usr/bin/chromium wrapper.
+export CHROMIUM_FLAGS="${CHROMIUM_FLAGS:-} --disable-features=ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported --load-extension=/usr/share/chromium/extensions/ublock"
