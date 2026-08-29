@@ -433,6 +433,7 @@ def test_chromium_ships_ublock_origin_by_default():
     assert UBLOCK_SHA256 in pin
     assert "2026.825.1619" in pin
     assert "uBOL-home" in pin
+    assert "generated_indexed_rulesets" in pin
     assert "GPL" in pin
     assert "clients2.google.com" not in pin
     license_text = UBLOCK_LICENSE.read_text(encoding="utf-8")
@@ -463,6 +464,7 @@ def test_chromium_ships_ublock_origin_by_default():
     assert UBLOCK_IMAGE_DIR in dockerfile
     assert UBLOCK_POLICY_IMAGE in dockerfile
     assert "chromium.d/ublock-origin" in dockerfile
+    assert "chown -R jarvis:jarvis /usr/share/chromium/extensions/ublock" in dockerfile
     assert "uBlock0.chromium" not in dockerfile
     assert "google-chrome" not in dockerfile_low
     assert "dl.google.com" not in dockerfile_low

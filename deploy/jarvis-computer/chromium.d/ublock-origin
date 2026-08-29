@@ -1,3 +1,5 @@
 # Vendored uBlock Origin Lite. Sourced by Debian's /usr/bin/chromium wrapper.
 # One --load-extension path. No Chrome Web Store forcelist.
+# The unpacked tree must be writable by the browser user: Debian Chromium
+# indexes DNR rulesets into <ext>/_metadata/generated_indexed_rulesets.
 export CHROMIUM_FLAGS="$CHROMIUM_FLAGS --load-extension=/usr/share/chromium/extensions/ublock --disable-features=ExtensionManifestV2Disabled,ExtensionManifestV2Unsupported"

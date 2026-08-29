@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Prove Jarvis Chromium lists uBlock Origin without a Chrome Web Store install.
 # File contract always. Live chrome://extensions dump when chromium is present.
+# Debian Chromium indexes DNR rulesets into the unpacked tree; a root-owned
+# 644 copy fails with "ublock-filters.json: Internal error while parsing rules."
+# This script unpacks to a writable temp dir (same as the image chown to jarvis).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
