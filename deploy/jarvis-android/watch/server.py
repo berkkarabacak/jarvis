@@ -29,7 +29,7 @@ HTML = """<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <img src="/stream.mjpeg" alt="Jarvis's Android screen">
+  <img src="stream.mjpeg" alt="Jarvis's Android screen">
 </body>
 </html>
 """
@@ -91,7 +91,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
             return
-        if path == "/stream.mjpeg":
+        if path in {"/stream.mjpeg", "/jarvis/android/stream.mjpeg"}:
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
             self.send_header("Cache-Control", "no-store")

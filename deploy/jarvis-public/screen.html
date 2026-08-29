@@ -54,6 +54,29 @@
       document.documentElement.setAttribute("data-picture", picture);
       if (shot) shot.style.imageRendering = picture === "smooth" ? "auto" : "crisp-edges";
 
+      function isPublicWatchSrc(url, prefix) {
+        var s = String(url || "").trim();
+        if (!s || s.charAt(0) !== "/") return false;
+        var low = s.toLowerCase();
+        if (low.indexOf("://") !== -1) return false;
+        if (low.indexOf("127.0.0.1") !== -1) return false;
+        if (low.indexOf("localhost") !== -1) return false;
+        return s.indexOf(prefix) === 0;
+      }
+      function publicSession(data) {
+        var kind = data && data.kind === "android" ? "android" : "linux";
+        var publicUrl = data && data.public_session_url ? String(data.public_session_url) : "";
+        var watch = data && data.watch_path ? String(data.watch_path) : "";
+        if (kind === "android") {
+          if (isPublicWatchSrc(publicUrl, "/jarvis/android/")) return publicUrl;
+          if (isPublicWatchSrc(watch, "/jarvis/android/")) return watch;
+          return "/jarvis/android/";
+        }
+        if (isPublicWatchSrc(publicUrl, "/jarvis/novnc/")) return publicUrl;
+        if (isPublicWatchSrc(watch, "/jarvis/novnc/") && watch.indexOf("vnc.html") !== -1) return watch;
+        return LINUX_SESSION;
+      }
+
       function showLive() {
         down.classList.remove("is-open");
         shot.hidden = true;
@@ -81,9 +104,7 @@
         fetch("/jarvis/api/jarvis/computer/screen", { credentials: "same-origin" })
           .then(function (r) { return r.json(); })
           .then(function (data) {
-            if (data && data.session_url) SESSION = String(data.session_url);
-            else if (data && data.kind === "android" && data.url) SESSION = String(data.watch_path || "/jarvis/android/");
-            else SESSION = LINUX_SESSION;
+            SESSION = publicSession(data);
             if (data && data.running) {
               showLive();
               return;
@@ -94,6 +115,7 @@
               headers: { "Content-Type": "application/json" },
               body: "{}"
             }).then(function (r) { return r.json(); }).then(function (started) {
+              SESSION = publicSession(started || data);
               if (started && started.running) showLive();
               else showShot();
             });
