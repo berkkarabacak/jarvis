@@ -86,6 +86,7 @@ fi
 grep -q 'Exec=/usr/local/bin/chrome' "$APPS/chrome.desktop"
 grep -q 'uBOLite_2026.825.1619.chromium.zip' "$DOCKERFILE"
 grep -q '/usr/share/chromium/extensions/ublock' "$DOCKERFILE"
+grep -q 'chown -R jarvis:jarvis /usr/share/chromium/extensions/ublock' "$DOCKERFILE"
 grep -q '/etc/chromium/policies/managed/ublock.json' "$DOCKERFILE"
 if grep -Eq 'ExtensionInstallForcelist|force_installed|clients2\.google\.com|update2/crx' "$DIR/policies/managed/ublock.json"; then
   echo "managed policy must not force-install from the Chrome Web Store" >&2

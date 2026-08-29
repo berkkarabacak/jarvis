@@ -13,6 +13,14 @@ Why Lite: Debian bookworm Chromium is 149+ and hard-blocks Manifest V2.
           chrome://extensions. Lite is the MV3 build that still loads via
           --load-extension. Unpacked local tree only; no Web Store forcelist.
 
+Load note: the official GitHub zip does not ship Chromium's
+          _metadata/generated_indexed_rulesets. Debian Chromium writes
+          those into the unpacked tree on first --load-extension. The
+          image chowns /usr/share/chromium/extensions/ublock to jarvis
+          so that write can succeed. A root-owned 644 tree fails with
+          "ublock-filters.json: Internal error while parsing rules."
+          and chrome://extensions then lists only Chromium PDF Viewer.
+
 Chrome Web Store ID (reference only; not force-installed):
           ddkjiahejlhfcafbddmgiahcphecmpfh
 

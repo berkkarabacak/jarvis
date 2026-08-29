@@ -57,6 +57,11 @@ COPY apps /usr/share/jarvis-computer/apps
 COPY bin/chrome /usr/local/bin/chrome
 # Vendored official uBlock Origin Lite (MV3) zip. Unpacked here; never fetched at start.
 # Debian bookworm Chromium 149+ hard-blocks MV2, so the 1.74.0 tree cannot load.
+# The GitHub zip has no _metadata/generated_indexed_rulesets. Debian Chromium
+# writes those next to the unpacked tree on first load. If that directory is
+# root-owned 644/755 (jarvis cannot write), load fails with
+# "ublock-filters.json: Internal error while parsing rules." and the extension
+# never lists. chown the tree to jarvis so indexing can succeed.
 COPY extensions/ublock/uBOLite_2026.825.1619.chromium.zip /tmp/ublock-chromium.zip
 COPY policies/managed/ublock.json /etc/chromium/policies/managed/ublock.json
 COPY chromium.d/ublock-origin /etc/chromium.d/ublock-origin
@@ -70,7 +75,9 @@ RUN chmod 0755 /usr/local/bin/chrome \
     && rm -f /tmp/ublock-chromium.zip \
     && chmod 0644 /etc/chromium/policies/managed/ublock.json \
         /etc/chromium.d/ublock-origin \
-    && chmod -R a+rX /usr/share/chromium/extensions/ublock \
+    && mkdir -p /usr/share/chromium/extensions/ublock/_metadata \
+    && chown -R jarvis:jarvis /usr/share/chromium/extensions/ublock \
+    && chmod -R u+rwX,go+rX /usr/share/chromium/extensions/ublock \
     && cp /usr/share/jarvis-computer/apps/*.desktop /usr/share/applications/ \
     && chmod 0644 /usr/share/applications/chrome.desktop \
         /usr/share/applications/notepad.desktop \
