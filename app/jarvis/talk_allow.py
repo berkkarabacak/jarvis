@@ -1,9 +1,9 @@
 """Per-request Talk allow picks (yes / ask / no) for hosted Public Talk.
 
-Public Settings cannot persist permission_profile (401 without a key, and a
-shared host must not let one visitor change everyone else). The page sends
-``allowed`` with /ask and /tools/run. Only keys the hosted computer can honor
-are enforced. Unset keys leave the existing profile rules alone.
+Public Settings now persist ``permission_profile``. The page still sends
+``allowed`` with /ask and /tools/run so a pick can overlay the profile for
+that request. Only keys the hosted computer can honor are enforced. Unset
+keys leave the existing profile rules alone.
 """
 
 from __future__ import annotations

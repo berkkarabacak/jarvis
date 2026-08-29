@@ -3642,6 +3642,10 @@ def public_talk_sheet() -> dict[str, Any]:
             "helper_name": None,
             "computer_kind": "linux",
             "computer": None,
+            "realtime_voice": None,
+            "look_speed": None,
+            "permission_profile": None,
+            "talk_speed": None,
         }
     computer = None
     try:
@@ -3662,6 +3666,10 @@ def public_talk_sheet() -> dict[str, Any]:
         "helper_name": view.get("helper_name"),
         "computer_kind": view.get("computer_kind") or "linux",
         "computer": computer,
+        "realtime_voice": view.get("realtime_voice"),
+        "look_speed": view.get("look_speed"),
+        "permission_profile": view.get("permission_profile"),
+        "talk_speed": view.get("talk_speed"),
     }
 
 
