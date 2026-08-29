@@ -11,7 +11,7 @@ The OS is still **Linux, not Windows** — no Windows VM.
 **ORCH-403 landed:** Chrome (Debian Chromium), Notepad (mousepad), Files (thunar),
 Terminal, Calculator, and Image Viewer ship in the image with desktop / Start-menu
 shortcuts. Jarvis can open them without installing anything first.
-Chrome has adblock on by default (pinned uBlock Origin; no store click, no prompt).
+Chrome has adblock on by default (pinned uBlock Origin Lite, MV3; no store click, no prompt).
 
 **ORCH-404 landed:** live noVNC of **this** XFCE desktop (same `DISPLAY=:1`, not a
 recording). Open **http://127.0.0.1:6080** after compose is up. Published on

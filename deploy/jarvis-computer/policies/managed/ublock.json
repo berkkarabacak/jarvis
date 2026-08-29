@@ -1,17 +1,3 @@
 {
-  "ExtensionManifestV2Availability": 2,
-  "ExtensionInstallForcelist": [
-    "cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx"
-  ],
-  "ExtensionInstallAllowlist": [
-    "cjpalhdlnbpafiamejdnhcphjbkeiagm"
-  ],
-  "ExtensionSettings": {
-    "cjpalhdlnbpafiamejdnhcphjbkeiagm": {
-      "installation_mode": "force_installed",
-      "update_url": "https://clients2.google.com/service/update2/crx",
-      "toolbar_pin": "force_pinned",
-      "override_update_url": false
-    }
-  }
+  "DeveloperToolsAvailability": 1
 }

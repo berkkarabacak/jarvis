@@ -10,6 +10,7 @@ HOME_DIR="/home/jarvis"
 MARKER="$HOME_DIR/.jarvis-computer-ready"
 THEME_MARKER="$HOME_DIR/.jarvis-windows-theme-ready"
 APPS_MARKER="$HOME_DIR/.jarvis-apps-ready"
+UBLOCK_MARKER="$HOME_DIR/.jarvis-ublock-unpacked-ready"
 THEME_SRC="/usr/src/jarvis-windows-theme/xfce-config"
 APPS_SRC="/usr/share/jarvis-computer/apps"
 XFCONF_DST="$HOME_DIR/.config/xfce4/xfconf/xfce-perchannel-xml"
@@ -36,6 +37,46 @@ seed_desktop_shortcuts() {
   touch "$APPS_MARKER"
 }
 
+# Persisted homes keep Desktop/chrome.desktop from the first seed. Always
+# rewrite Chrome so Exec stays /usr/local/bin/chrome after image updates.
+refresh_chrome_desktop() {
+  mkdir -p "$HOME_DIR/Desktop"
+  if [ -f "$APPS_SRC/chrome.desktop" ]; then
+    cp "$APPS_SRC/chrome.desktop" "$HOME_DIR/Desktop/chrome.desktop"
+    chmod 0755 "$HOME_DIR/Desktop/chrome.desktop"
+  fi
+}
+
+# A profile that tried to force-install from clients2.google.com can ignore
+# --load-extension. Seed developer mode and drop that stale store state once.
+seed_chromium_ublock_profile() {
+  conf="$HOME_DIR/.config/chromium/Default"
+  mkdir -p "$conf"
+  prefs="$conf/Preferences"
+  secure="$conf/Secure Preferences"
+  stale=""
+  for candidate in "$prefs" "$secure"; do
+    if [ -f "$candidate" ] && grep -Eq 'clients2\.google\.com|cjpalhdlnbpafiamejdnhcphjbkeiagm' "$candidate"; then
+      stale=1
+    fi
+  done
+  if [ -n "$stale" ]; then
+    rm -f "$prefs" "$secure"
+  fi
+  if [ ! -f "$prefs" ]; then
+    cat > "$prefs" <<'EOF'
+{
+  "extensions": {
+    "ui": {
+      "developer_mode": true
+    }
+  }
+}
+EOF
+  fi
+  touch "$UBLOCK_MARKER"
+}
+
 seed_home() {
   mkdir -p "$HOME_DIR/Desktop" "$HOME_DIR/Documents" "$HOME_DIR/Downloads" "$HOME_DIR/.config"
   if [ ! -f "$MARKER" ]; then
@@ -53,6 +94,10 @@ EOF
   fi
   if [ ! -f "$APPS_MARKER" ]; then
     seed_desktop_shortcuts
+  fi
+  refresh_chrome_desktop
+  if [ ! -f "$UBLOCK_MARKER" ]; then
+    seed_chromium_ublock_profile
   fi
   chown -R jarvis:jarvis "$HOME_DIR"
 }
