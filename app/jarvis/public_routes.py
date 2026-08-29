@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 REPO = Path(__file__).resolve().parents[2]
 PUBLIC_HTML = REPO / "deploy" / "jarvis-public" / "index.html"
 SCREEN_HTML = REPO / "deploy" / "jarvis-public" / "screen.html"
+VOICE_ORB_JS = REPO / "deploy" / "jarvis-public" / "voice-orb.js"
 # Optional static OpenAI TTS clips. Public Talk first hello is live gpt-realtime
 # audio on the RTC track, not these files and not POST /api/jarvis/speak.
 # Regen: scripts/mint_hello_clips.py
@@ -58,6 +59,17 @@ async def jarvis_public_page() -> FileResponse:
     if not PUBLIC_HTML.is_file():
         raise HTTPException(status_code=404, detail="Jarvis page missing")
     return FileResponse(PUBLIC_HTML, media_type="text/html; charset=utf-8")
+
+
+@router.get("/jarvis/voice-orb.js")
+async def jarvis_voice_orb_js() -> FileResponse:
+    if not VOICE_ORB_JS.is_file():
+        raise HTTPException(status_code=404, detail="Voice orb missing")
+    return FileResponse(
+        VOICE_ORB_JS,
+        media_type="text/javascript; charset=utf-8",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @router.get("/jarvis/hello/{code}.mp3")

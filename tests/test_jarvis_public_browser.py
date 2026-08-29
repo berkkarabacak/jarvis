@@ -65,7 +65,7 @@ def test_public_page_source_is_chat_and_talk():
     page = PAGE.read_text(encoding="utf-8")
     low = page.lower()
     assert "<title>Jarvis</title>" in page
-    assert 'aria-label="Jarvis"' in page
+    assert 'aria-label="Jarvis"' not in page
     assert ">Jarvis</h1>" not in page
     assert 'id="wall"' not in page
     assert 'id="pc"' in page
@@ -74,11 +74,17 @@ def test_public_page_source_is_chat_and_talk():
     assert "@keyframes drift" not in page
     assert "@keyframes hue" not in page
     assert "@keyframes listen-pulse" in page
-    assert "animation:" in page
+    assert "@keyframes voice-breathe" not in page
+    assert 'class="voice-bar"' not in page
+    assert 'id="orb"' in page
+    assert "/jarvis/voice-orb.js" in page
+    assert "JarvisVoiceOrb" in page
+    assert "requestAnimationFrame" in (ROOT / "deploy" / "jarvis-public" / "voice-orb.js").read_text(encoding="utf-8")
     assert 'id="log"' in page
     assert 'id="box"' in page
     assert 'id="mic"' in page
-    assert 'aria-label="Talk"' in page
+    assert 'id="more"' in page
+    assert 'aria-label="Talk"' not in page
     assert 'id="go"' in page
     assert 'id="mute-me"' in page
     assert 'id="mute-him"' in page
@@ -173,11 +179,96 @@ def test_public_page_source_is_chat_and_talk():
     _assert_no_secret_values(page)
 
 
+def test_public_talk_two_button_idle_chrome():
+    page = PAGE.read_text(encoding="utf-8")
+    chrome = page.split("<body>", 1)[1].split('<div id="stage">', 1)[0]
+    assert 'id="top"' not in page
+    assert 'class="word"' not in page
+    assert 'aria-label="Jarvis"' not in page
+    assert "Jarvis" not in chrome
+    assert "LIVE" not in chrome
+    assert ">Listening<" not in chrome.split('id="sr-status"', 1)[0]
+    assert 'id="mic"' in chrome
+    assert 'id="more"' in chrome
+    assert 'class="voice-bar"' not in chrome
+    assert 'class="voice-bars"' not in chrome
+    assert 'id="orb"' in chrome
+    assert "/jarvis/voice-orb.js" in page
+    assert "JarvisVoiceOrb.mount" in page
+    assert 'id="more-cluster" hidden' in chrome
+    assert 'id="mute-him"' in chrome
+    assert 'id="chat-btn"' in chrome
+    assert 'id="settings-btn"' in chrome
+    assert 'id="mute-me"' in chrome
+    assert 'data-mute="me" hidden' in chrome
+    idle_buttons = [part.split(">", 1)[0] for part in chrome.split("<button")[1:]]
+    visible = [btn for btn in idle_buttons if "hidden" not in btn and 'id="mute-him"' not in btn and 'id="chat-btn"' not in btn and 'id="settings-btn"' not in btn]
+    assert len(visible) == 2
+    assert any('id="mic"' in btn for btn in visible)
+    assert any('id="more"' in btn for btn in visible)
+    assert 'aria-label="Mute me"' in chrome
+    assert 'aria-label="More"' in chrome
+    assert 'aria-label="Talk"' not in page
+    assert "@keyframes voice-breathe" not in page
+    assert "function bindChromeDrag" in page
+    assert "prefs.orbPos" in page
+    assert "prefs.morePos" in page
+    assert "onMuteMe()" in page
+    assert "function orbTalkState" in page
+    assert 'return "idle"' in page
+    assert 'return "speaking"' in page
+    assert 'return "processing"' in page
+    assert 'return "listening"' in page
+
+
+def test_public_talk_aura_orb_sources_and_script():
+    page = PAGE.read_text(encoding="utf-8")
+    orb_js = ROOT / "deploy" / "jarvis-public" / "voice-orb.js"
+    orb_dir = ROOT / "deploy" / "jarvis-public" / "voice-orb"
+    js = orb_js.read_text(encoding="utf-8")
+    assert orb_js.is_file()
+    assert (orb_dir / "LICENSE").is_file()
+    assert (orb_dir / "NOTICE").is_file()
+    assert (orb_dir / "types.ts").is_file()
+    assert (orb_dir / "constants.ts").is_file()
+    assert (orb_dir / "components" / "VoiceOrb.tsx").is_file()
+    assert (orb_dir / "components" / "Canvas2DOrb.tsx").is_file()
+    assert (orb_dir / "components" / "OrbShaders.ts").is_file()
+    license_text = (orb_dir / "LICENSE").read_text(encoding="utf-8")
+    assert "Apache License" in license_text
+    assert "Version 2.0" in license_text
+    for rel in (
+        "types.ts",
+        "constants.ts",
+        "components/VoiceOrb.tsx",
+        "components/Canvas2DOrb.tsx",
+        "components/OrbShaders.ts",
+    ):
+        text = (orb_dir / rel).read_text(encoding="utf-8")
+        assert "Apache License, Version 2.0" in text
+        assert "Ashish-Soni08/aura" in text
+    assert "Apache License 2.0" in js
+    assert "Ashish-Soni08/aura" in js
+    assert "JarvisVoiceOrb" in js
+    assert "startWebGL" in js
+    assert "startCanvas2D" in js
+    assert "isWebGLAvailable" in js
+    assert "convai" not in js.lower()
+    assert "unpkg.com" not in js
+    assert "elevenlabs.io" not in js.lower()
+    assert 'id="orb"' in page
+    assert 'src="/jarvis/voice-orb.js"' in page
+    assert 'class="voice-bar"' not in page
+    _assert_no_secret_values(js)
+    _assert_no_secret_values(page)
+
+
 def test_public_talk_his_computer_v2_chrome_slice():
     page = PAGE.read_text(encoding="utf-8")
     low = page.lower()
-    assert 'id="top"' in page
-    assert "height: 56px" in page
+    assert 'id="top"' not in page
+    assert 'id="mic"' in page
+    assert 'id="more"' in page
     assert "border-bottom: 1px solid var(--border)" in page
     assert "--ink: #201e1d" in page
     assert "--page: #f8f7f7" in page
@@ -186,39 +277,34 @@ def test_public_talk_his_computer_v2_chrome_slice():
     assert "--accent: #ec3013" in page
     assert "--live-bg: #fff2ef" in page
     assert "--listen-bg: #f0f6f0" in page
-    assert "width: 26px" in page
     assert "font-size: 17px" in page
     assert 'id="listen-chip"' in page
+    assert 'id="sr-status" hidden' in page
     assert "Listening" in page
     assert "Paused" in page
     assert "Mic off" in page
-    assert "width: 7px" in page
-    assert 'id="live-chip"' in page
-    assert 'id="live-chip" hidden' not in page
-    assert "LIVE" in page
+    assert 'id="live-chip"' not in page
+    assert "LIVE" not in page
     assert 'id="doing"' in page
     assert "Ready" in page
     assert "@keyframes pulseRing" in page
+    assert "@keyframes voice-breathe" not in page
+    assert 'id="orb"' in page
     assert "prefers-reduced-motion" in page
-    tools = page.split('<div class="tools">', 1)[1].split("</div>", 1)[0]
-    assert ">Talk<" not in tools
-    assert ">Mute me<" not in tools
-    assert ">Chat<" not in tools
-    assert ">Settings<" not in tools
-    assert 'title="Talk"' in tools
-    assert 'aria-label="Talk"' in tools
-    assert 'title="Mute me"' in tools
-    assert 'aria-label="Mute me"' in tools
-    assert 'title="Mute him"' in tools
-    assert 'aria-label="Mute him"' in tools
-    assert 'title="Chat"' in tools
-    assert 'aria-label="Chat"' in tools
-    assert 'title="Settings"' in tools
-    assert 'aria-label="Settings"' in tools
-    assert 'class="bar-div"' in tools
+    cluster = page.split('id="more-cluster"', 1)[1].split("</div>", 1)[0]
+    assert ">Talk<" not in cluster
+    assert ">Mute me<" not in cluster
+    assert ">Chat<" not in cluster
+    assert ">Settings<" not in cluster
+    assert 'title="Mute him"' in cluster
+    assert 'aria-label="Mute him"' in cluster
+    assert 'title="Chat"' in cluster
+    assert 'aria-label="Chat"' in cluster
+    assert 'title="Settings"' in cluster
+    assert 'aria-label="Settings"' in cluster
+    assert 'class="bar-div"' not in page
     assert "width: 44px" in page
     assert "width: 36px" in page
-    assert "width: 40px" in page
     assert 'id="stage"' in page
     assert 'id="pc"' in page
     assert 'id="chat"' in page
@@ -230,18 +316,15 @@ def test_public_talk_his_computer_v2_chrome_slice():
     assert 'id="chat"' in stage
     assert stage.find('id="pc"') < stage.find('id="chat"')
     chat_css = page[page.find("#chat {") : page.find("#chat[hidden]")]
-    assert "position: fixed" not in chat_css
-    assert "position: absolute" not in chat_css
-    assert "flex: 0 0 330px" in chat_css
+    assert "position: fixed" in chat_css
+    assert "z-index: 5" in chat_css
     assert 'content: "You"' not in page
     assert 'content: "Jarvis"' not in page
     assert "font-size: 17px" in page
     assert "16px 16px 4px 16px" in page
     assert "16px 16px 16px 4px" in page
     assert "pinLog" in page
-    assert 'id="drawer-mic"' in page
-    assert "width: 62px" in page
-    assert "width: 54px" in page
+    assert 'id="drawer-mic"' not in page
     assert 'id="box"' in page
     assert 'id="go"' in page
     assert 'aria-label="Screen"' in page
@@ -488,8 +571,14 @@ async def test_app_serves_public_chat_page(client):
     assert 'id="log"' in html
     assert 'id="box"' in html
     assert 'id="mic"' in html
+    assert 'id="orb"' in html
     assert 'id="mute-me"' in html
     assert 'id="mute-him"' in html
+    assert 'src="/jarvis/voice-orb.js"' in html
+    orb_js = await client.get("/jarvis/voice-orb.js")
+    assert orb_js.status_code == 200
+    assert "JarvisVoiceOrb" in orb_js.text
+    assert "text/javascript" in orb_js.headers.get("content-type", "")
     assert 'id="wall"' not in html
     assert 'id="pc"' in html
     assert 'id="chat"' in html
