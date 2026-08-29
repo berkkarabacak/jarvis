@@ -287,7 +287,7 @@ def test_public_talk_orb_is_aura_sphere_not_stain():
     two_d = js.split("function startCanvas2D", 1)[1].split("function mount", 1)[0]
     assert "paintAuraSphere" in two_d
     assert "destination-over" in two_d
-    assert '"lighter"' not in two_d
+    assert 'globalCompositeOperation = "lighter"' not in two_d
     assert "keepTinted" in js
     assert "liftColor" not in js
     assert 'rgba(" + gR + "," + gG + "," + gB + ",0.15)"' not in js

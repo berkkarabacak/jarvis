@@ -564,8 +564,8 @@
       var bR = Math.round(cur.colorB[0] * 255);
       var bG = Math.round(cur.colorB[1] * 255);
       var bB = Math.round(cur.colorB[2] * 255);
-      // Glow behind the sphere. Never "lighter" — that path blows the 72px
-      // Talk control to a white disc on SwiftShader / cheap compositing.
+      // Glow behind the sphere. Additive compositing blows the 72px Talk
+      // control to a white disc on SwiftShader / cheap GPUs.
       ctx.globalCompositeOperation = "destination-over";
       var glowGrad = ctx.createRadialGradient(cx, cy, visR * 0.55, cx, cy, visR * 1.24);
       glowGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.22)");
