@@ -21,7 +21,10 @@
     speaking: { colorA: "#1E3A8A", colorB: "#818CF8", colorC: "#E879F9", speed: 0.8, intensity: 0.75 },
     error: { colorA: "#450A0A", colorB: "#EF4444", colorC: "#FCA5A5", speed: 0.3, intensity: 1.5 }
   };
-  var SCALE_MAP = { hero: 2.5, float: 2.35, mini: 2.2 };
+  // Aura VoiceOrb SCALE_MAP. Do not inflate these at 72px — a 2.35 sphere plus
+  // additive blend fills the Talk canvas with a blown-out white disc.
+  var SCALE_MAP = { hero: 2.5, float: 1.8, mini: 1.0 };
+  var CANVAS2D_MAX_HOST_PX = 96;
 
   var VERTEX_SHADER =
     "attribute vec3 position;\n" +
@@ -109,10 +112,6 @@
     "  float fresnelTerm = clamp(1.0 - dot(viewDir, vNormal), 0.0, 1.0);\n" +
     "  fresnelTerm = pow(fresnelTerm, 2.5);\n" +
     "  color += uColorC * fresnelTerm * 1.5;\n" +
-    "  color = mix(color, uColorB, 0.22);\n" +
-    "  color = mix(color, uColorC, 0.12);\n" +
-    "  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));\n" +
-    "  if (luma < 0.34) color *= 0.34 / max(luma, 0.001);\n" +
     "  gl_FragColor = vec4(color, 1.0);\n" +
     "}";
 
@@ -413,8 +412,7 @@
       resize();
       var aspect = (canvas.width / canvas.height) || 1;
       var proj = perspective(45, aspect, 0.1, 100);
-      var named = SCALE_MAP[getSize()] || SCALE_MAP.float;
-      var scale = (canvas.clientWidth || 72) <= 96 ? Math.max(named, 2.35) : named;
+      var scale = SCALE_MAP[getSize()] || SCALE_MAP.float;
       var cy = Math.cos(rotY), sy = Math.sin(rotY);
       var cz = Math.cos(rotZ), sz = Math.sin(rotZ);
       var model = [
@@ -446,14 +444,12 @@
     };
   }
 
-  function liftColor(color, colorB, colorC) {
-    var lifted = lerpColor(lerpColor(color, colorB, 0.28), colorC, 0.14);
-    var luma = 0.2126 * lifted[0] + 0.7152 * lifted[1] + 0.0722 * lifted[2];
-    if (luma < 0.38) {
-      var k = 0.38 / Math.max(luma, 0.001);
-      lifted = [Math.min(1, lifted[0] * k), Math.min(1, lifted[1] * k), Math.min(1, lifted[2] * k)];
+  // Keep the sphere tinted. A full-white pixel is the Talk white-disc failure.
+  function keepTinted(color, colorC) {
+    if (color[0] > 0.92 && color[1] > 0.92 && color[2] > 0.92) {
+      return lerpColor(color, colorC, 0.62);
     }
-    return lifted;
+    return color;
   }
 
   // Full Aura Canvas2DOrb port: simplex + fbm cloudy sphere, not a radial smudge.
@@ -496,8 +492,8 @@
           Math.min(1, color[1] + specular * 0.6),
           Math.min(1, color[2] + specular * 0.6)
         ];
-        color = liftColor(color, cur.colorB, cur.colorC);
-        edge = Math.min(1, (radius - dist) / Math.max(1.5, radius * 0.06));
+        color = keepTinted(color, cur.colorC);
+        edge = Math.min(1, (radius - dist) / Math.max(1.5, radius * 0.08));
         data[i] = Math.round(color[0] * 255);
         data[i + 1] = Math.round(color[1] * 255);
         data[i + 2] = Math.round(color[2] * 255);
@@ -545,12 +541,12 @@
         canvas.width = pw;
         canvas.height = ph;
       }
-      var workSize = Math.max(72, Math.min(112, Math.max(pw, ph)));
+      var workSize = Math.max(96, Math.min(144, Math.max(pw, ph)));
       if (work.width !== workSize || work.height !== workSize) {
         work.width = workSize;
         work.height = workSize;
       }
-      var radius = workSize * 0.46;
+      var radius = workSize * 0.40;
       var img = wctx.createImageData(workSize, workSize);
       paintAuraSphere(img, workSize, workSize, radius, time * cur.speed, cur);
       wctx.putImageData(img, 0, 0);
@@ -561,39 +557,40 @@
       ctx.drawImage(work, 0, 0, pw, ph);
       var cx = pw / 2;
       var cy = ph / 2;
-      var visR = Math.min(pw, ph) * 0.46;
+      var visR = Math.min(pw, ph) * 0.40;
       var cR = Math.round(cur.colorC[0] * 255);
       var cG = Math.round(cur.colorC[1] * 255);
       var cB = Math.round(cur.colorC[2] * 255);
       var bR = Math.round(cur.colorB[0] * 255);
       var bG = Math.round(cur.colorB[1] * 255);
       var bB = Math.round(cur.colorB[2] * 255);
+      // Glow behind the sphere. Additive compositing blows the 72px Talk
+      // control to a white disc on SwiftShader / cheap GPUs.
       ctx.globalCompositeOperation = "destination-over";
-      var glowGrad = ctx.createRadialGradient(cx, cy, visR * 0.42, cx, cy, visR * 1.42);
-      glowGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.42)");
-      glowGrad.addColorStop(0.55, "rgba(" + bR + "," + bG + "," + bB + ",0.2)");
+      var glowGrad = ctx.createRadialGradient(cx, cy, visR * 0.55, cx, cy, visR * 1.24);
+      glowGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.22)");
+      glowGrad.addColorStop(0.55, "rgba(" + bR + "," + bG + "," + bB + ",0.14)");
       glowGrad.addColorStop(1, "rgba(" + bR + "," + bG + "," + bB + ",0)");
       ctx.beginPath();
-      ctx.arc(cx, cy, visR * 1.42, 0, Math.PI * 2);
+      ctx.arc(cx, cy, visR * 1.24, 0, Math.PI * 2);
       ctx.fillStyle = glowGrad;
       ctx.fill();
-      ctx.globalCompositeOperation = "lighter";
+      ctx.globalCompositeOperation = "source-over";
       var coreGrad = ctx.createRadialGradient(cx - visR * 0.15, cy - visR * 0.15, 0, cx, cy, visR * 0.7);
-      coreGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.38)");
+      coreGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.22)");
       coreGrad.addColorStop(1, "rgba(" + cR + "," + cG + "," + cB + ",0)");
       ctx.beginPath();
       ctx.arc(cx, cy, visR * 0.7, 0, Math.PI * 2);
       ctx.fillStyle = coreGrad;
       ctx.fill();
-      var rimGrad = ctx.createRadialGradient(cx, cy, visR * 0.78, cx, cy, visR * 1.08);
+      var rimGrad = ctx.createRadialGradient(cx, cy, visR * 0.82, cx, cy, visR * 1.08);
       rimGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0)");
-      rimGrad.addColorStop(0.55, "rgba(" + cR + "," + cG + "," + cB + ",0.28)");
+      rimGrad.addColorStop(0.55, "rgba(" + cR + "," + cG + "," + cB + ",0.16)");
       rimGrad.addColorStop(1, "rgba(" + cR + "," + cG + "," + cB + ",0)");
       ctx.beginPath();
       ctx.arc(cx, cy, visR * 1.08, 0, Math.PI * 2);
       ctx.fillStyle = rimGrad;
       ctx.fill();
-      ctx.globalCompositeOperation = "source-over";
       raf = requestAnimationFrame(frame);
     }
     frame(performance.now());
@@ -619,13 +616,18 @@
     function getSize() { return size; }
     var stop = null;
     var prefer = opts.renderer === "canvas2d" ? "canvas2d" : opts.renderer === "webgl" ? "webgl" : "auto";
-    if (prefer !== "canvas2d" && isWebGLAvailable()) {
+    var hostPx = Math.max(host.clientWidth || 0, host.clientHeight || 0);
+    // Talk is 72px. WebGL at that size (additive + SwiftShader) paints a white
+    // disc. Force the Canvas2D Aura port for small hosts; keep WebGL for larger.
+    var force2d = prefer === "canvas2d" || (prefer !== "webgl" && hostPx <= CANVAS2D_MAX_HOST_PX);
+    if (!force2d && isWebGLAvailable()) {
       stop = startWebGL(canvas, getState, getSize);
     }
     if (!stop) {
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
       canvas = makeCanvas(host);
       canvas.className = "orb-canvas";
+      canvas.dataset.renderer = "canvas2d";
       canvas.dataset.fallback = "canvas2d";
       stop = startCanvas2D(canvas, getState, getSize);
     } else {

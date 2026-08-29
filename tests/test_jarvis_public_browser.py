@@ -286,10 +286,22 @@ def test_public_talk_orb_is_aura_sphere_not_stain():
     assert "nx * cur.intensity * 1.5" in sphere
     two_d = js.split("function startCanvas2D", 1)[1].split("function mount", 1)[0]
     assert "paintAuraSphere" in two_d
+    assert "destination-over" in two_d
+    assert 'globalCompositeOperation = "lighter"' not in two_d
+    assert "keepTinted" in js
+    assert "liftColor" not in js
     assert 'rgba(" + gR + "," + gG + "," + gB + ",0.15)"' not in js
     assert "wide &&" not in js
     assert ">= 140" not in js
-    assert "isWebGLAvailable()" in js.split("function mount", 1)[1]
+    assert "CANVAS2D_MAX_HOST_PX = 96" in js
+    mount = js.split("function mount", 1)[1]
+    assert "hostPx <= CANVAS2D_MAX_HOST_PX" in mount
+    assert "isWebGLAvailable()" in mount
+    assert 'renderer: "canvas2d"' in page
+    assert "float: 2.35" not in js
+    assert "float: 1.8" in js
+    assert "0.34 / max(luma" not in js
+    assert "luma < 0.34" not in js
     assert "#431407" not in js
     assert "#064E3B" not in js
     assert "#38BDF8" in js
