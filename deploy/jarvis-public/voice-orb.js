@@ -310,8 +310,16 @@
   }
 
   function startWebGL(canvas, getState, getSize) {
-    var gl = canvas.getContext("webgl", { alpha: true, antialias: true, premultipliedAlpha: true }) ||
-      canvas.getContext("experimental-webgl", { alpha: true, antialias: true });
+    var gl = canvas.getContext("webgl", {
+      alpha: true,
+      antialias: true,
+      premultipliedAlpha: true,
+      preserveDrawingBuffer: true
+    }) || canvas.getContext("experimental-webgl", {
+      alpha: true,
+      antialias: true,
+      preserveDrawingBuffer: true
+    });
     if (!gl) return null;
     var vs = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
     var fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
@@ -419,7 +427,27 @@
       gl.drawElements(gl.TRIANGLES, mesh.index.length, gl.UNSIGNED_SHORT, 0);
       raf = requestAnimationFrame(frame);
     }
-    raf = requestAnimationFrame(frame);
+    resize();
+    frame(performance.now());
+    try {
+      var probe = new Uint8Array(4);
+      gl.readPixels(
+        Math.floor(canvas.width / 2),
+        Math.floor(canvas.height / 2),
+        1,
+        1,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        probe
+      );
+      if (probe[0] + probe[1] + probe[2] + probe[3] === 0) {
+        cancelAnimationFrame(raf);
+        return null;
+      }
+    } catch (e) {
+      cancelAnimationFrame(raf);
+      return null;
+    }
     return function stop() {
       cancelAnimationFrame(raf);
     };
@@ -537,7 +565,7 @@
       ctx.fill();
       raf = requestAnimationFrame(frame);
     }
-    raf = requestAnimationFrame(frame);
+    frame(performance.now());
     return function stop() {
       cancelAnimationFrame(raf);
     };
@@ -554,8 +582,12 @@
     function getState() { return state; }
     function getSize() { return size; }
     var stop = null;
-    if (isWebGLAvailable()) stop = startWebGL(canvas, getState, getSize);
+    var wide = (host.clientWidth || 72) >= 140;
+    if (wide && isWebGLAvailable()) stop = startWebGL(canvas, getState, getSize);
     if (!stop) {
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+      canvas = makeCanvas(host);
+      canvas.className = "orb-canvas";
       canvas.dataset.fallback = "canvas2d";
       stop = startCanvas2D(canvas, getState, getSize);
     } else {
