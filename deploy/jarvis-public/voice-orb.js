@@ -11,15 +11,17 @@
 (function (global) {
   "use strict";
 
+  // Processing / error stay Aura constants.ts. Idle/listening/speaking keep the
+  // same cyan–blue–pink–lavender family so the 72px Talk control is a glowing
+  // sphere on the teal desktop, not Aura's brown listening / near-black idle.
   var CONFIG = {
-    idle: { colorA: "#0F172A", colorB: "#3B82F6", colorC: "#60A5FA", speed: 0.2, intensity: 0.4 },
-    listening: { colorA: "#431407", colorB: "#F59E0B", colorC: "#FEF3C7", speed: 0.5, intensity: 0.7 },
+    idle: { colorA: "#312E81", colorB: "#60A5FA", colorC: "#C4B5FD", speed: 0.25, intensity: 0.55 },
+    listening: { colorA: "#1E1B4B", colorB: "#38BDF8", colorC: "#F0ABFC", speed: 0.55, intensity: 0.9 },
     processing: { colorA: "#2E1065", colorB: "#8B5CF6", colorC: "#C084FC", speed: 1.5, intensity: 1.2 },
-    speaking: { colorA: "#064E3B", colorB: "#10B981", colorC: "#6EE7B7", speed: 0.8, intensity: 0.6 },
+    speaking: { colorA: "#1E3A8A", colorB: "#818CF8", colorC: "#E879F9", speed: 0.8, intensity: 0.75 },
     error: { colorA: "#450A0A", colorB: "#EF4444", colorC: "#FCA5A5", speed: 0.3, intensity: 1.5 }
   };
-  var SCALE_MAP = { hero: 2.5, float: 1.8, mini: 1.0 };
-  var FILL_MAP = { hero: 0.92, float: 0.88, mini: 0.78 };
+  var SCALE_MAP = { hero: 2.5, float: 2.35, mini: 2.2 };
 
   var VERTEX_SHADER =
     "attribute vec3 position;\n" +
@@ -107,6 +109,10 @@
     "  float fresnelTerm = clamp(1.0 - dot(viewDir, vNormal), 0.0, 1.0);\n" +
     "  fresnelTerm = pow(fresnelTerm, 2.5);\n" +
     "  color += uColorC * fresnelTerm * 1.5;\n" +
+    "  color = mix(color, uColorB, 0.22);\n" +
+    "  color = mix(color, uColorC, 0.12);\n" +
+    "  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));\n" +
+    "  if (luma < 0.34) color *= 0.34 / max(luma, 0.001);\n" +
     "  gl_FragColor = vec4(color, 1.0);\n" +
     "}";
 
@@ -205,7 +211,8 @@
   function makeCanvas(host) {
     var canvas = document.createElement("canvas");
     canvas.setAttribute("aria-hidden", "true");
-    canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:block;";
+    var px = Math.max(host.clientWidth || 0, host.clientHeight || 0, 72);
+    canvas.style.cssText = "display:block;width:" + px + "px;height:" + px + "px;pointer-events:none;";
     host.appendChild(canvas);
     return canvas;
   }
@@ -370,8 +377,12 @@
     var last = performance.now();
     var time = 0;
     var raf = 0;
-    gl.enable(gl.DEPTH_TEST);
-    gl.enable(gl.CULL_FACE);
+    // Aura VoiceOrb: AdditiveBlending, depthWrite false, DoubleSide.
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.clearColor(0, 0, 0, 0);
 
     function resize() {
@@ -402,7 +413,8 @@
       resize();
       var aspect = (canvas.width / canvas.height) || 1;
       var proj = perspective(45, aspect, 0.1, 100);
-      var scale = SCALE_MAP[getSize()] || SCALE_MAP.float;
+      var named = SCALE_MAP[getSize()] || SCALE_MAP.float;
+      var scale = (canvas.clientWidth || 72) <= 96 ? Math.max(named, 2.35) : named;
       var cy = Math.cos(rotY), sy = Math.sin(rotY);
       var cz = Math.cos(rotZ), sz = Math.sin(rotZ);
       var model = [
@@ -429,32 +441,73 @@
     }
     resize();
     frame(performance.now());
-    try {
-      var probe = new Uint8Array(4);
-      gl.readPixels(
-        Math.floor(canvas.width / 2),
-        Math.floor(canvas.height / 2),
-        1,
-        1,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        probe
-      );
-      if (probe[0] + probe[1] + probe[2] + probe[3] === 0) {
-        cancelAnimationFrame(raf);
-        return null;
-      }
-    } catch (e) {
-      cancelAnimationFrame(raf);
-      return null;
-    }
     return function stop() {
       cancelAnimationFrame(raf);
     };
   }
 
+  function liftColor(color, colorB, colorC) {
+    var lifted = lerpColor(lerpColor(color, colorB, 0.28), colorC, 0.14);
+    var luma = 0.2126 * lifted[0] + 0.7152 * lifted[1] + 0.0722 * lifted[2];
+    if (luma < 0.38) {
+      var k = 0.38 / Math.max(luma, 0.001);
+      lifted = [Math.min(1, lifted[0] * k), Math.min(1, lifted[1] * k), Math.min(1, lifted[2] * k)];
+    }
+    return lifted;
+  }
+
+  // Full Aura Canvas2DOrb port: simplex + fbm cloudy sphere, not a radial smudge.
+  function paintAuraSphere(img, width, height, radius, tSpeed, cur) {
+    var data = img.data;
+    var cx = width / 2;
+    var cy = height / 2;
+    var x, y, i, dx, dy, dist, nx, ny, nz, noise, n, color, glow, fresnel, specular, edge;
+    for (y = 0; y < height; y++) {
+      dy = y - cy;
+      for (x = 0; x < width; x++) {
+        dx = x - cx;
+        dist = Math.sqrt(dx * dx + dy * dy);
+        i = (y * width + x) * 4;
+        if (dist > radius) {
+          data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
+          continue;
+        }
+        nx = dx / radius;
+        ny = dy / radius;
+        nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+        noise = fbm3(
+          nx * cur.intensity * 1.5 + tSpeed * 0.3,
+          ny * cur.intensity * 1.5 + tSpeed * 0.2,
+          nz * cur.intensity + tSpeed * 0.4
+        );
+        n = noise * 0.5 + 0.5;
+        color = lerpColor(cur.colorA, cur.colorB, n);
+        glow = Math.max(0, Math.min(1, (n - 0.4) / 0.5));
+        color = lerpColor(color, cur.colorC, glow);
+        fresnel = Math.pow(1 - nz, 2.5);
+        color = [
+          Math.min(1, color[0] + cur.colorC[0] * fresnel * 1.2),
+          Math.min(1, color[1] + cur.colorC[1] * fresnel * 1.2),
+          Math.min(1, color[2] + cur.colorC[2] * fresnel * 1.2)
+        ];
+        specular = Math.pow(Math.max(0, nx * -0.4 + ny * -0.5 + nz * 0.7), 8);
+        color = [
+          Math.min(1, color[0] + specular * 0.6),
+          Math.min(1, color[1] + specular * 0.6),
+          Math.min(1, color[2] + specular * 0.6)
+        ];
+        color = liftColor(color, cur.colorB, cur.colorC);
+        edge = Math.min(1, (radius - dist) / Math.max(1.5, radius * 0.06));
+        data[i] = Math.round(color[0] * 255);
+        data[i + 1] = Math.round(color[1] * 255);
+        data[i + 2] = Math.round(color[2] * 255);
+        data[i + 3] = Math.round(edge * 255);
+      }
+    }
+  }
+
   function startCanvas2D(canvas, getState, getSize) {
-    var ctx = canvas.getContext("2d");
+    var ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return null;
     var state = getState();
     var cur = {
@@ -467,6 +520,9 @@
     var last = performance.now();
     var time = 0;
     var raf = 0;
+    var work = document.createElement("canvas");
+    var wctx = work.getContext("2d", { alpha: true });
+    if (!wctx) return null;
 
     function frame(now) {
       var dt = Math.min((now - last) / 1000, 0.05);
@@ -483,86 +539,61 @@
       var dpr = Math.min(window.devicePixelRatio || 1, 2);
       var cw = canvas.clientWidth || 72;
       var ch = canvas.clientHeight || 72;
-      if (canvas.width !== cw * dpr || canvas.height !== ch * dpr) {
-        canvas.width = cw * dpr;
-        canvas.height = ch * dpr;
+      var pw = Math.max(1, Math.round(cw * dpr));
+      var ph = Math.max(1, Math.round(ch * dpr));
+      if (canvas.width !== pw || canvas.height !== ph) {
+        canvas.width = pw;
+        canvas.height = ph;
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, cw, ch);
-      var cx = cw / 2;
-      var cy = ch / 2;
-      var fill = FILL_MAP[getSize()] || FILL_MAP.float;
-      var radius = Math.min(cw, ch) * fill / 2;
-      var tSpeed = time * cur.speed;
-      var glowRadius = radius * 1.6;
-      var gR = Math.round(cur.colorB[0] * 255);
-      var gG = Math.round(cur.colorB[1] * 255);
-      var gB = Math.round(cur.colorB[2] * 255);
-      var glowGrad = ctx.createRadialGradient(cx, cy, radius * 0.3, cx, cy, glowRadius);
-      glowGrad.addColorStop(0, "rgba(" + gR + "," + gG + "," + gB + ",0.15)");
-      glowGrad.addColorStop(0.5, "rgba(" + gR + "," + gG + "," + gB + ",0.06)");
-      glowGrad.addColorStop(1, "rgba(" + gR + "," + gG + "," + gB + ",0)");
-      ctx.beginPath();
-      ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
-      ctx.fillStyle = glowGrad;
-      ctx.fill();
-      var orbDiam = Math.ceil(radius * 2);
-      var step = orbDiam > 90 ? 2 : 1;
-      var py, px, dist, nx, ny, nz, noise, n, color, glow, fresnel, specular, r, g, b, edgeFade;
-      for (py = -orbDiam / 2; py < orbDiam / 2; py += step) {
-        for (px = -orbDiam / 2; px < orbDiam / 2; px += step) {
-          dist = Math.sqrt(px * px + py * py);
-          if (dist > radius) continue;
-          nx = px / radius;
-          ny = py / radius;
-          nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-          noise = fbm3(
-            nx * cur.intensity * 1.5 + tSpeed * 0.3,
-            ny * cur.intensity * 1.5 + tSpeed * 0.2,
-            nz * cur.intensity + tSpeed * 0.4
-          );
-          n = noise * 0.5 + 0.5;
-          color = lerpColor(cur.colorA, cur.colorB, n);
-          glow = Math.max(0, Math.min(1, (n - 0.4) / 0.5));
-          color = lerpColor(color, cur.colorC, glow);
-          fresnel = Math.pow(1 - nz, 2.5);
-          color = [
-            Math.min(1, color[0] + cur.colorC[0] * fresnel * 1.2),
-            Math.min(1, color[1] + cur.colorC[1] * fresnel * 1.2),
-            Math.min(1, color[2] + cur.colorC[2] * fresnel * 1.2)
-          ];
-          specular = Math.pow(Math.max(0, nx * -0.4 + ny * -0.5 + nz * 0.7), 8);
-          color = [
-            Math.min(1, color[0] + specular * 0.6),
-            Math.min(1, color[1] + specular * 0.6),
-            Math.min(1, color[2] + specular * 0.6)
-          ];
-          r = Math.round(color[0] * 255);
-          g = Math.round(color[1] * 255);
-          b = Math.round(color[2] * 255);
-          edgeFade = Math.min(1, (radius - dist) / 2);
-          ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + edgeFade.toFixed(3) + ")";
-          ctx.fillRect(cx + px, cy + py, step, step);
-        }
+      var workSize = Math.max(72, Math.min(112, Math.max(pw, ph)));
+      if (work.width !== workSize || work.height !== workSize) {
+        work.width = workSize;
+        work.height = workSize;
       }
+      var radius = workSize * 0.46;
+      var img = wctx.createImageData(workSize, workSize);
+      paintAuraSphere(img, workSize, workSize, radius, time * cur.speed, cur);
+      wctx.putImageData(img, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, pw, ph);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(work, 0, 0, pw, ph);
+      var cx = pw / 2;
+      var cy = ph / 2;
+      var visR = Math.min(pw, ph) * 0.46;
       var cR = Math.round(cur.colorC[0] * 255);
       var cG = Math.round(cur.colorC[1] * 255);
       var cB = Math.round(cur.colorC[2] * 255);
-      var coreGrad = ctx.createRadialGradient(cx - radius * 0.15, cy - radius * 0.15, 0, cx, cy, radius * 0.7);
-      coreGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.25)");
+      var bR = Math.round(cur.colorB[0] * 255);
+      var bG = Math.round(cur.colorB[1] * 255);
+      var bB = Math.round(cur.colorB[2] * 255);
+      ctx.globalCompositeOperation = "destination-over";
+      var glowGrad = ctx.createRadialGradient(cx, cy, visR * 0.42, cx, cy, visR * 1.42);
+      glowGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.42)");
+      glowGrad.addColorStop(0.55, "rgba(" + bR + "," + bG + "," + bB + ",0.2)");
+      glowGrad.addColorStop(1, "rgba(" + bR + "," + bG + "," + bB + ",0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, visR * 1.42, 0, Math.PI * 2);
+      ctx.fillStyle = glowGrad;
+      ctx.fill();
+      ctx.globalCompositeOperation = "lighter";
+      var coreGrad = ctx.createRadialGradient(cx - visR * 0.15, cy - visR * 0.15, 0, cx, cy, visR * 0.7);
+      coreGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0.38)");
       coreGrad.addColorStop(1, "rgba(" + cR + "," + cG + "," + cB + ",0)");
       ctx.beginPath();
-      ctx.arc(cx, cy, radius * 0.7, 0, Math.PI * 2);
+      ctx.arc(cx, cy, visR * 0.7, 0, Math.PI * 2);
       ctx.fillStyle = coreGrad;
       ctx.fill();
-      var rimGrad = ctx.createRadialGradient(cx, cy, radius * 0.85, cx, cy, radius * 1.15);
+      var rimGrad = ctx.createRadialGradient(cx, cy, visR * 0.78, cx, cy, visR * 1.08);
       rimGrad.addColorStop(0, "rgba(" + cR + "," + cG + "," + cB + ",0)");
-      rimGrad.addColorStop(0.5, "rgba(" + cR + "," + cG + "," + cB + ",0.12)");
+      rimGrad.addColorStop(0.55, "rgba(" + cR + "," + cG + "," + cB + ",0.28)");
       rimGrad.addColorStop(1, "rgba(" + cR + "," + cG + "," + cB + ",0)");
       ctx.beginPath();
-      ctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2);
+      ctx.arc(cx, cy, visR * 1.08, 0, Math.PI * 2);
       ctx.fillStyle = rimGrad;
       ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
       raf = requestAnimationFrame(frame);
     }
     frame(performance.now());
@@ -576,14 +607,21 @@
     opts = opts || {};
     var state = opts.state || "listening";
     var size = opts.size === "hero" || opts.size === "mini" ? opts.size : "float";
-    host.style.position = host.style.position || "relative";
+    if (!host.style.position) host.style.position = "relative";
+    if (!host.clientWidth || !host.clientHeight) {
+      host.style.display = "block";
+      if (!host.style.width) host.style.width = "72px";
+      if (!host.style.height) host.style.height = "72px";
+    }
     var canvas = host.querySelector("canvas") || makeCanvas(host);
     canvas.className = "orb-canvas";
     function getState() { return state; }
     function getSize() { return size; }
     var stop = null;
-    var wide = (host.clientWidth || 72) >= 140;
-    if (wide && isWebGLAvailable()) stop = startWebGL(canvas, getState, getSize);
+    var prefer = opts.renderer === "canvas2d" ? "canvas2d" : opts.renderer === "webgl" ? "webgl" : "auto";
+    if (prefer !== "canvas2d" && isWebGLAvailable()) {
+      stop = startWebGL(canvas, getState, getSize);
+    }
     if (!stop) {
       if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
       canvas = makeCanvas(host);
