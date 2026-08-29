@@ -221,6 +221,31 @@ def test_public_talk_two_button_idle_chrome():
     assert 'return "listening"' in page
 
 
+def test_more_click_handler_is_not_only_on_child_drag_capture_would_steal():
+    page = PAGE.read_text(encoding="utf-8")
+    drag = page.split("function bindChromeDrag", 1)[1].split("\n      function ", 1)[0]
+    pointerdown = drag.split('el.addEventListener("pointerdown"', 1)[1].split(
+        'el.addEventListener("pointermove"', 1
+    )[0]
+    pointermove = drag.split('el.addEventListener("pointermove"', 1)[1].split(
+        "function endDrag", 1
+    )[0]
+    assert "setPointerCapture" not in pointerdown
+    assert "THRESHOLD" in drag
+    assert "setPointerCapture" in pointermove
+    assert "if (!moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD))" in pointermove
+    assert 'moreWrap.addEventListener("click"' in page
+    assert 'moreBtn.addEventListener("click"' not in page
+    assert 'bindChromeDrag(moreWrap, "more"' in page
+    wrap_css = page[page.find("#more-wrap {") : page.find("#more {")]
+    assert "overflow: visible" in wrap_css
+    assert "z-index:" in wrap_css
+    z = int(wrap_css.split("z-index:", 1)[1].split(";", 1)[0].strip())
+    catch_css = page[page.find("#talk-catch {") : page.find("#talk-catch[hidden]")]
+    catch_z = int(catch_css.split("z-index:", 1)[1].split(";", 1)[0].strip())
+    assert z > catch_z
+
+
 def test_public_talk_aura_orb_sources_and_script():
     page = PAGE.read_text(encoding="utf-8")
     orb_js = ROOT / "deploy" / "jarvis-public" / "voice-orb.js"

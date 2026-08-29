@@ -649,8 +649,11 @@ def test_mute_me_is_the_only_stop():
     assert 'aria-label="Mute me"' in page
     assert "id=\"stopBtn\"" not in page
     click = page[page.find('mic.addEventListener("click"') :]
-    assert "void startTalk()" in click
-    assert "startListen()" not in click.split("});", 1)[0]
+    click_fn = click.split("});", 1)[0]
+    assert "void startTalk()" in click_fn
+    assert "if (!duplexLive && !listening)" in click_fn
+    assert "onMuteMe()" in click_fn
+    assert "startListen()" not in click_fn
     start_talk = _fn(page, "startTalk")
     assert "if (duplexLive)" in start_talk
     assert "disarmFirstClickTalk()" in start_talk
