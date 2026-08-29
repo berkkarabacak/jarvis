@@ -77,6 +77,22 @@ async def public_client(jarvis_env):
     get_settings.cache_clear()
 
 
+def test_root_talk_assets_and_empty_api_base():
+    page = _page()
+    js = _js()
+    html = page.split("<script src=", 1)[0]
+    assert 'src="/voice-orb.js"' in page
+    assert 'href="/download/Jarvis-Setup.exe"' in page
+    assert 'frame.setAttribute("src", "/screen?picture="' in page
+    assert 'src="/jarvis/voice-orb.js"' not in page
+    assert 'href="/jarvis/download/Jarvis-Setup.exe"' not in page
+    assert "/jarvis/screen?picture=" not in page
+    api = js.split("function apiBase()", 1)[1].split("function showNote", 1)[0]
+    assert 'return "";' in api
+    assert 'path.startsWith("/jarvis/")' in api
+    assert 'id="settings"' in html
+
+
 def test_exactly_five_settings_tabs_and_panels():
     page = _page()
     tabs = _settings_tabs(page)
@@ -169,7 +185,7 @@ async def test_public_talk_settings_put_get_roundtrip(public_client, jarvis_env)
     assert settings_store.get_look_speed() == "10s"
     assert settings_store.get_permission_profile() == "locked"
 
-    again = await public_client.get("/jarvis/api/jarvis/settings")
+    again = await public_client.get("/api/jarvis/settings")
     assert again.status_code == 200
     body = again.json()
     for key, value in samples.items():
