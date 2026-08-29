@@ -145,6 +145,7 @@
       top: calc(100% - 80px);
       width: 52px;
       height: 52px;
+      overflow: visible;
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
@@ -1802,7 +1803,7 @@
         }
       }
 
-      function bindChromeDrag(el, kind) {
+      function bindChromeDrag(el, kind, onTap) {
         if (!el) return;
         let startX = 0;
         let startY = 0;
@@ -1810,24 +1811,28 @@
         let origT = 0;
         let dragging = false;
         let moved = false;
+        let tapped = false;
         const THRESHOLD = 8;
         el.addEventListener("pointerdown", function (e) {
           if (e.button && e.button !== 0) return;
           if (kind === "more" && e.target && e.target.closest && e.target.closest("#more-cluster")) return;
           dragging = true;
           moved = false;
+          tapped = false;
           startX = e.clientX;
           startY = e.clientY;
           const box = el.getBoundingClientRect();
           origL = box.left;
           origT = box.top;
-          try { el.setPointerCapture(e.pointerId); } catch (_) {}
         });
         el.addEventListener("pointermove", function (e) {
           if (!dragging) return;
           const dx = e.clientX - startX;
           const dy = e.clientY - startY;
-          if (!moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) moved = true;
+          if (!moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) {
+            moved = true;
+            try { el.setPointerCapture(e.pointerId); } catch (_) {}
+          }
           if (!moved) return;
           placeChrome(el, origL + dx, origT + dy);
         });
@@ -1842,15 +1847,19 @@
             if (kind === "mic") prefs.orbPos = pos;
             else prefs.morePos = pos;
             savePrefs();
+          } else if (typeof onTap === "function" && e.type === "pointerup") {
+            tapped = true;
+            onTap(e);
           }
         }
         el.addEventListener("pointerup", endDrag);
         el.addEventListener("pointercancel", endDrag);
         el.addEventListener("click", function (e) {
-          if (!moved) return;
+          if (!moved && !tapped) return;
           e.preventDefault();
           e.stopImmediatePropagation();
           moved = false;
+          tapped = false;
         }, true);
       }
 
@@ -3158,15 +3167,16 @@
 
       if (mic) {
         mic.addEventListener("click", function () {
-          if (!wantListen && !muteMe) {
+          if (!duplexLive && !listening) {
             void startTalk();
             return;
           }
           onMuteMe();
         });
       }
-      if (moreBtn) {
-        moreBtn.addEventListener("click", function () {
+      if (moreWrap) {
+        moreWrap.addEventListener("click", function (e) {
+          if (e.target && e.target.closest && e.target.closest("#more-cluster")) return;
           setMoreOpen(moreCluster ? moreCluster.hidden : true);
         });
       }
@@ -3294,7 +3304,10 @@
         if (moreCluster && !moreCluster.hidden) setMoreOpen(false);
       });
       bindChromeDrag(mic, "mic");
-      bindChromeDrag(moreWrap, "more");
+      bindChromeDrag(moreWrap, "more", function (e) {
+        if (e.target && e.target.closest && e.target.closest("#more-cluster")) return;
+        setMoreOpen(moreCluster ? moreCluster.hidden : true);
+      });
       applyChromePos();
       addEventListener("resize", applyChromePos);
 
