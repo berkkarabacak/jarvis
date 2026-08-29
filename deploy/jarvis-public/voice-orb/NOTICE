@@ -1,0 +1,10 @@
+Voice Orb (Aura)
+https://github.com/Ashish-Soni08/aura
+
+These files were copied from the Aura / Figma Makeathon Voice Orb project
+and are licensed under the Apache License, Version 2.0. See LICENSE in
+this folder.
+
+Jarvis public Talk uses a vanilla JS port (`../voice-orb.js`) of VoiceOrb,
+Canvas2DOrb, OrbShaders, types, and constants. Visual only: this is not
+the ElevenLabs ConvAI widget and does not replace Jarvis voice routing.

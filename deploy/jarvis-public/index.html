@@ -95,10 +95,6 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.2; }
     }
-    @keyframes voice-breathe {
-      0%, 100% { transform: scaleY(0.42); }
-      50% { transform: scaleY(1); }
-    }
     #sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     #mute-me {
       position: absolute;
@@ -110,62 +106,37 @@
     #mic {
       position: fixed;
       z-index: 4;
-      left: calc(50% - 66px);
-      top: calc(100% - 92px);
-      width: 64px;
-      height: 64px;
+      left: calc(50% - 70px);
+      top: calc(100% - 100px);
+      width: 72px;
+      height: 72px;
       padding: 0;
       border: 0;
       border-radius: 50%;
-      background: #1a1a1a;
+      background: transparent;
       color: #fff;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
     }
-    #mic[data-voice="muted"] {
-      background: #2a2a2a;
-      opacity: 0.62;
-    }
-    .voice-bars {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      height: 26px;
+    #mic[data-voice="idle"] { opacity: 0.7; }
+    #orb {
+      position: absolute;
+      inset: 0;
       pointer-events: none;
     }
-    .voice-bar {
+    #orb .orb-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
       display: block;
-      width: 4px;
-      border-radius: 999px;
-      background: #fff;
-      transform-origin: center;
     }
-    .voice-bar:nth-child(1),
-    .voice-bar:nth-child(4) { height: 12px; }
-    .voice-bar:nth-child(2),
-    .voice-bar:nth-child(3) { height: 20px; }
-    #mic[data-voice="listen"] .voice-bar {
-      animation: voice-breathe 1.05s ease-in-out infinite;
-    }
-    #mic[data-voice="speak"] .voice-bar {
-      animation: voice-breathe 0.52s ease-in-out infinite;
-    }
-    #mic[data-voice="listen"] .voice-bar:nth-child(1),
-    #mic[data-voice="speak"] .voice-bar:nth-child(1) { animation-delay: 0s; }
-    #mic[data-voice="listen"] .voice-bar:nth-child(2),
-    #mic[data-voice="speak"] .voice-bar:nth-child(2) { animation-delay: 0.14s; }
-    #mic[data-voice="listen"] .voice-bar:nth-child(3),
-    #mic[data-voice="speak"] .voice-bar:nth-child(3) { animation-delay: 0.28s; }
-    #mic[data-voice="listen"] .voice-bar:nth-child(4),
-    #mic[data-voice="speak"] .voice-bar:nth-child(4) { animation-delay: 0.1s; }
-    #mic[data-voice="muted"] .voice-bar { animation: none; opacity: 0.7; }
     #more-wrap {
       position: fixed;
       z-index: 4;
@@ -761,9 +732,7 @@
       #settings .hero { font-size: calc(32px * var(--type-scale)); }
     }
     @media (prefers-reduced-motion: reduce) {
-      #mic .voice-bar {
-        animation: none;
-      }
+      #mic { opacity: 0.92; }
     }
   </style>
 </head>
@@ -772,13 +741,8 @@
     <span id="listen-chip" data-state="on"><span id="listen-label">Listening</span></span>
     <span id="doing">Ready</span>
   </div>
-  <button type="button" id="mic" data-voice="listen" title="Mute me" aria-label="Mute me" aria-pressed="false">
-    <span class="voice-bars" aria-hidden="true">
-      <span class="voice-bar"></span>
-      <span class="voice-bar"></span>
-      <span class="voice-bar"></span>
-      <span class="voice-bar"></span>
-    </span>
+  <button type="button" id="mic" data-voice="listening" title="Mute me" aria-label="Mute me" aria-pressed="false">
+    <span id="orb" aria-hidden="true"></span>
   </button>
   <div id="more-wrap">
     <button type="button" id="more" title="More" aria-label="More" aria-expanded="false" aria-controls="more-cluster">
@@ -1017,6 +981,7 @@
     </div>
   </div>
   <audio id="sink" autoplay playsinline hidden></audio>
+  <script src="/jarvis/voice-orb.js"></script>
   <script>
     (function () {
       const CANT = "Can't talk right now";
@@ -1027,6 +992,7 @@
       const box = document.getElementById("box");
       const form = document.getElementById("bar");
       const mic = document.getElementById("mic");
+      let voiceOrb = null;
       const chatEl = document.getElementById("chat");
       const chatBtn = document.getElementById("chat-btn");
       const chatBadge = document.getElementById("chat-badge");
@@ -1723,6 +1689,14 @@
         if (doingEl) doingEl.textContent = doing;
       }
 
+      function orbTalkState() {
+        if (muteMe) return "idle";
+        if (speaking) return "speaking";
+        if (connecting) return "processing";
+        if (!canListen) return "error";
+        return "listening";
+      }
+
       function paintMic() {
         if (!mic) {
           paintStatus();
@@ -1733,18 +1707,14 @@
         } else {
           mic.dataset.on = (wantListen && !muteMe && !speaking) ? "1" : "";
         }
+        const voice = orbTalkState();
+        mic.dataset.voice = voice;
+        if (voiceOrb) voiceOrb.setState(voice);
         if (muteMe) {
-          mic.dataset.voice = "muted";
           mic.setAttribute("aria-label", "Listen");
           mic.setAttribute("title", "Listen");
           mic.setAttribute("aria-pressed", "true");
-        } else if (speaking) {
-          mic.dataset.voice = "speak";
-          mic.setAttribute("aria-label", "Mute me");
-          mic.setAttribute("title", "Mute me");
-          mic.setAttribute("aria-pressed", "false");
         } else {
-          mic.dataset.voice = "listen";
           mic.setAttribute("aria-label", "Mute me");
           mic.setAttribute("title", "Mute me");
           mic.setAttribute("aria-pressed", "false");
@@ -1760,14 +1730,14 @@
 
       function chromeSize(el) {
         if (!el) return { w: 52, h: 52 };
-        const w = el.offsetWidth || (el.id === "mic" ? 64 : 52);
+        const w = el.offsetWidth || (el.id === "mic" ? 72 : 52);
         const h = el.offsetHeight || w;
         return { w: w, h: h };
       }
 
       function defaultChromeLeft(kind, size) {
         const gap = 16;
-        const orb = 64;
+        const orb = 72;
         const more = 52;
         const pair = orb + gap + more;
         const start = Math.max(12, (window.innerWidth - pair) / 2);
@@ -3342,6 +3312,12 @@
         }
       }
 
+      if (window.JarvisVoiceOrb && mic) {
+        const orbHost = document.getElementById("orb");
+        if (orbHost) {
+          voiceOrb = window.JarvisVoiceOrb.mount(orbHost, { size: "float", state: orbTalkState() });
+        }
+      }
       paintMute();
       paintStatus();
       pinLog();
