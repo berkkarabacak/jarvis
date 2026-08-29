@@ -835,28 +835,8 @@
           <div id="spend-meter" hidden><div id="spend-meter-fill"></div></div>
           <p><a class="get-app" href="/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
         </div>
-        <div class="panel" id="tab-model" role="tabpanel" data-settings-panel="model" hidden>
-          <p class="lead">Which brain he uses. No codes, no keys.</p>
-          <div id="model-picks">
-            <button type="button" data-q="fast">Quick</button>
-            <button type="button" data-q="balanced">Everyday</button>
-            <button type="button" data-q="smart">Deep</button>
-          </div>
-          <p class="choice-label">Who does the extra work</p>
-          <div id="helper-picks"></div>
-          <p class="now">In use now: <span id="model-name">Everyday</span></p>
-          <span id="model"></span>
-        </div>
-        <div class="panel" id="tab-speed" role="tabpanel" data-settings-panel="speed" hidden>
-          <p class="lead">How fast he works and when he checks with you.</p>
-          <div id="quality">
-            <button type="button" data-speed="fast">Fast</button>
-            <button type="button" data-speed="balanced">Normal</button>
-            <button type="button" data-speed="careful">Careful</button>
-          </div>
-        </div>
-        <div class="panel" id="tab-voice" role="tabpanel" data-settings-panel="voice" hidden>
-          <p class="lead">How he sounds and how he hears you.</p>
+        <div class="panel" id="tab-talk" role="tabpanel" data-settings-panel="talk" hidden>
+          <p class="lead">How he sounds.</p>
           <div class="picks" id="voice-picks">
             <button type="button" data-voice="warm">Warm<span class="pick-note">Soft and friendly.</span></button>
             <button type="button" data-voice="clear">Clear<span class="pick-note">Plain and even.</span></button>
@@ -877,87 +857,23 @@
             <span class="row-value">Yes</span>
           </div>
         </div>
-        <div class="panel" id="tab-allowed" role="tabpanel" data-settings-panel="allowed" hidden>
-          <p class="lead">What he may do on his own computer.</p>
-          <div class="choice" data-allow="apps">
-            <div class="choice-top">
-              <div>
-                <span class="choice-label">Open apps and websites</span>
-                <span class="choice-note">Browser, mail, photos</span>
-              </div>
-              <div class="seg" role="group" aria-label="Open apps and websites">
-                <button type="button" data-val="yes">Yes</button>
-                <button type="button" data-val="ask">Ask</button>
-                <button type="button" data-val="no">No</button>
-              </div>
-            </div>
+        <div class="panel" id="tab-brain" role="tabpanel" data-settings-panel="brain" hidden>
+          <p class="lead">Which brain he uses. No codes, no keys.</p>
+          <div id="model-picks">
+            <button type="button" data-q="fast">Quick</button>
+            <button type="button" data-q="balanced">Everyday</button>
+            <button type="button" data-q="smart">Deep</button>
           </div>
-          <div class="choice">
-            <div class="choice-top">
-              <div>
-                <span class="choice-label">Read your documents</span>
-                <span class="choice-note">Only the folder you share</span>
-              </div>
-              <span class="row-value">Needs the app</span>
-            </div>
+          <p class="choice-label">Work speed</p>
+          <div id="quality">
+            <button type="button" data-speed="fast">Fast</button>
+            <button type="button" data-speed="balanced">Normal</button>
+            <button type="button" data-speed="careful">Careful</button>
           </div>
-          <div class="choice" data-allow="files">
-            <div class="choice-top">
-              <div>
-                <span class="choice-label">Save and change files</span>
-                <span class="choice-note">Lists, letters, forms</span>
-              </div>
-              <div class="seg" role="group" aria-label="Save and change files">
-                <button type="button" data-val="yes">Yes</button>
-                <button type="button" data-val="ask">Ask</button>
-                <button type="button" data-val="no">No</button>
-              </div>
-            </div>
-          </div>
-          <div class="choice">
-            <div class="choice-top">
-              <div>
-                <span class="choice-label">Buy things or send messages</span>
-                <span class="choice-note">He always says the amount first</span>
-              </div>
-              <span class="row-value">Needs the app</span>
-            </div>
-          </div>
-          <div class="choice" data-allow="computer">
-            <div class="choice-top">
-              <div>
-                <span class="choice-label">Change the computer itself</span>
-                <span class="choice-note">Installing, deleting, settings</span>
-              </div>
-              <div class="seg" role="group" aria-label="Change the computer itself">
-                <button type="button" data-val="yes">Yes</button>
-                <button type="button" data-val="ask">Ask</button>
-                <button type="button" data-val="no">No</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="panel" id="tab-memory" role="tabpanel" data-settings-panel="memory" hidden>
-          <p class="lead">What he remembers about you.</p>
-          <p class="empty" id="memory-empty">He has not saved anything here yet.</p>
-          <ol id="memory-log" hidden></ol>
-        </div>
-        <div class="panel" id="tab-screen" role="tabpanel" data-settings-panel="screen" hidden>
-          <p class="lead">How his computer looks to you.</p>
-          <div class="stepper-block">
-            <span class="stepper-label">Text size everywhere</span>
-            <div class="stepper">
-              <button type="button" id="text-smaller" aria-label="Smaller">−</button>
-              <span class="step-val" id="text-size-val">100%</span>
-              <button type="button" id="text-bigger" aria-label="Bigger">+</button>
-            </div>
-          </div>
-          <p class="choice-label">Picture</p>
-          <p class="choice-note">Sharp costs a little more.</p>
-          <div class="picks" id="picture-picks">
-            <button type="button" data-picture="clear">Clear</button>
-            <button type="button" data-picture="smooth">Smooth</button>
-          </div>
+          <p class="choice-label">Who does the extra work</p>
+          <div id="helper-picks"></div>
+          <p class="now">In use now: <span id="model-name">Everyday</span></p>
+          <span id="model"></span>
         </div>
         <div class="panel" id="tab-computer" role="tabpanel" data-settings-panel="computer" hidden>
           <p class="lead">Which computer he uses.</p>
@@ -965,6 +881,19 @@
           <div class="picks" id="computer-picks">
             <button type="button" data-computer="linux">Linux<span class="pick-note">The usual desktop. This is the default.</span></button>
             <button type="button" data-computer="android">Android<span class="pick-note">A phone-shaped box he can tap.</span></button>
+          </div>
+          <p class="choice-label">How often he looks</p>
+          <div class="picks" id="look-picks">
+            <button type="button" data-look="off">Off<span class="pick-note">Only when a job needs a picture.</span></button>
+            <button type="button" data-look="30s">Slow<span class="pick-note">Every 30 seconds.</span></button>
+            <button type="button" data-look="10s">Normal<span class="pick-note">Every 10 seconds.</span></button>
+            <button type="button" data-look="1s">Fast<span class="pick-note">Every second.</span></button>
+          </div>
+          <p class="choice-label">What he may do</p>
+          <div class="picks" id="permission-picks">
+            <button type="button" data-permission="locked">Safe<span class="pick-note">Looks only.</span></button>
+            <button type="button" data-permission="personal">Usual<span class="pick-note">Asks first.</span></button>
+            <button type="button" data-permission="power">Freer<span class="pick-note">More on his own.</span></button>
           </div>
         </div>
         <div class="panel" id="tab-about" role="tabpanel" data-settings-panel="about" hidden>
@@ -978,6 +907,9 @@
             <span class="row-value">None</span>
           </div>
           <p><a class="get-app" href="/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
+          <p class="lead">What he remembers about you.</p>
+          <p class="empty" id="memory-empty">He has not saved anything here yet.</p>
+          <ol id="memory-log" hidden></ol>
         </div>
       </div>
     </div>
@@ -1024,12 +956,8 @@
       const helperPicksEl = document.getElementById("helper-picks");
       const SETTINGS_TABS = [
         { id: "cost", label: "Cost" },
-        { id: "model", label: "Model" },
-        { id: "speed", label: "Speed" },
-        { id: "voice", label: "Voice" },
-        { id: "allowed", label: "Allowed" },
-        { id: "memory", label: "Memory" },
-        { id: "screen", label: "Screen" },
+        { id: "talk", label: "Talk" },
+        { id: "brain", label: "Brain" },
         { id: "computer", label: "Computer" },
         { id: "about", label: "About" },
       ];
@@ -1037,11 +965,14 @@
       const PREFS_KEY = "jarvis.talk.prefs";
       const MIC_OK_KEY = "jarvis.talk.micOk";
       const ALLOW_DEFAULTS = {
-        apps: "yes",
-        docs: "ask",
+        apps: "ask",
         files: "ask",
-        buy: "ask",
         computer: "no",
+      };
+      const PROFILE_ALLOW = {
+        locked: { apps: "no", files: "no", computer: "no" },
+        personal: { apps: "ask", files: "ask", computer: "no" },
+        power: { apps: "yes", files: "yes", computer: "ask" },
       };
       const TALK_RATES = { slow: 0.85, normal: 1, quick: 1.15 };
       const TALK_VOICES = { warm: "marin", clear: "alloy", deep: "echo" };
@@ -1096,9 +1027,7 @@
           talkSpeed: "normal",
           allowed: {
             apps: ALLOW_DEFAULTS.apps,
-            docs: ALLOW_DEFAULTS.docs,
             files: ALLOW_DEFAULTS.files,
-            buy: ALLOW_DEFAULTS.buy,
             computer: ALLOW_DEFAULTS.computer,
           },
           textScale: 1,
@@ -1107,6 +1036,8 @@
           modelSpeed: "",
           helper: "",
           computerKind: "linux",
+          lookSpeed: "off",
+          permissionProfile: "personal",
           orbPos: null,
           morePos: null,
         };
@@ -1135,17 +1066,31 @@
           if (data.computerKind === "linux" || data.computerKind === "android") {
             out.computerKind = data.computerKind;
           }
+          if (data.lookSpeed === "off" || data.lookSpeed === "30s" || data.lookSpeed === "10s" || data.lookSpeed === "1s") {
+            out.lookSpeed = data.lookSpeed;
+          }
+          if (data.permissionProfile === "locked" || data.permissionProfile === "personal" || data.permissionProfile === "power") {
+            out.permissionProfile = data.permissionProfile;
+          }
           const scale = Number(data.textScale);
           if (isFinite(scale)) {
             out.textScale = Math.max(0.9, Math.min(1.4, Math.round(scale * 10) / 10));
           }
           if (data.allowed && typeof data.allowed === "object") {
-            const keys = ["apps", "docs", "files", "buy", "computer"];
+            const keys = HOSTED_ALLOW_KEYS;
             for (let i = 0; i < keys.length; i++) {
               const k = keys[i];
               const v = data.allowed[k];
               if (v === "yes" || v === "ask" || v === "no") out.allowed[k] = v;
             }
+          }
+          const fromProfile = PROFILE_ALLOW[out.permissionProfile];
+          if (fromProfile) {
+            out.allowed = {
+              apps: fromProfile.apps,
+              files: fromProfile.files,
+              computer: fromProfile.computer,
+            };
           }
           out.orbPos = readChromePos(data.orbPos);
           out.morePos = readChromePos(data.morePos);
@@ -1206,11 +1151,27 @@
         } catch (_) {}
       }
 
+      function voiceFromId(id) {
+        const raw = String(id || "").toLowerCase();
+        if (raw === "warm" || raw === "clear" || raw === "deep") return raw;
+        for (const key in TALK_VOICES) {
+          if (TALK_VOICES[key] === raw) return key;
+        }
+        return "";
+      }
+
+      function applyPermissionProfile(profile) {
+        const next = PROFILE_ALLOW[profile] || PROFILE_ALLOW.personal;
+        prefs.permissionProfile = PROFILE_ALLOW[profile] ? profile : "personal";
+        prefs.allowed = { apps: next.apps, files: next.files, computer: next.computer };
+      }
+
       function publicTalkAllowed() {
+        const mapped = PROFILE_ALLOW[prefs.permissionProfile] || prefs.allowed || ALLOW_DEFAULTS;
         const out = {};
         for (let i = 0; i < HOSTED_ALLOW_KEYS.length; i++) {
           const key = HOSTED_ALLOW_KEYS[i];
-          const val = prefs.allowed[key] || ALLOW_DEFAULTS[key];
+          const val = mapped[key] || ALLOW_DEFAULTS[key];
           if (val === "yes" || val === "ask" || val === "no") out[key] = val;
         }
         return out;
@@ -1453,7 +1414,34 @@
         if (typeof next.model === "string" && next.model.trim()) {
           prefs.helper = next.model.trim();
         }
+        if (next.realtime_voice) {
+          const voice = voiceFromId(next.realtime_voice);
+          if (voice) prefs.voice = voice;
+        }
+        if (next.talk_speed === "slow" || next.talk_speed === "normal" || next.talk_speed === "quick") {
+          prefs.talkSpeed = next.talk_speed;
+        }
+        if (next.look_speed === "off" || next.look_speed === "30s" || next.look_speed === "10s" || next.look_speed === "1s") {
+          prefs.lookSpeed = next.look_speed;
+        }
+        if (next.permission_profile === "locked" || next.permission_profile === "personal" || next.permission_profile === "power") {
+          applyPermissionProfile(next.permission_profile);
+        }
         savePrefs();
+      }
+
+      async function loadTalkSettings() {
+        try {
+          const res = await fetch(apiBase() + "/api/jarvis/settings", {
+            credentials: "same-origin",
+          });
+          const data = await res.json().catch(function () { return {}; });
+          if (res.ok) {
+            paintSheet(data);
+            return data;
+          }
+        } catch (_) {}
+        return null;
       }
 
       async function saveTalkSettings(body) {
@@ -1468,7 +1456,10 @@
           const data = await res.json().catch(function () { return {}; });
           if (res.ok) {
             paintSheet(data);
-            return data;
+            const fresh = await loadTalkSettings();
+            applyLiveVoice();
+            applyTalkRateAll();
+            return fresh || data;
           }
         } catch (_) {}
         return null;
@@ -1548,6 +1539,28 @@
           const live = document.getElementById("computer-kind-label");
           if (live && data.computer.label) live.textContent = String(data.computer.label);
         }
+        if ("realtime_voice" in data) {
+          const voice = voiceFromId(data.realtime_voice);
+          if (voice) prefs.voice = voice;
+          paintPicks(document.getElementById("voice-picks"), "data-voice", prefs.voice);
+        }
+        if ("talk_speed" in data) {
+          const speed = String(data.talk_speed || "").toLowerCase();
+          if (speed === "slow" || speed === "normal" || speed === "quick") prefs.talkSpeed = speed;
+          paintPicks(document.getElementById("talk-speed-picks"), "data-talk-speed", prefs.talkSpeed);
+        }
+        if ("look_speed" in data) {
+          const look = String(data.look_speed || "").toLowerCase();
+          if (look === "off" || look === "30s" || look === "10s" || look === "1s") prefs.lookSpeed = look;
+          paintPicks(document.getElementById("look-picks"), "data-look", prefs.lookSpeed);
+        }
+        if ("permission_profile" in data) {
+          const profile = String(data.permission_profile || "").toLowerCase();
+          if (profile === "locked" || profile === "personal" || profile === "power") {
+            applyPermissionProfile(profile);
+          }
+          paintPicks(document.getElementById("permission-picks"), "data-permission", prefs.permissionProfile);
+        }
         savePrefs();
       }
 
@@ -1558,6 +1571,7 @@
         showSettingsTab("cost");
         settingsClose.focus();
         void health();
+        void loadTalkSettings();
       }
 
       function closeSettings() {
@@ -1574,7 +1588,7 @@
         for (let i = 0; i < panels.length; i++) {
           panels[i].hidden = panels[i].getAttribute("data-settings-panel") !== name;
         }
-        if (name === "memory") void loadMemoryTab();
+        if (name === "about") void loadMemoryTab();
       }
 
       function loadMemoryTab() {
@@ -1635,18 +1649,14 @@
       function paintPrefs() {
         paintPicks(document.getElementById("voice-picks"), "data-voice", prefs.voice);
         paintPicks(document.getElementById("talk-speed-picks"), "data-talk-speed", prefs.talkSpeed);
-        paintPicks(document.getElementById("picture-picks"), "data-picture", prefs.picture);
+        paintPicks(document.getElementById("look-picks"), "data-look", prefs.lookSpeed || "off");
+        paintPicks(document.getElementById("permission-picks"), "data-permission", prefs.permissionProfile || "personal");
         if (prefs.quality) paintPicks(modelPicksEl, "data-q", prefs.quality);
         if (prefs.modelSpeed) paintPicks(qualityEl, "data-speed", prefs.modelSpeed);
         if (prefs.helper) paintPicks(helperPicksEl, "data-helper", prefs.helper);
         paintPicks(document.getElementById("computer-picks"), "data-computer", prefs.computerKind || "linux");
         const live = document.getElementById("computer-kind-label");
         if (live) live.textContent = prefs.computerKind === "android" ? "Android" : "Linux";
-        const rows = document.querySelectorAll("#tab-allowed [data-allow]");
-        for (let i = 0; i < rows.length; i++) {
-          const key = rows[i].getAttribute("data-allow");
-          paintPicks(rows[i], "data-val", prefs.allowed[key] || ALLOW_DEFAULTS[key]);
-        }
         applyTextScale();
         applyPicture();
       }
@@ -3230,9 +3240,9 @@
         voicePicksEl.querySelectorAll("[data-voice]").forEach(function (el) {
           el.addEventListener("click", function () {
             prefs.voice = el.getAttribute("data-voice") || "warm";
-            savePrefs();
             paintPicks(voicePicksEl, "data-voice", prefs.voice);
             applyLiveVoice();
+            void saveTalkSettings({ realtime_voice: realtimeVoice() });
           });
         });
       }
@@ -3240,46 +3250,36 @@
       if (talkSpeedEl) {
         talkSpeedEl.querySelectorAll("[data-talk-speed]").forEach(function (el) {
           el.addEventListener("click", function () {
-            prefs.talkSpeed = el.getAttribute("data-talk-speed") || "normal";
-            savePrefs();
+            const speed = el.getAttribute("data-talk-speed") || "normal";
+            prefs.talkSpeed = speed;
             paintPicks(talkSpeedEl, "data-talk-speed", prefs.talkSpeed);
             applyTalkRateAll();
+            void saveTalkSettings({ talk_speed: speed });
           });
         });
       }
-      document.querySelectorAll("#tab-allowed [data-allow]").forEach(function (row) {
-        row.querySelectorAll("[data-val]").forEach(function (el) {
+      const lookPicksEl = document.getElementById("look-picks");
+      if (lookPicksEl) {
+        lookPicksEl.querySelectorAll("[data-look]").forEach(function (el) {
           el.addEventListener("click", function () {
-            const key = row.getAttribute("data-allow");
-            const val = el.getAttribute("data-val");
-            if (!key || !val) return;
-            prefs.allowed[key] = val;
-            savePrefs();
-            paintPicks(row, "data-val", val);
+            const look = el.getAttribute("data-look") || "off";
+            prefs.lookSpeed = look;
+            paintPicks(lookPicksEl, "data-look", look);
+            void saveTalkSettings({ look_speed: look });
           });
         });
-      });
-      const pictureEl = document.getElementById("picture-picks");
-      if (pictureEl) {
-        pictureEl.querySelectorAll("[data-picture]").forEach(function (el) {
+      }
+      const permissionPicksEl = document.getElementById("permission-picks");
+      if (permissionPicksEl) {
+        permissionPicksEl.querySelectorAll("[data-permission]").forEach(function (el) {
           el.addEventListener("click", function () {
-            prefs.picture = el.getAttribute("data-picture") || "clear";
-            savePrefs();
-            paintPicks(pictureEl, "data-picture", prefs.picture);
-            applyPicture();
+            const profile = el.getAttribute("data-permission") || "personal";
+            applyPermissionProfile(profile);
+            paintPicks(permissionPicksEl, "data-permission", prefs.permissionProfile);
+            void saveTalkSettings({ permission_profile: prefs.permissionProfile });
           });
         });
       }
-      function bumpTextScale(delta) {
-        const next = Math.max(0.9, Math.min(1.4, Math.round((prefs.textScale + delta) * 10) / 10));
-        prefs.textScale = next;
-        savePrefs();
-        applyTextScale();
-      }
-      const textSmaller = document.getElementById("text-smaller");
-      const textBigger = document.getElementById("text-bigger");
-      if (textSmaller) textSmaller.addEventListener("click", function () { bumpTextScale(-0.1); });
-      if (textBigger) textBigger.addEventListener("click", function () { bumpTextScale(0.1); });
 
       settingsBtn.addEventListener("click", function () {
         if (settingsEl.hidden) {

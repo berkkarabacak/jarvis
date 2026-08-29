@@ -33,6 +33,7 @@ after ``load()``; ``null`` means “unset / fall back to env or default”:
 * ``computer_kind`` — linux | android | null  (ORCH-461; which box Jarvis
       drives. Default linux. Android is a second machine, not the Play
       Store phone app.)
+* ``talk_speed`` — slow | normal | quick | null  (public Talk playback rate)
 
 Router reads ``quality_vs_price`` (or the ``model_preference`` alias) and the budget caps from this object.
 A locked stored ``model`` is a hard pin. An unlocked stored ``model`` is
@@ -165,6 +166,7 @@ _STRING_KEYS = frozenset(
         "model_preference",
         "model_speed",
         "computer_kind",
+        "talk_speed",
     }
 )
 _BOOL_KEYS = frozenset({"model_lock"})
@@ -183,6 +185,8 @@ ALLOWED_MODEL_SPEEDS = frozenset({"fast", "balanced", "careful"})
 # phone-shaped box he can tap. Not the Play Store client under android/.
 ALLOWED_COMPUTER_KINDS = frozenset({"linux", "android"})
 DEFAULT_COMPUTER_KIND = "linux"
+ALLOWED_TALK_SPEEDS = frozenset({"slow", "normal", "quick"})
+DEFAULT_TALK_SPEED = "normal"
 COMPUTER_KIND_BLURBS: dict[str, dict[str, str]] = {
     "linux": {
         "label": "Linux",
@@ -231,6 +235,7 @@ def _empty() -> dict[str, Any]:
         "model_speed": None,
         "approve_countdown_sec": None,
         "computer_kind": None,
+        "talk_speed": None,
         "spend": _empty_spend(),
     }
 
@@ -687,6 +692,32 @@ def _normalize_computer_kind(raw: str | None) -> str | None:
     return mapped if mapped in ALLOWED_COMPUTER_KINDS else None
 
 
+def _normalize_talk_speed(raw: str | None) -> str | None:
+    s = (raw or "").strip().lower()
+    aliases = {
+        "slow": "slow",
+        "slower": "slow",
+        "normal": "normal",
+        "medium": "normal",
+        "default": "normal",
+        "quick": "quick",
+        "fast": "quick",
+        "faster": "quick",
+    }
+    mapped = aliases.get(s, s)
+    return mapped if mapped in ALLOWED_TALK_SPEEDS else None
+
+
+def get_talk_speed(root: Path | None = None) -> str:
+    """slow | normal | quick. Public Talk playback rate. Default normal."""
+    stored = load(root).get("talk_speed")
+    parsed = _normalize_talk_speed(stored if isinstance(stored, str) else None)
+    if parsed:
+        return parsed
+    env = _normalize_talk_speed(os.environ.get("JARVIS_TALK_SPEED"))
+    return env or DEFAULT_TALK_SPEED
+
+
 def get_computer_kind(root: Path | None = None, env: dict[str, str] | None = None) -> str:
     """linux | android. Default linux. Android is Jarvis's other box."""
     stored = load(root).get("computer_kind")
@@ -847,6 +878,7 @@ def public_view(root: Path | None = None) -> dict[str, Any]:
         "approve_countdown_min": APPROVE_COUNTDOWN_MIN,
         "approve_countdown_max": APPROVE_COUNTDOWN_MAX,
         "computer_kind": get_computer_kind(root),
+        "talk_speed": get_talk_speed(root),
         "computer_kinds": [
             {
                 "id": kid,
@@ -933,6 +965,11 @@ def validate_update(body: dict[str, Any], *, require_unlock: bool = True) -> dic
         if not parsed:
             raise ValueError("computer_kind must be linux or android")
         updates["computer_kind"] = parsed
+    if "talk_speed" in body and body["talk_speed"] is not None:
+        parsed = _normalize_talk_speed(str(body["talk_speed"]))
+        if not parsed:
+            raise ValueError("talk_speed must be slow, normal, or quick")
+        updates["talk_speed"] = parsed
     if "approve_countdown_sec" in body:
         raw = body["approve_countdown_sec"]
         if raw is None or raw == "":

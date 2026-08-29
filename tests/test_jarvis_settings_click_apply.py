@@ -84,6 +84,7 @@ def test_open_settings_calls_full_health_and_paint_sheet():
     open_fn = _fn(js, "openSettings")
     health_fn = _fn(js, "health")
     assert "void health()" in open_fn
+    assert "void loadTalkSettings()" in open_fn
     assert "health(true)" not in open_fn
     assert "lite ? \"?lite=1\" : \"\"" in health_fn
     assert "paintSheet(h)" in health_fn
@@ -150,7 +151,7 @@ def test_cost_paints_after_open_settings_full_health_not_lite():
     assert painted["today"] == "$0.40"
 
 
-def test_voice_click_maps_and_applies_without_settings_put():
+def test_voice_click_maps_and_puts_realtime_voice():
     page = _page()
     js = _js()
     apply_fn = _fn(js, "applyLiveVoice")
@@ -160,8 +161,7 @@ def test_voice_click_maps_and_applies_without_settings_put():
     assert "TALK_VOICES" in js
     assert "warm" in js and "clear" in js and "deep" in js
     assert "applyLiveVoice()" in click
-    assert "saveTalkSettings" not in click
-    assert "realtime_voice" not in click
+    assert "saveTalkSettings({ realtime_voice: realtimeVoice() })" in click
     assert "session.update" in apply_fn
     assert "audio: { output: { voice: realtimeVoice() } }" in apply_fn
     assert "TALK_VOICES[prefs.voice]" in voice_fn
@@ -201,24 +201,18 @@ def test_voice_click_maps_and_applies_without_settings_put():
 def test_allowed_is_enforced_or_not_shown():
     page = _page()
     js = _js()
-    allowed_html = page.split('id="tab-allowed"', 1)[1].split('id="tab-memory"', 1)[0]
-    assert 'data-allow="apps"' in allowed_html
-    assert 'data-allow="files"' in allowed_html
-    assert 'data-allow="computer"' in allowed_html
-    assert 'data-allow="docs"' not in allowed_html
-    assert 'data-allow="buy"' not in allowed_html
-    assert allowed_html.count("Needs the app") == 2
-    assert "Read your documents" in allowed_html
-    assert "Buy things or send messages" in allowed_html
-    docs = allowed_html.split("Read your documents", 1)[1].split("Save and change files", 1)[0]
-    buy = allowed_html.split("Buy things or send messages", 1)[1].split("Change the computer itself", 1)[0]
-    assert "data-val=" not in docs
-    assert "data-val=" not in buy
+    computer_html = page.split('id="tab-computer"', 1)[1].split('id="tab-about"', 1)[0]
+    assert 'data-permission="locked"' in computer_html
+    assert 'data-permission="personal"' in computer_html
+    assert 'data-permission="power"' in computer_html
+    assert "saveTalkSettings({ permission_profile: prefs.permissionProfile })" in js
     assert "function publicTalkAllowed" in js
     assert "allowed: publicTalkAllowed()" in js
     assert js.count("allowed: publicTalkAllowed()") >= 2
     assert "/api/jarvis/ask" in js
     assert "/api/jarvis/tools/run" in js
+    assert 'data-allow="docs"' not in page
+    assert 'data-allow="buy"' not in page
 
 
 def test_talk_allow_mapping_and_overlay():
@@ -284,28 +278,24 @@ async def test_tools_run_honors_public_allowed(public_client):
 def test_memory_tab_does_not_invent():
     js = _js()
     mem = _fn(js, "loadMemoryTab")
+    show = _fn(js, "showSettingsTab")
     assert "/api/jarvis/talk/last" in mem
     assert "data.turns" in mem
+    assert 'name === "about"' in show
     assert "14 Rose Lane" not in _page()
     assert "Dr Aydın" not in _page()
     assert "StreamBox" not in _page()
     assert "He has not saved anything here yet." in _page()
+    assert 'id="tab-about"' in _page()
+    assert 'id="memory-log"' in _page()
 
 
-def test_screen_text_and_picture_apply_after_click():
+def test_computer_look_and_permission_put():
     js = _js()
-    text_fn = _fn(js, "applyTextScale")
-    pic_fn = _fn(js, "applyPicture")
-    assert "--type-scale" in text_fn
-    assert "data-text-scale" in text_fn
-    assert "text-size-val" in text_fn
-    assert "applyTextScale()" in js
+    look_click = js.split("lookPicksEl.querySelectorAll(\"[data-look]\")", 1)[1]
+    look_click = look_click.split("permissionPicksEl", 1)[0]
+    assert "saveTalkSettings({ look_speed: look })" in look_click
+    perm_click = js.split("permissionPicksEl.querySelectorAll(\"[data-permission]\")", 1)[1]
+    assert "saveTalkSettings({ permission_profile: prefs.permissionProfile })" in perm_click
     assert "applyPicture()" in js
-    assert 'url.searchParams.set("picture"' in pic_fn
-    assert "frame.setAttribute(\"src\"" in pic_fn
     assert "/screen?picture=" in js
-    bump = _fn(js, "bumpTextScale")
-    assert "applyTextScale()" in bump
-    picture_click = js.split("pictureEl.querySelectorAll(\"[data-picture]\")", 1)[1]
-    picture_click = picture_click.split("function bumpTextScale", 1)[0]
-    assert "applyPicture()" in picture_click

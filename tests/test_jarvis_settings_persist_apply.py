@@ -116,9 +116,8 @@ def test_public_talk_cards_wire_persist_for_every_control():
     assert "data-speed=" in page
     assert "data-voice=" in page
     assert "data-talk-speed=" in page
-    assert "data-allow=" in page
-    assert "data-picture=" in page
-    assert "text-smaller" in page
+    assert "data-look=" in page
+    assert "data-permission=" in page
     assert "helper-picks" in page
 
     server_keys = _ui_save_keys(js, "saveTalkSettings")
@@ -126,18 +125,18 @@ def test_public_talk_cards_wire_persist_for_every_control():
     assert "model_speed" in server_keys
     assert "model" in server_keys
     assert "model_lock" in server_keys
+    assert "realtime_voice" in server_keys
+    assert "talk_speed" in server_keys
+    assert "look_speed" in server_keys
+    assert "permission_profile" in server_keys
+    assert "computer_kind" in server_keys
     assert "saveTalkSettings({ quality_vs_price: q, model_lock: false })" in js
 
     assert "rememberTalkSettings" in js
     assert "localStorage.setItem(PREFS_KEY" in js
     assert "prefs.voice" in js
     assert "prefs.talkSpeed" in js
-    assert "prefs.allowed" in js
-    assert "prefs.picture" in js
-    assert "prefs.textScale" in js
     assert "applyTalkRateAll" in js
-    assert "applyTextScale" in js
-    assert "applyPicture" in js
     assert "voice: prefs.voice" in js
     assert "{ text: text, voice: prefs.voice }" in js
 
@@ -206,7 +205,17 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
 
     js = _public_js()
     keys = _ui_save_keys(js, "saveTalkSettings")
-    assert keys == {"quality_vs_price", "model_speed", "model", "model_lock", "computer_kind"}
+    assert keys == {
+        "quality_vs_price",
+        "model_speed",
+        "model",
+        "model_lock",
+        "computer_kind",
+        "realtime_voice",
+        "talk_speed",
+        "look_speed",
+        "permission_profile",
+    }
 
     quality = await public_client.put(
         "/api/jarvis/settings",
@@ -239,11 +248,32 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
     assert prefixed.json()["quality_vs_price"] == "fast"
     assert prefixed.json()["model_speed"] == "careful"
 
+    voice = await public_client.put(
+        "/api/jarvis/settings",
+        json={"realtime_voice": "echo", "talk_speed": "quick"},
+    )
+    assert voice.status_code == 200, voice.text
+    assert voice.json()["realtime_voice"] == "echo"
+    assert voice.json()["talk_speed"] == "quick"
+
+    look = await public_client.put(
+        "/api/jarvis/settings",
+        json={"look_speed": "10s", "permission_profile": "locked", "computer_kind": "android"},
+    )
+    assert look.status_code == 200, look.text
+    assert look.json()["look_speed"] == "10s"
+    assert look.json()["permission_profile"] == "locked"
+    assert look.json()["computer_kind"] == "android"
+
     settings_store.reset_cache()
     assert settings_store.get_quality_vs_price() == "fast"
     assert settings_store.get_model_speed() == "careful"
     assert settings_store.get_model() == helper
     assert settings_store.get_model_lock() is True
+    assert settings_store.get_realtime_voice() == "echo"
+    assert settings_store.get_talk_speed() == "quick"
+    assert settings_store.get_look_speed() == "10s"
+    assert settings_store.get_permission_profile() == "locked"
 
     health = await public_client.get("/jarvis/api/jarvis/health")
     assert health.status_code == 200
@@ -251,10 +281,14 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
     assert sheet["quality_vs_price"] == "fast"
     assert sheet["model_speed"] == "careful"
     assert sheet["model"] == helper
+    assert sheet["realtime_voice"] == "echo"
+    assert sheet["talk_speed"] == "quick"
+    assert sheet["look_speed"] == "10s"
+    assert sheet["permission_profile"] == "locked"
 
     denied = await public_client.put(
         "/api/jarvis/settings",
-        json={"daily_budget_usd": 9, "realtime_voice": "echo"},
+        json={"daily_budget_usd": 9},
     )
     assert denied.status_code == 401
 

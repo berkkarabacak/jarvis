@@ -412,16 +412,19 @@ def test_public_talk_his_computer_v2_chrome_slice():
     assert "flex: 0 0 228px" in page
     assert "SETTINGS_TABS" in page
     assert '{ id: "cost", label: "Cost" }' in page
-    assert '{ id: "model", label: "Model" }' in page
-    assert '{ id: "speed", label: "Speed" }' in page
-    assert '{ id: "voice", label: "Voice" }' in page
-    assert '{ id: "allowed", label: "Allowed" }' in page
-    assert '{ id: "memory", label: "Memory" }' in page
-    assert '{ id: "screen", label: "Screen" }' in page
+    assert '{ id: "talk", label: "Talk" }' in page
+    assert '{ id: "brain", label: "Brain" }' in page
+    assert '{ id: "computer", label: "Computer" }' in page
     assert '{ id: "about", label: "About" }' in page
+    assert '{ id: "model", label: "Model" }' not in page
+    assert '{ id: "speed", label: "Speed" }' not in page
+    assert '{ id: "voice", label: "Voice" }' not in page
+    assert '{ id: "allowed", label: "Allowed" }' not in page
+    assert '{ id: "memory", label: "Memory" }' not in page
+    assert '{ id: "screen", label: "Screen" }' not in page
     assert "What he has cost you this month." in page
     assert "Which brain he uses. No codes, no keys." in page
-    assert "How fast he works and when he checks with you." in page
+    assert "How he sounds." in page
     assert "Quick" in page
     assert "Everyday" in page
     assert "Deep" in page
@@ -468,14 +471,17 @@ def test_public_talk_settings_remaining_tabs():
     low = page.lower()
     tabs = page.split("SETTINGS_TABS", 1)[1].split("];", 1)[0]
     assert "Cost" in tabs
-    assert "Model" in tabs
-    assert "Speed" in tabs
-    assert "Voice" in tabs
-    assert "Allowed" in tabs
-    assert "Memory" in tabs
-    assert "Screen" in tabs
+    assert "Talk" in tabs
+    assert "Brain" in tabs
+    assert "Computer" in tabs
     assert "About" in tabs
-    assert "How he sounds and how he hears you." in page
+    assert "Model" not in tabs
+    assert "Speed" not in tabs
+    assert "Voice" not in tabs
+    assert "Allowed" not in tabs
+    assert "Memory" not in tabs
+    assert "Screen" not in tabs
+    assert "How he sounds." in page
     assert "Soft and friendly." in page
     assert "Plain and even." in page
     assert "Low and calm." in page
@@ -485,21 +491,15 @@ def test_public_talk_settings_remaining_tabs():
     assert 'data-talk-speed="quick"' in page
     assert "Jarvis…" in page
     assert "Keeps listening after you speak" in page
-    assert "What he may do on his own computer." in page
-    assert "Open apps and websites" in page
-    assert "Browser, mail, photos" in page
-    assert "Read your documents" in page
-    assert "Only the folder you share" in page
-    assert "Save and change files" in page
-    assert "Lists, letters, forms" in page
-    assert "Buy things or send messages" in page
-    assert "He always says the amount first" in page
-    assert "Change the computer itself" in page
-    assert "Installing, deleting, settings" in page
-    assert 'data-val="yes"' in page
-    assert 'data-val="ask"' in page
-    assert 'data-val="no"' in page
-    assert "--no: #ae1800" in page
+    assert "What he may do" in page
+    assert 'data-permission="locked"' in page
+    assert 'data-permission="personal"' in page
+    assert 'data-permission="power"' in page
+    assert "How often he looks" in page
+    assert 'data-look="off"' in page
+    assert 'data-look="30s"' in page
+    assert 'data-look="10s"' in page
+    assert 'data-look="1s"' in page
     assert "What he remembers about you." in page
     assert "He has not saved anything here yet." in page
     assert "14 Rose Lane" not in page
@@ -507,16 +507,6 @@ def test_public_talk_settings_remaining_tabs():
     assert "Dr Aydin" not in page
     assert "StreamBox" not in page
     assert "Forget everything" not in page
-    assert "How his computer looks to you." in page
-    assert "Text size everywhere" in page
-    assert "text-size-val" in page
-    assert "0.9" in page
-    assert "Math.min(1.4" in page
-    assert "jarvis.talk.prefs" in page
-    assert "--type-scale" in page
-    assert "Sharp costs a little more." in page
-    assert 'data-picture="clear"' in page
-    assert 'data-picture="smooth"' in page
     assert "Show what he types on screen" not in page
     assert "Dim his screen in the evening" not in page
     assert "This app and where to get help." in page
@@ -659,7 +649,7 @@ async def test_app_serves_public_chat_page(client):
     assert 'id="settings"' in html
     assert "Settings" in html
     assert "Spent today" in html
-    assert "How he sounds and how he hears you." in html
+    assert "How he sounds." in html
     assert "He has not saved anything here yet." in html
     assert "Linux" in html
     assert "Get app" in html
@@ -787,6 +777,10 @@ def test_health_sheet_matches_public_view_ledger(tmp_path, monkeypatch):
     assert sheet["remaining_budget_usd"] == view["remaining_budget_usd"]
     assert sheet["quality_vs_price"] == view["quality_vs_price"] == "fast"
     assert sheet["model_speed"] == view["model_speed"]
+    assert sheet["realtime_voice"] == view["realtime_voice"]
+    assert sheet["look_speed"] == view["look_speed"]
+    assert sheet["permission_profile"] == view["permission_profile"]
+    assert sheet["talk_speed"] == view["talk_speed"]
     assert sheet["monthly_budget_usd"] == view["monthly_budget_usd"]
     assert health["model"] == view["model"]
     assert health["spent_today_usd"] == view["spent_today_usd"]
@@ -854,6 +848,10 @@ async def test_talk_apis_exist_under_jarvis_prefix(client):
     assert "quality_vs_price" in body
     assert "model_speed" in body
     assert "monthly_budget_usd" in body
+    assert "realtime_voice" in body
+    assert "look_speed" in body
+    assert "permission_profile" in body
+    assert "talk_speed" in body
     assert "helper_models" in body
     assert 1 <= len(body["helper_models"]) <= 20
     assert all("gpt-realtime" not in str(row.get("id") or "") for row in body["helper_models"])

@@ -89,8 +89,8 @@ def test_public_page_has_helper_picker_not_realtime():
     assert "/api/jarvis/settings" in page
     assert "model_lock" in page
     assert "saveTalkSettings" in page
-    assert 'data-settings-panel="voice"' in page
-    assert 'data-settings-panel="model"' in page
+    assert 'data-settings-panel="talk"' in page
+    assert 'data-settings-panel="brain"' in page
     assert "gpt-realtime" not in low
     assert "innerHTML" not in page
     assert "$2.40" not in page
