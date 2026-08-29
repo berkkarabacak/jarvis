@@ -320,7 +320,7 @@ def test_public_download_is_the_one_click_exe():
     assert "<title>Jarvis</title>" in page
     assert 'aria-label="Jarvis"' not in page
     assert ">Jarvis</h1>" not in page
-    assert 'href="/jarvis/download/Jarvis-Setup.exe"' in page
+    assert 'href="/download/Jarvis-Setup.exe"' in page
     assert 'aria-label="Get app"' in page
     assert "Get app" in page
     assert ">Download</a>" not in page

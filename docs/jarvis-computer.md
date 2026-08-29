@@ -127,7 +127,7 @@ Jarvis, same memory, different computer.
 - Tools `docker exec` into `jarvis-android` (`screencap` / `input` / `am`).
   They never exec into `jarvis-computer`.
 - Watch: localhost [http://127.0.0.1:6081](http://127.0.0.1:6081), proxied as
-  `/jarvis/android/`. Same Talk iframe as Linux noVNC.
+  `/android/`. Same Talk iframe as Linux noVNC. `/jarvis/android/` 301s there.
 - This is **not** the Play Store phone app in `android/` (ORCH-382).
 
 ```bash

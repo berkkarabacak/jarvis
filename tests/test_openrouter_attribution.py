@@ -11,11 +11,11 @@ from app.llm.openrouter_attribution import (
 
 
 def test_openrouter_attribution_points_at_canonical_talk():
-    assert OPENROUTER_APP_URL == "https://aicontrolroom.nl/jarvis/"
+    assert OPENROUTER_APP_URL == "https://aicontrolroom.nl/"
     assert OPENROUTER_APP_TITLE == "Jarvis"
     assert OPENROUTER_APP_CATEGORIES == "personal-agent,general-chat"
     headers = openrouter_attribution_headers()
-    assert headers["HTTP-Referer"] == "https://aicontrolroom.nl/jarvis/"
+    assert headers["HTTP-Referer"] == "https://aicontrolroom.nl/"
     assert headers["X-Title"] == "Jarvis"
     assert headers["X-OpenRouter-Title"] == "Jarvis"
     assert headers["X-OpenRouter-Categories"] == "personal-agent,general-chat"
@@ -27,7 +27,7 @@ def test_openrouter_provider_defaults_use_canonical_talk():
     from app.llm.openrouter import OpenRouterLlmProvider
 
     provider = OpenRouterLlmProvider(api_key="test")
-    assert provider.site_url == "https://aicontrolroom.nl/jarvis/"
+    assert provider.site_url == "https://aicontrolroom.nl/"
     assert provider.app_title == "Jarvis"
 
     class _Settings:
@@ -40,4 +40,4 @@ def test_openrouter_provider_defaults_use_canonical_talk():
 
     built = build_llm_provider(_Settings(), token_provider=None)
     assert isinstance(built, OpenRouterLlmProvider)
-    assert built.site_url == "https://aicontrolroom.nl/jarvis/"
+    assert built.site_url == "https://aicontrolroom.nl/"

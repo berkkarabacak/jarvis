@@ -2,7 +2,7 @@
 
 An open-source agent runtime you can talk to. It uses a real computer (Linux desktop, optional Android box).
 
-**Live demo:** [https://aicontrolroom.nl/jarvis/](https://aicontrolroom.nl/jarvis/)
+**Live demo:** [https://aicontrolroom.nl/](https://aicontrolroom.nl/)
 
 Alias: [https://berkkarabacak.com/jarvis/](https://berkkarabacak.com/jarvis/)
 
@@ -31,7 +31,7 @@ When you run Jarvis yourself, put your own keys in `.env` (copy from `.env.examp
 - `OPENAI_API_KEY=`
 - `OPENROUTER_API_KEY=`
 
-Never commit `.env` or any real key. Public Talk on [aicontrolroom.nl/jarvis](https://aicontrolroom.nl/jarvis/) is already free for visitors — you do not need a key there. [berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias.
+Never commit `.env` or any real key. Public Talk on [aicontrolroom.nl](https://aicontrolroom.nl/) is already free for visitors — you do not need a key there. [berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias.
 
 ## His computer
 

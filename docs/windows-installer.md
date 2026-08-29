@@ -43,7 +43,7 @@ Upgrades replace the app folder. They do not wipe `%APPDATA%\Jarvis` or Document
 
 `app/first_run_env.py` writes `.env` (workspace + generated `API_SECRET` / `TOKEN_ENCRYPTION_KEY`). Electron runs that file by path (not `-m app.first_run_env`) so embeddable CPython can start even though a `._pth` file ignores `PYTHONPATH`. The same `._pth` lists `../backend` so `uvicorn app.main:app` still resolves.
 
-Packaged start **skips** any key window. Berk sets the talk secret on the hosted server (`JARVIS_HOSTED_TALK_URL`, default `https://aicontrolroom.nl/jarvis`; `https://berkkarabacak.com/jarvis` is an alias) or injects `JARVIS_OPERATOR_OPENROUTER_KEY` in the private build env. Users never see it. No notepad, no console paste.
+Packaged start **skips** any key window. Berk sets the talk secret on the hosted server (`JARVIS_HOSTED_TALK_URL`, default `https://aicontrolroom.nl`; `https://berkkarabacak.com/jarvis` is an alias) or injects `JARVIS_OPERATOR_OPENROUTER_KEY` in the private build env. Users never see it. No notepad, no console paste.
 
 ## Related paths that stay
 

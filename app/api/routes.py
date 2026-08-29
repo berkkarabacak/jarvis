@@ -123,10 +123,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "service": "agent-orchestrator"}
 
 
-@router.get("/")
-async def root() -> RedirectResponse:
-    """Open the public CEO shell while preserving an nginx path prefix."""
-    return RedirectResponse(url="ceo", status_code=307)
+# GET / is public Talk (app.jarvis.public_routes). Old CEO stays at /ceo.
 
 
 @router.get("/logo.svg")
@@ -2244,8 +2241,8 @@ def build_router() -> APIRouter:
         from app.jarvis.realtime_routes import router as jarvis_router
 
         root.include_router(jarvis_router)
-        # Hosted talk URL is https://aicontrolroom.nl/jarvis — same handlers
-        # under /jarvis/api/jarvis/* when nginx proxies /jarvis/ without strip.
+        # Alias under /jarvis/api/jarvis/* so old bookmarks and the
+        # berkkarabacak.com/jarvis path still reach the same handlers.
         root.include_router(jarvis_router, prefix="/jarvis")
     except Exception:  # pragma: no cover - optional local module
         pass
@@ -2253,7 +2250,8 @@ def build_router() -> APIRouter:
         from app.jarvis.settings_routes import router as jarvis_settings_router
 
         root.include_router(jarvis_settings_router)
-        # Public Talk on /jarvis/ posts to /jarvis/api/jarvis/settings.
+        # Public Talk on / still posts to /api/jarvis/settings. Keep the
+        # /jarvis prefix so the alias host can keep serving Talk there.
         root.include_router(jarvis_settings_router, prefix="/jarvis")
     except Exception:  # pragma: no cover - optional local module
         pass

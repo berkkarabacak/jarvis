@@ -102,8 +102,8 @@ Health and the shell:
 ```bash
 curl -s https://aicontrolroom.nl/health
 curl -s -o /dev/null -w '%{http_code}\n' https://aicontrolroom.nl/ceo      # 200
-curl -s -o /dev/null -w '%{http_code}\n' https://aicontrolroom.nl/         # 302 → /jarvis/
-curl -s -o /dev/null -w '%{http_code}\n' https://aicontrolroom.nl/jarvis/  # 200 Talk
+curl -s -o /dev/null -w '%{http_code}\n' https://aicontrolroom.nl/         # 200 Talk
+curl -s -o /dev/null -w '%{http_code}\n' https://aicontrolroom.nl/jarvis/  # 301 → /
 ```
 
 A full guest turn — this is the real user path, no credential anywhere:

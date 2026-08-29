@@ -1,4 +1,4 @@
-"""Public /jarvis/ is a live chat page, not a download-only stub."""
+"""Public Talk is the site root. Old /jarvis/ paths 301 there."""
 
 from __future__ import annotations
 
@@ -69,7 +69,7 @@ def test_public_page_source_is_chat_and_talk():
     assert ">Jarvis</h1>" not in page
     assert 'id="wall"' not in page
     assert 'id="pc"' in page
-    assert "/jarvis/screen" in page
+    assert "/screen" in page
     assert 'aria-label="Screen"' in page
     assert "@keyframes drift" not in page
     assert "@keyframes hue" not in page
@@ -77,7 +77,7 @@ def test_public_page_source_is_chat_and_talk():
     assert "@keyframes voice-breathe" not in page
     assert 'class="voice-bar"' not in page
     assert 'id="orb"' in page
-    assert "/jarvis/voice-orb.js" in page
+    assert "/voice-orb.js" in page
     assert "JarvisVoiceOrb" in page
     assert "requestAnimationFrame" in (ROOT / "deploy" / "jarvis-public" / "voice-orb.js").read_text(encoding="utf-8")
     assert 'id="log"' in page
@@ -94,7 +94,7 @@ def test_public_page_source_is_chat_and_talk():
     assert "if (muteHim) return" in page
     assert "stopListen" in page
     assert "stopVoice" in page
-    assert 'href="/jarvis/download/Jarvis-Setup.exe"' in page
+    assert 'href="/download/Jarvis-Setup.exe"' in page
     assert 'aria-label="Get app"' in page
     assert "Get app" in page
     assert "Talk" in page
@@ -193,7 +193,7 @@ def test_public_talk_two_button_idle_chrome():
     assert 'class="voice-bar"' not in chrome
     assert 'class="voice-bars"' not in chrome
     assert 'id="orb"' in chrome
-    assert "/jarvis/voice-orb.js" in page
+    assert "/voice-orb.js" in page
     assert "JarvisVoiceOrb.mount" in page
     assert 'id="more-cluster" hidden' in chrome
     assert 'id="mute-him"' in chrome
@@ -282,7 +282,7 @@ def test_public_talk_aura_orb_sources_and_script():
     assert "unpkg.com" not in js
     assert "elevenlabs.io" not in js.lower()
     assert 'id="orb"' in page
-    assert 'src="/jarvis/voice-orb.js"' in page
+    assert 'src="/voice-orb.js"' in page
     assert 'class="voice-bar"' not in page
     assert "function simplex3" in js
     assert "function fbm3" in js
@@ -401,7 +401,7 @@ def test_public_talk_his_computer_v2_chrome_slice():
     assert 'id="box"' in page
     assert 'id="go"' in page
     assert 'aria-label="Screen"' in page
-    assert "/jarvis/screen" in page
+    assert "/screen" in page
     assert "height: 62px" in page
     assert 'id="settings-back"' in page
     assert "Back" in page
@@ -529,7 +529,7 @@ def test_public_talk_settings_remaining_tabs():
     assert "Version" not in about
     assert "1.4" not in about
     assert "Call for help" not in page
-    assert 'href="/jarvis/download/Jarvis-Setup.exe"' in page
+    assert 'href="/download/Jarvis-Setup.exe"' in page
     assert "$2.40" not in page
     assert "/api/jarvis/settings" in page
     assert "Who does the extra work" in page
@@ -632,23 +632,24 @@ def test_site_nginx_keeps_download_and_proxies_chat():
     assert "proxy_pass http://127.0.0.1:6080/;" in text
     assert "listen 0.0.0.0:6080" not in text
     assert "proxy_pass http://0.0.0.0:6080" not in text
-    assert "proxy_pass http://127.0.0.1:8895/;" not in text
+    assert "return 301 https://aicontrolroom.nl/;" in text
 
 
 @pytest.mark.asyncio
 async def test_app_serves_public_chat_page(client):
-    r = await client.get("/jarvis/", follow_redirects=True)
+    r = await client.get("/", follow_redirects=False)
     assert r.status_code == 200
     assert "text/html" in r.headers.get("content-type", "")
     html = r.text
+    assert "<title>Jarvis</title>" in html
     assert 'id="log"' in html
     assert 'id="box"' in html
     assert 'id="mic"' in html
     assert 'id="orb"' in html
     assert 'id="mute-me"' in html
     assert 'id="mute-him"' in html
-    assert 'src="/jarvis/voice-orb.js"' in html
-    orb_js = await client.get("/jarvis/voice-orb.js")
+    assert 'src="/voice-orb.js"' in html
+    orb_js = await client.get("/voice-orb.js")
     assert orb_js.status_code == 200
     assert "JarvisVoiceOrb" in orb_js.text
     assert "text/javascript" in orb_js.headers.get("content-type", "")
@@ -662,8 +663,8 @@ async def test_app_serves_public_chat_page(client):
     assert "He has not saved anything here yet." in html
     assert "Linux" in html
     assert "Get app" in html
-    assert "/jarvis/screen" in html
-    assert 'href="/jarvis/download/Jarvis-Setup.exe"' in html
+    assert "/screen" in html
+    assert 'href="/download/Jarvis-Setup.exe"' in html
     assert "/api/jarvis/ask" in html
     assert "/api/jarvis/speak" in html
     assert "/jarvis/hello/en.mp3" not in html
@@ -688,6 +689,37 @@ async def test_app_serves_public_chat_page(client):
     _assert_no_secret_values(html)
 
 
+@pytest.mark.asyncio
+async def test_old_jarvis_paths_301_to_root(client):
+    home = await client.get("/jarvis", follow_redirects=False)
+    assert home.status_code == 301
+    assert home.headers["location"] == "/"
+
+    slash = await client.get("/jarvis/", follow_redirects=False)
+    assert slash.status_code == 301
+    assert slash.headers["location"] == "/"
+
+    orb = await client.get("/jarvis/voice-orb.js", follow_redirects=False)
+    assert orb.status_code == 301
+    assert orb.headers["location"] == "/voice-orb.js"
+
+    screen = await client.get("/jarvis/screen", follow_redirects=False)
+    assert screen.status_code == 301
+    assert screen.headers["location"] == "/screen"
+
+    hello = await client.get("/jarvis/hello/en.mp3", follow_redirects=False)
+    assert hello.status_code == 301
+    assert hello.headers["location"] == "/hello/en.mp3"
+
+    download = await client.get("/jarvis/download/Jarvis-Setup.exe", follow_redirects=False)
+    assert download.status_code == 301
+    assert download.headers["location"] == "/download/Jarvis-Setup.exe"
+
+    pictured = await client.get("/jarvis/screen?picture=clear", follow_redirects=False)
+    assert pictured.status_code == 301
+    assert pictured.headers["location"] == "/screen?picture=clear"
+
+
 def test_public_first_open_defers_catalog_screen_and_fonts():
     page = PAGE.read_text(encoding="utf-8")
     start_talk = page.split("async function startTalk()", 1)[1].split("function askAbortMs", 1)[0]
@@ -710,9 +742,9 @@ def test_public_first_open_defers_catalog_screen_and_fonts():
     assert "void health(true)" in page
     assert "requestIdleCallback" in page
     iframe = page.split('id="pc-frame"', 1)[1].split(">", 1)[0]
-    assert 'src="/jarvis/screen"' not in iframe
+    assert 'src="/screen"' not in iframe
     assert "loadPcScreen" in page
-    assert 'frame.setAttribute("src", "/jarvis/screen?picture="' in page
+    assert 'frame.setAttribute("src", "/screen?picture="' in page
     assert "saveTalkSettings({ model_speed:" in page
     assert "saveTalkSettings({ quality_vs_price: q, model_lock: false })" in page
     assert "rememberTalkSettings" in page
@@ -802,10 +834,10 @@ def test_lite_health_does_not_load_helper_catalog(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_bare_jarvis_path_redirects_to_slash(client):
+async def test_bare_jarvis_path_redirects_to_root(client):
     r = await client.get("/jarvis", follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers.get("location", "").endswith("/jarvis/")
+    assert r.status_code == 301
+    assert r.headers.get("location") == "/"
 
 
 @pytest.mark.asyncio
@@ -957,9 +989,9 @@ def test_hello_clips_are_openai_tts_not_local_robot():
 
 @pytest.mark.asyncio
 async def test_cached_hello_clips_are_static_mpeg(client):
-    en = await client.get("/jarvis/hello/en.mp3")
-    tr = await client.get("/jarvis/hello/tr.mp3")
-    missing = await client.get("/jarvis/hello/de.mp3")
+    en = await client.get("/hello/en.mp3")
+    tr = await client.get("/hello/tr.mp3")
+    missing = await client.get("/hello/de.mp3")
     assert en.status_code == 200
     assert tr.status_code == 200
     assert missing.status_code == 404
@@ -998,7 +1030,7 @@ async def test_download_exe_when_file_exists(client, tmp_path, monkeypatch):
     exe = tmp_path / "Jarvis-Setup.exe"
     exe.write_bytes(b"MZ-fake-installer")
     monkeypatch.setenv("JARVIS_SETUP_EXE_PATH", str(exe))
-    r = await client.get("/jarvis/download/Jarvis-Setup.exe")
+    r = await client.get("/download/Jarvis-Setup.exe")
     assert r.status_code == 200
     assert r.content == b"MZ-fake-installer"
     assert "application/octet-stream" in r.headers.get("content-type", "")
@@ -1006,6 +1038,6 @@ async def test_download_exe_when_file_exists(client, tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_download_missing_is_404_not_the_chat_page(client):
-    r = await client.get("/jarvis/download/Jarvis-Setup.exe")
+    r = await client.get("/download/Jarvis-Setup.exe")
     assert r.status_code == 404
     assert 'id="log"' not in r.text
