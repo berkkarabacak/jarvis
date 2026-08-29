@@ -5,7 +5,7 @@ This is a **debug / internal** build. It is not a Play Store listing (ORCH-389).
 Google Play Billing for Free / $3 / $8 is wired here (ORCH-388). Product IDs
 live in [play-billing.md](play-billing.md). Do not invent a Play Store URL.
 
-The public site refers to Jarvis at [berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis).
+The public site refers to Jarvis at [aicontrolroom.nl/jarvis](https://aicontrolroom.nl/jarvis/) ([berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias).
 Package id: `com.berkkarabacak.jarvis` (debug builds use `.debug`).
 
 ## What this app talks to

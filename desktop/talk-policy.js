@@ -9,7 +9,7 @@
  */
 const path = require("path");
 
-const DEFAULT_HOSTED_TALK_URL = "https://berkkarabacak.com/jarvis";
+const DEFAULT_HOSTED_TALK_URL = "https://aicontrolroom.nl/jarvis";
 const CANT_TALK = "Can't talk right now";
 
 function shouldShowFirstRunKeyWindow(_opts) {

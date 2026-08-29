@@ -37,7 +37,7 @@ def build_llm_provider(settings: "Settings", token_provider: "TokenProvider") ->
         timeout_seconds=timeout,
         default_model=default_model,
         mode=mode,
-        site_url="https://berkkarabacak.com/jarvis/",
+        site_url="https://aicontrolroom.nl/jarvis/",
         app_title="Jarvis",
     )
 

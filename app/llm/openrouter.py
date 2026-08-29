@@ -40,7 +40,7 @@ class OpenRouterLlmProvider:
         timeout_seconds: float = 600.0,
         default_model: str = OPENROUTER_AUTO_MODEL,
         mode: str = "auto",
-        site_url: str = "https://berkkarabacak.com/jarvis/",
+        site_url: str = "https://aicontrolroom.nl/jarvis/",
         app_title: str = "Jarvis",
     ) -> None:
         self.api_key = (api_key or "").strip()
