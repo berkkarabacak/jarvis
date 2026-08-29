@@ -3316,7 +3316,7 @@
       if (window.JarvisVoiceOrb && mic) {
         const orbHost = document.getElementById("orb");
         if (orbHost) {
-          voiceOrb = window.JarvisVoiceOrb.mount(orbHost, { size: "float", state: orbTalkState() });
+          voiceOrb = window.JarvisVoiceOrb.mount(orbHost, { size: "float", state: orbTalkState(), renderer: "canvas2d" });
         }
       }
       paintMute();
