@@ -177,8 +177,7 @@ def test_public_page_source_is_chat_and_talk():
 
 def test_public_talk_two_button_idle_chrome():
     page = PAGE.read_text(encoding="utf-8")
-    markup = page.split("<script>", 1)[0]
-    chrome = markup.split("<body>", 1)[1].split('<div id="stage">', 1)[0]
+    chrome = page.split("<body>", 1)[1].split('<div id="stage">', 1)[0]
     assert 'id="top"' not in page
     assert 'class="word"' not in page
     assert 'aria-label="Jarvis"' not in page
