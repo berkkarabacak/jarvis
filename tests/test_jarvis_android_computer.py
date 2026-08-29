@@ -310,6 +310,8 @@ def test_watch_path_is_localhost_equivalent_of_novnc():
     watch = WATCH.read_text(encoding="utf-8")
     assert "Jarvis's screen" in watch
     assert "play_store_client" in watch
+    assert 'src="/stream.mjpeg"' not in watch
+    assert 'src="stream.mjpeg"' in watch
     linux_compose = (ROOT / "deploy" / "jarvis-computer" / "docker-compose.yml").read_text(
         encoding="utf-8"
     )
