@@ -16,7 +16,7 @@ assert.strictEqual(shouldShowFirstRunKeyWindow({ isPackaged: true, needsKey: tru
 assert.strictEqual(shouldShowFirstRunKeyWindow({ isPackaged: false, needsKey: true }), false);
 assert.strictEqual(shouldShowFirstRunKeyWindow({}), false);
 
-assert.strictEqual(DEFAULT_HOSTED_TALK_URL, "https://berkkarabacak.com/jarvis");
+assert.strictEqual(DEFAULT_HOSTED_TALK_URL, "https://aicontrolroom.nl/jarvis");
 assert.strictEqual(CANT_TALK, "Can't talk right now");
 
 const hosted = applyOperatorTalkEnv(

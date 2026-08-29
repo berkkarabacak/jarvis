@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 
 # Public talk host Berk operates. Not a secret. Packaged desktop injects this
 # when the local user ``.env`` has no key.
-DEFAULT_HOSTED_TALK_URL = "https://berkkarabacak.com/jarvis"
+DEFAULT_HOSTED_TALK_URL = "https://aicontrolroom.nl/jarvis"
 
 # User-facing copy when talk cannot run. Never ask for a key.
 CANT_TALK = "Can't talk right now"

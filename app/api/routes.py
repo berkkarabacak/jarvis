@@ -2244,7 +2244,7 @@ def build_router() -> APIRouter:
         from app.jarvis.realtime_routes import router as jarvis_router
 
         root.include_router(jarvis_router)
-        # Hosted talk URL is https://berkkarabacak.com/jarvis — same handlers
+        # Hosted talk URL is https://aicontrolroom.nl/jarvis — same handlers
         # under /jarvis/api/jarvis/* when nginx proxies /jarvis/ without strip.
         root.include_router(jarvis_router, prefix="/jarvis")
     except Exception:  # pragma: no cover - optional local module

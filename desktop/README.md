@@ -48,7 +48,7 @@ npm start
 
 Family users must not type a key. Berk sets one of:
 
-1. The key on the hosted talk server (`https://berkkarabacak.com/jarvis`, or `JARVIS_HOSTED_TALK_URL`)
+1. The key on the hosted talk server (`https://aicontrolroom.nl/jarvis`, or `JARVIS_HOSTED_TALK_URL`; `https://berkkarabacak.com/jarvis` is an alias)
 2. `JARVIS_OPERATOR_OPENROUTER_KEY` or `OPENROUTER_API_KEY` in the **private** installer build env on Odin — `build-installer.ps1` writes `operator.env` into extraResources. That file is gitignored. Do not commit it. Do not put a placeholder in source.
 
 Users never see the secret. If talk cannot run, the app says "Can't talk right now".

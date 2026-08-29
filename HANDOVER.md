@@ -5,7 +5,7 @@ For the next coding agent. No keys. Work here; do not clone unless Berk asks.
 ## Product
 
 Jarvis is an **agent runtime**, not an orchestrator.
-Public Talk: https://berkkarabacak.com/jarvis/
+Public Talk: https://aicontrolroom.nl/jarvis/ (alias: https://berkkarabacak.com/jarvis/)
 
 ## Git
 

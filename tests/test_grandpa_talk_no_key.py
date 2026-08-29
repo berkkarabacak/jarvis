@@ -162,7 +162,7 @@ def test_operator_and_hosted_helpers(monkeypatch):
     monkeypatch.delenv("KIMI_API_KEY", raising=False)
     monkeypatch.delenv("JARVIS_HOSTED_TALK_URL", raising=False)
     assert CANT_TALK == "Can't talk right now"
-    assert DEFAULT_HOSTED_TALK_URL == "https://berkkarabacak.com/jarvis"
+    assert DEFAULT_HOSTED_TALK_URL == "https://aicontrolroom.nl/jarvis"
     assert openrouter_api_key() == ""
     assert talk_ready() is False
     assert should_use_hosted_talk() is False

@@ -1,6 +1,6 @@
 # Public Jarvis page
 
-Source for https://berkkarabacak.com/jarvis/
+Source for https://aicontrolroom.nl/jarvis/ (alias: https://berkkarabacak.com/jarvis/)
 
 Family page: **Jarvis**, a chat list, a box to type, a Talk control, and a small **Download**.
 
