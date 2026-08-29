@@ -318,7 +318,7 @@ def test_windows_app_opens_settings_without_console():
 def test_public_download_is_the_one_click_exe():
     page = (ROOT / "deploy" / "jarvis-public" / "index.html").read_text(encoding="utf-8")
     assert "<title>Jarvis</title>" in page
-    assert 'aria-label="Jarvis"' in page
+    assert 'aria-label="Jarvis"' not in page
     assert ">Jarvis</h1>" not in page
     assert 'href="/jarvis/download/Jarvis-Setup.exe"' in page
     assert 'aria-label="Get app"' in page
@@ -328,7 +328,8 @@ def test_public_download_is_the_one_click_exe():
     assert 'id="log"' in page
     assert 'id="box"' in page
     assert 'id="mic"' in page
-    assert 'aria-label="Talk"' in page
+    assert 'id="more"' in page
+    assert 'aria-label="Mute me"' in page
     assert "/api/jarvis/ask" in page
     assert "/api/jarvis/speak" in page
     assert "Can't talk right now" in page

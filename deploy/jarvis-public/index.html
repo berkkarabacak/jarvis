@@ -75,18 +75,13 @@
     html, body {
       margin: 0;
       height: 100%;
-      background: var(--page);
+      background: #111;
       color: var(--ink);
       font-family: var(--ui-font);
       line-height: 1.4;
     }
     html { font-size: calc(16px * var(--type-scale)); }
-    body { font-size: 1rem; }
-    body {
-      display: flex;
-      flex-direction: column;
-      min-height: 100%;
-    }
+    body { font-size: 1rem; min-height: 100%; overflow: hidden; }
     @keyframes listen-pulse {
       0%, 100% { transform: scale(1); }
       50% { transform: scale(1.08); }
@@ -100,102 +95,115 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.2; }
     }
-    #top {
-      height: 56px;
-      flex: 0 0 56px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      padding: 0 12px 0 14px;
-      background: var(--white);
-      border-bottom: 1px solid var(--border);
+    @keyframes voice-breathe {
+      0%, 100% { transform: scaleY(0.42); }
+      50% { transform: scaleY(1); }
     }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-width: 0;
-      flex: 1;
+    #sr-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    #mute-me {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
     }
-    h1 {
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 0 0 auto;
-      font-size: 17px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    h1 .mark { display: block; width: 26px; height: 26px; }
-    h1 .word { line-height: 1; }
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      flex: 1;
-    }
-    #listen-chip, #live-chip {
+    #mic {
+      position: fixed;
+      z-index: 4;
+      left: calc(50% - 66px);
+      top: calc(100% - 92px);
+      width: 64px;
+      height: 64px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: #1a1a1a;
+      color: #fff;
+      cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      min-height: 28px;
-      padding: 0 10px;
-      border-radius: 999px;
-      white-space: nowrap;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
     }
-    #listen-chip {
-      background: var(--listen-bg);
-      color: var(--listen-ink);
-      font-size: 13px;
-      font-weight: 600;
+    #mic[data-voice="muted"] {
+      background: #2a2a2a;
+      opacity: 0.62;
     }
-    #listen-chip .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--listen);
-    }
-    #listen-chip[data-state="on"] .dot {
-      animation: blink-dot 1s ease-in-out infinite;
-    }
-    #listen-chip[data-state="off"] .dot {
-      background: var(--muted);
-    }
-    #live-chip {
-      background: var(--live-bg);
-      min-width: 0;
-    }
-    #live-chip .dot {
-      width: 8px;
-      height: 8px;
-      flex: 0 0 8px;
-      border-radius: 50%;
-      background: var(--accent);
-      animation: blink-dot 1s ease-in-out infinite;
-    }
-    #live-chip .live-word {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--live-ink);
-    }
-    #doing {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--ink);
-    }
-    .tools {
+    .voice-bars {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex: 0 0 auto;
+      justify-content: center;
+      gap: 4px;
+      height: 26px;
+      pointer-events: none;
     }
+    .voice-bar {
+      display: block;
+      width: 4px;
+      border-radius: 999px;
+      background: #fff;
+      transform-origin: center;
+    }
+    .voice-bar:nth-child(1),
+    .voice-bar:nth-child(4) { height: 12px; }
+    .voice-bar:nth-child(2),
+    .voice-bar:nth-child(3) { height: 20px; }
+    #mic[data-voice="listen"] .voice-bar {
+      animation: voice-breathe 1.05s ease-in-out infinite;
+    }
+    #mic[data-voice="speak"] .voice-bar {
+      animation: voice-breathe 0.52s ease-in-out infinite;
+    }
+    #mic[data-voice="listen"] .voice-bar:nth-child(1),
+    #mic[data-voice="speak"] .voice-bar:nth-child(1) { animation-delay: 0s; }
+    #mic[data-voice="listen"] .voice-bar:nth-child(2),
+    #mic[data-voice="speak"] .voice-bar:nth-child(2) { animation-delay: 0.14s; }
+    #mic[data-voice="listen"] .voice-bar:nth-child(3),
+    #mic[data-voice="speak"] .voice-bar:nth-child(3) { animation-delay: 0.28s; }
+    #mic[data-voice="listen"] .voice-bar:nth-child(4),
+    #mic[data-voice="speak"] .voice-bar:nth-child(4) { animation-delay: 0.1s; }
+    #mic[data-voice="muted"] .voice-bar { animation: none; opacity: 0.7; }
+    #more-wrap {
+      position: fixed;
+      z-index: 4;
+      left: calc(50% + 14px);
+      top: calc(100% - 80px);
+      width: 52px;
+      height: 52px;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #more {
+      width: 52px;
+      height: 52px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: #1a1a1a;
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+    #more svg { display: block; width: 22px; height: 22px; }
+    #more[aria-expanded="true"] { background: #2a2a2a; }
+    #more-cluster {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    #more-cluster[hidden] { display: none; }
     .bar-btn {
       display: inline-flex;
       align-items: center;
@@ -203,48 +211,23 @@
       padding: 0;
       border: 0;
       border-radius: 50%;
-      background: var(--ink);
-      color: var(--white);
+      background: #1a1a1a;
+      color: #fff;
       cursor: pointer;
       position: relative;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
     }
     .bar-btn svg { display: block; width: 18px; height: 18px; }
-    #mic.bar-btn {
+    #mute-him, #chat-btn, #settings-btn {
       width: 44px;
       height: 44px;
-      background: var(--ink);
-      color: var(--white);
     }
-    #mic.bar-btn[data-on="1"] {
-      background: var(--accent);
-      color: var(--white);
-      animation: pulseRing 1.1s ease-out infinite;
-    }
-    #mute-me, #mute-him, #chat-btn {
-      width: 36px;
-      height: 36px;
-      background: var(--white);
-      color: var(--ink);
-      border: 1px solid var(--border);
-    }
-    #mute-me[data-on="1"], #mute-him[data-on="1"],
-    .bar-btn[data-mute][data-on="1"], .foot-btn[data-mute][data-on="1"],
-    #chat-btn[aria-expanded="true"] {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: var(--white);
-    }
-    #settings-btn {
-      width: 40px;
-      height: 40px;
-      background: var(--white);
-      color: var(--ink);
-      border: 1px solid var(--border);
-    }
-    .bar-div {
-      width: 1px;
-      height: 22px;
-      background: var(--border);
+    #mute-him[data-on="1"],
+    .bar-btn[data-mute][data-on="1"],
+    #chat-btn[aria-expanded="true"],
+    #settings-btn[aria-expanded="true"] {
+      background: #fff;
+      color: #1a1a1a;
     }
     #chat-btn .badge {
       position: absolute;
@@ -261,17 +244,14 @@
     }
     #chat-btn .badge[hidden] { display: none; }
     #stage {
-      flex: 1;
-      display: flex;
-      min-height: 0;
-      background: var(--page);
+      position: fixed;
+      inset: 0;
+      background: #111;
     }
     #pc {
-      flex: 1 1 auto;
-      min-width: 0;
-      min-height: 0;
+      position: absolute;
+      inset: 0;
       background: #111;
-      position: relative;
     }
     #pc iframe { width: 100%; height: 100%; border: 0; background: #000; display: block; }
     #talk-catch {
@@ -283,13 +263,18 @@
     }
     #talk-catch[hidden] { display: none; }
     #chat {
-      flex: 0 0 330px;
-      width: 330px;
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 5;
+      width: min(330px, 92vw);
       display: flex;
       flex-direction: column;
       min-height: 0;
       background: var(--white);
       border-left: 1px solid var(--border);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.16);
     }
     #chat[hidden] { display: none; }
     .chat-head {
@@ -361,47 +346,6 @@
       text-align: center;
     }
     #note:not([hidden])::before { content: "!"; }
-    .drawer-foot {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      padding: 0.55rem 0.85rem 0.2rem;
-    }
-    .foot-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      border: 1px solid var(--border);
-      background: var(--ink);
-      color: var(--white);
-      cursor: pointer;
-    }
-    .foot-btn svg { width: 22px; height: 22px; display: block; }
-    #drawer-mic {
-      width: 62px;
-      height: 54px;
-      border-radius: 999px;
-      border-color: var(--ink);
-    }
-    #drawer-mic[data-on="1"] {
-      background: var(--accent);
-      border-color: var(--accent);
-      animation: pulseRing 1.1s ease-out infinite;
-    }
-    .foot-btn[data-mute] {
-      width: 54px;
-      height: 54px;
-      border-radius: 50%;
-      background: var(--white);
-      color: var(--ink);
-    }
-    .foot-btn[data-mute][data-on="1"] {
-      background: var(--ink);
-      border-color: var(--ink);
-      color: var(--white);
-    }
     #bar {
       display: flex;
       gap: 0.4rem;
@@ -788,8 +732,8 @@
       word-break: break-word;
     }
     .panel[hidden] { display: none; }
-    #mic:focus-visible, #go:focus-visible, .bar-btn:focus-visible, .foot-btn:focus-visible,
-    h1:focus-visible, #settings-close:focus-visible, #settings-back:focus-visible,
+    #mic:focus-visible, #more:focus-visible, #go:focus-visible, .bar-btn:focus-visible,
+    #settings-close:focus-visible, #settings-back:focus-visible,
     #chat-hide:focus-visible, #settings-rail button:focus-visible,
     #quality button:focus-visible, #model-picks button:focus-visible,
     #helper-picks button:focus-visible, .get-app:focus-visible,
@@ -797,7 +741,7 @@
       outline: 2px solid var(--ink);
       outline-offset: 2px;
     }
-    h1, #log p, #settings .lead, #settings .now, #settings-back, #settings-rail button,
+    #log p, #settings .lead, #settings .now, #settings-back, #settings-rail button,
     #quality button, #model-picks button, #helper-picks button, .picks button, .row-label, .row-value,
     .choice-label, .seg button, .stepper-label, .empty {
       font-size: calc(17px * var(--type-scale));
@@ -805,62 +749,46 @@
     #settings h2 { font-size: calc(19px * var(--type-scale)); }
     #settings .hero, .step-val { font-size: calc(40px * var(--type-scale)); }
     #settings .kicker { font-size: calc(13px * var(--type-scale)); }
-    #settings .note, .picks .pick-note, .choice-note, #box, #doing {
+    #settings .note, .picks .pick-note, .choice-note, #box {
       font-size: calc(15px * var(--type-scale));
     }
     .get-app { font-size: calc(16px * var(--type-scale)); }
-    #listen-chip, #live-chip .live-word { font-size: calc(13px * var(--type-scale)); }
     #sink { display: none; }
     @media (max-width: 820px) {
-      #doing { display: none; }
-      #chat { flex-basis: min(330px, 46vw); width: min(330px, 46vw); }
+      #chat { width: min(330px, 92vw); }
       #settings-rail { flex-basis: 160px; width: 160px; }
       #settings .sheet { padding: 20px 16px 24px; }
       #settings .hero { font-size: calc(32px * var(--type-scale)); }
     }
     @media (prefers-reduced-motion: reduce) {
-      #listen-chip .dot,
-      #live-chip .dot,
-      #mic.bar-btn[data-on="1"],
-      #drawer-mic[data-on="1"] {
+      #mic .voice-bar {
         animation: none;
       }
     }
   </style>
 </head>
 <body>
-  <header id="top">
-    <div class="brand">
-      <h1 aria-label="Jarvis">
-        <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="#201e1d"/>
-          <circle cx="16" cy="16" r="8.2" fill="#ffffff"/>
-          <path fill="#7c3aed" d="M16 8.6l1.15 4.05 4.25.15-3.35 2.6 1.2 4.1L16 16.9l-3.25 2.6 1.2-4.1-3.35-2.6 4.25-.15z"/>
-        </svg>
-        <span class="word">Jarvis</span>
-      </h1>
-      <div class="status">
-        <span id="listen-chip" data-state="on"><span class="dot" aria-hidden="true"></span><span id="listen-label">Listening</span></span>
-        <span id="live-chip">
-          <span class="dot" aria-hidden="true"></span>
-          <span class="live-word">LIVE</span>
-          <span id="doing">Ready</span>
-        </span>
-      </div>
-    </div>
-    <div class="tools">
-      <button type="button" class="bar-btn" id="mic" title="Talk" aria-label="Talk">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="9" y="3" width="6" height="11" rx="3"/>
-          <path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>
-        </svg>
-      </button>
-      <button type="button" class="bar-btn" id="mute-me" data-mute="me" title="Mute me" aria-label="Mute me" aria-pressed="false">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <rect x="9" y="3" width="6" height="11" rx="3"/>
-          <path d="M6 11a6 6 0 0 0 12 0M12 17v4M4 4l16 16"/>
-        </svg>
-      </button>
+  <div id="sr-status" hidden>
+    <span id="listen-chip" data-state="on"><span id="listen-label">Listening</span></span>
+    <span id="doing">Ready</span>
+  </div>
+  <button type="button" id="mic" data-voice="listen" title="Mute me" aria-label="Mute me" aria-pressed="false">
+    <span class="voice-bars" aria-hidden="true">
+      <span class="voice-bar"></span>
+      <span class="voice-bar"></span>
+      <span class="voice-bar"></span>
+      <span class="voice-bar"></span>
+    </span>
+  </button>
+  <div id="more-wrap">
+    <button type="button" id="more" title="More" aria-label="More" aria-expanded="false" aria-controls="more-cluster">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="6" cy="12" r="1.8"/>
+        <circle cx="12" cy="12" r="1.8"/>
+        <circle cx="18" cy="12" r="1.8"/>
+      </svg>
+    </button>
+    <div id="more-cluster" hidden>
       <button type="button" class="bar-btn" id="mute-him" data-mute="him" title="Mute him" aria-label="Mute him" aria-pressed="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M4 9v6h4l5 4V5L8 9H4z"/>
@@ -873,7 +801,6 @@
         </svg>
         <span class="badge" id="chat-badge" hidden></span>
       </button>
-      <span class="bar-div" aria-hidden="true"></span>
       <button type="button" class="bar-btn" id="settings-btn" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="settings" aria-expanded="false">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
@@ -881,7 +808,8 @@
         </svg>
       </button>
     </div>
-  </header>
+  </div>
+  <button type="button" id="mute-me" data-mute="me" hidden title="Mute me" aria-label="Mute me" aria-pressed="false"></button>
   <div id="stage">
     <section id="pc" aria-label="Screen">
       <iframe id="pc-frame" title="Jarvis's screen" src=""></iframe>
@@ -897,26 +825,6 @@
       </div>
       <ol id="log" aria-live="polite"></ol>
       <p id="note" hidden></p>
-      <div class="drawer-foot">
-        <button type="button" class="foot-btn" id="drawer-mic" title="Talk" aria-label="Talk">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="9" y="3" width="6" height="11" rx="3"/>
-            <path d="M6 11a6 6 0 0 0 12 0M12 17v4"/>
-          </svg>
-        </button>
-        <button type="button" class="foot-btn" data-mute="me" title="Mute me" aria-label="Mute me" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="9" y="3" width="6" height="11" rx="3"/>
-            <path d="M6 11a6 6 0 0 0 12 0M12 17v4M4 4l16 16"/>
-          </svg>
-        </button>
-        <button type="button" class="foot-btn" data-mute="him" title="Mute him" aria-label="Mute him" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M4 9v6h4l5 4V5L8 9H4z"/>
-            <path d="M16 9l5 6M21 9l-5 6"/>
-          </svg>
-        </button>
-      </div>
       <form id="bar">
         <input id="box" type="text" maxlength="2000" autocomplete="off" enterkeyhint="send" title="Type" aria-label="Type">
         <button type="submit" id="go" title="Send" aria-label="Send">
@@ -1125,7 +1033,9 @@
       const listenChip = document.getElementById("listen-chip");
       const listenLabel = document.getElementById("listen-label");
       const doingEl = document.getElementById("doing");
-      const drawerMic = document.getElementById("drawer-mic");
+      const moreBtn = document.getElementById("more");
+      const moreWrap = document.getElementById("more-wrap");
+      const moreCluster = document.getElementById("more-cluster");
       const chatHide = document.getElementById("chat-hide");
       const settingsEl = document.getElementById("settings");
       const settingsBtn = document.getElementById("settings-btn");
@@ -1229,6 +1139,8 @@
           modelSpeed: "",
           helper: "",
           computerKind: "linux",
+          orbPos: null,
+          morePos: null,
         };
         try {
           const raw = localStorage.getItem(PREFS_KEY);
@@ -1267,8 +1179,18 @@
               if (v === "yes" || v === "ask" || v === "no") out.allowed[k] = v;
             }
           }
+          out.orbPos = readChromePos(data.orbPos);
+          out.morePos = readChromePos(data.morePos);
         } catch (_) {}
         return out;
+      }
+
+      function readChromePos(raw) {
+        if (!raw || typeof raw !== "object") return null;
+        const x = Number(raw.x);
+        const y = Number(raw.y);
+        if (!isFinite(x) || !isFinite(y)) return null;
+        return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
       }
 
       function savePrefs() {
@@ -1664,6 +1586,7 @@
       function openSettings() {
         settingsEl.hidden = false;
         settingsBtn.setAttribute("aria-expanded", "true");
+        setMoreOpen(false);
         showSettingsTab("cost");
         settingsClose.focus();
         void health();
@@ -1771,7 +1694,10 @@
         if (!chatEl || !chatBtn) return;
         chatEl.hidden = !on;
         chatBtn.setAttribute("aria-expanded", on ? "true" : "false");
-        if (on) unread = 0;
+        if (on) {
+          unread = 0;
+          setMoreOpen(false);
+        }
         paintBadge();
         if (on) pinLog();
       }
@@ -1798,13 +1724,163 @@
       }
 
       function paintMic() {
+        if (!mic) {
+          paintStatus();
+          return;
+        }
         if (duplexLive) {
           mic.dataset.on = (wantListen && !muteMe) ? "1" : "";
         } else {
           mic.dataset.on = (wantListen && !muteMe && !speaking) ? "1" : "";
         }
-        if (drawerMic) drawerMic.dataset.on = mic.dataset.on;
+        if (muteMe) {
+          mic.dataset.voice = "muted";
+          mic.setAttribute("aria-label", "Listen");
+          mic.setAttribute("title", "Listen");
+          mic.setAttribute("aria-pressed", "true");
+        } else if (speaking) {
+          mic.dataset.voice = "speak";
+          mic.setAttribute("aria-label", "Mute me");
+          mic.setAttribute("title", "Mute me");
+          mic.setAttribute("aria-pressed", "false");
+        } else {
+          mic.dataset.voice = "listen";
+          mic.setAttribute("aria-label", "Mute me");
+          mic.setAttribute("title", "Mute me");
+          mic.setAttribute("aria-pressed", "false");
+        }
         paintStatus();
+      }
+
+      function setMoreOpen(on) {
+        if (!moreBtn || !moreCluster) return;
+        moreCluster.hidden = !on;
+        moreBtn.setAttribute("aria-expanded", on ? "true" : "false");
+      }
+
+      function chromeSize(el) {
+        if (!el) return { w: 52, h: 52 };
+        const w = el.offsetWidth || (el.id === "mic" ? 64 : 52);
+        const h = el.offsetHeight || w;
+        return { w: w, h: h };
+      }
+
+      function defaultChromeLeft(kind, size) {
+        const gap = 16;
+        const orb = 64;
+        const more = 52;
+        const pair = orb + gap + more;
+        const start = Math.max(12, (window.innerWidth - pair) / 2);
+        if (kind === "mic") return start;
+        return start + orb + gap - (size.w - more) / 2;
+      }
+
+      function defaultChromeTop(size) {
+        return Math.max(12, window.innerHeight - size.h - 28);
+      }
+
+      function clampChrome(left, top, size) {
+        const maxL = Math.max(8, window.innerWidth - size.w - 8);
+        const maxT = Math.max(8, window.innerHeight - size.h - 8);
+        return {
+          left: Math.max(8, Math.min(maxL, left)),
+          top: Math.max(8, Math.min(maxT, top)),
+        };
+      }
+
+      function posFromLeftTop(left, top, size) {
+        const maxL = Math.max(1, window.innerWidth - size.w - 8);
+        const maxT = Math.max(1, window.innerHeight - size.h - 8);
+        return {
+          x: Math.max(0, Math.min(1, (left - 8) / maxL)),
+          y: Math.max(0, Math.min(1, (top - 8) / maxT)),
+        };
+      }
+
+      function leftTopFromPos(pos, kind, size) {
+        if (!pos) {
+          return { left: defaultChromeLeft(kind, size), top: defaultChromeTop(size) };
+        }
+        const maxL = Math.max(1, window.innerWidth - size.w - 8);
+        const maxT = Math.max(1, window.innerHeight - size.h - 8);
+        return {
+          left: 8 + pos.x * maxL,
+          top: 8 + pos.y * maxT,
+        };
+      }
+
+      function placeChrome(el, left, top) {
+        if (!el) return;
+        const size = chromeSize(el);
+        const next = clampChrome(left, top, size);
+        el.style.left = Math.round(next.left) + "px";
+        el.style.top = Math.round(next.top) + "px";
+        return next;
+      }
+
+      function applyChromePos() {
+        if (mic) {
+          const size = chromeSize(mic);
+          const spot = leftTopFromPos(prefs.orbPos, "mic", size);
+          placeChrome(mic, spot.left, spot.top);
+        }
+        if (moreWrap) {
+          const size = chromeSize(moreWrap);
+          const spot = leftTopFromPos(prefs.morePos, "more", size);
+          placeChrome(moreWrap, spot.left, spot.top);
+        }
+      }
+
+      function bindChromeDrag(el, kind) {
+        if (!el) return;
+        let startX = 0;
+        let startY = 0;
+        let origL = 0;
+        let origT = 0;
+        let dragging = false;
+        let moved = false;
+        const THRESHOLD = 8;
+        el.addEventListener("pointerdown", function (e) {
+          if (e.button && e.button !== 0) return;
+          if (kind === "more" && e.target && e.target.closest && e.target.closest("#more-cluster")) return;
+          dragging = true;
+          moved = false;
+          startX = e.clientX;
+          startY = e.clientY;
+          const box = el.getBoundingClientRect();
+          origL = box.left;
+          origT = box.top;
+          try { el.setPointerCapture(e.pointerId); } catch (_) {}
+        });
+        el.addEventListener("pointermove", function (e) {
+          if (!dragging) return;
+          const dx = e.clientX - startX;
+          const dy = e.clientY - startY;
+          if (!moved && (Math.abs(dx) > THRESHOLD || Math.abs(dy) > THRESHOLD)) moved = true;
+          if (!moved) return;
+          placeChrome(el, origL + dx, origT + dy);
+        });
+        function endDrag(e) {
+          if (!dragging) return;
+          dragging = false;
+          try { el.releasePointerCapture(e.pointerId); } catch (_) {}
+          if (moved) {
+            const size = chromeSize(el);
+            const box = el.getBoundingClientRect();
+            const pos = posFromLeftTop(box.left, box.top, size);
+            if (kind === "mic") prefs.orbPos = pos;
+            else prefs.morePos = pos;
+            savePrefs();
+          }
+        }
+        el.addEventListener("pointerup", endDrag);
+        el.addEventListener("pointercancel", endDrag);
+        el.addEventListener("click", function (e) {
+          if (!moved) return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          moved = false;
+        }, true);
       }
 
       function haltRec() {
@@ -2895,6 +2971,8 @@
       function isTalkExemptTarget(el) {
         if (!el || !el.closest) return false;
         if (el.closest("#settings, #settings-btn")) return true;
+        if (el.closest("#more, #more-wrap, #more-cluster, #chat-btn, #mute-him")) return true;
+        if (el.closest("#mic")) return true;
         if (el.closest("a[href]")) return true;
         if (el.closest("input, textarea, select, option, label")) return true;
         if (el.closest("#bar, #box, #go")) return true;
@@ -3107,14 +3185,26 @@
         el.addEventListener("click", onMuteHim);
       });
 
-      mic.addEventListener("click", function () {
-        void startTalk();
-      });
-      if (drawerMic) {
-        drawerMic.addEventListener("click", function () {
-          void startTalk();
+      if (mic) {
+        mic.addEventListener("click", function () {
+          if (!wantListen && !muteMe) {
+            void startTalk();
+            return;
+          }
+          onMuteMe();
         });
       }
+      if (moreBtn) {
+        moreBtn.addEventListener("click", function () {
+          setMoreOpen(moreCluster ? moreCluster.hidden : true);
+        });
+      }
+      document.addEventListener("pointerdown", function (e) {
+        if (!moreCluster || moreCluster.hidden) return;
+        const t = e.target;
+        if (t && t.closest && t.closest("#more-wrap")) return;
+        setMoreOpen(false);
+      });
       if (chatBtn) {
         chatBtn.addEventListener("click", function () {
           setChatOpen(chatEl.hidden);
@@ -3225,8 +3315,17 @@
         if (e.target === settingsEl) closeSettings();
       });
       document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape" && !settingsEl.hidden) closeSettings();
+        if (e.key !== "Escape") return;
+        if (settingsEl && !settingsEl.hidden) {
+          closeSettings();
+          return;
+        }
+        if (moreCluster && !moreCluster.hidden) setMoreOpen(false);
       });
+      bindChromeDrag(mic, "mic");
+      bindChromeDrag(moreWrap, "more");
+      applyChromePos();
+      addEventListener("resize", applyChromePos);
 
       function loadPcScreen() {
         const frame = document.getElementById("pc-frame");
