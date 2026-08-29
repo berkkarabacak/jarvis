@@ -832,7 +832,7 @@
             <span class="hero money" id="spent-today">—</span>
           </div>
           <div id="spend-meter" hidden><div id="spend-meter-fill"></div></div>
-          <p><a class="get-app" href="/jarvis/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
+          <p><a class="get-app" href="/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
         </div>
         <div class="panel" id="tab-model" role="tabpanel" data-settings-panel="model" hidden>
           <p class="lead">Which brain he uses. No codes, no keys.</p>
@@ -976,13 +976,13 @@
             <span class="row-label">Keys or codes needed</span>
             <span class="row-value">None</span>
           </div>
-          <p><a class="get-app" href="/jarvis/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
+          <p><a class="get-app" href="/download/Jarvis-Setup.exe" aria-label="Get app">Get app</a></p>
         </div>
       </div>
     </div>
   </div>
   <audio id="sink" autoplay playsinline hidden></audio>
-  <script src="/jarvis/voice-orb.js"></script>
+  <script src="/voice-orb.js"></script>
   <script>
     (function () {
       const CANT = "Can't talk right now";
@@ -1177,14 +1177,14 @@
         document.documentElement.setAttribute("data-picture", prefs.picture || "clear");
         const frame = document.getElementById("pc-frame");
         if (!frame) return;
-        const src = frame.getAttribute("src") || "/jarvis/screen";
+        const src = frame.getAttribute("src") || "/screen";
         try {
           const url = new URL(src, location.href);
           url.searchParams.set("picture", prefs.picture || "clear");
           url.searchParams.set("t", String(Date.now()));
           frame.setAttribute("src", url.pathname + url.search);
         } catch (_) {
-          frame.setAttribute("src", "/jarvis/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
+          frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
         }
       }
 
@@ -3302,7 +3302,7 @@
         const frame = document.getElementById("pc-frame");
         if (!frame) return;
         if (frame.getAttribute("src")) return;
-        frame.setAttribute("src", "/jarvis/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
+        frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
       }
 
       function whenIdle(fn) {

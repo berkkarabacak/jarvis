@@ -6,7 +6,7 @@ HTTP-Referer is required. Title and categories are merged by OpenRouter.
 
 from __future__ import annotations
 
-OPENROUTER_APP_URL = "https://aicontrolroom.nl/jarvis/"
+OPENROUTER_APP_URL = "https://aicontrolroom.nl/"
 OPENROUTER_APP_TITLE = "Jarvis"
 OPENROUTER_APP_CATEGORIES = "personal-agent,general-chat"
 

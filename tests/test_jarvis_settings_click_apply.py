@@ -303,7 +303,7 @@ def test_screen_text_and_picture_apply_after_click():
     assert "applyPicture()" in js
     assert 'url.searchParams.set("picture"' in pic_fn
     assert "frame.setAttribute(\"src\"" in pic_fn
-    assert "/jarvis/screen?picture=" in js
+    assert "/screen?picture=" in js
     bump = _fn(js, "bumpTextScale")
     assert "applyTextScale()" in bump
     picture_click = js.split("pictureEl.querySelectorAll(\"[data-picture]\")", 1)[1]

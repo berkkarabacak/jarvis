@@ -1,6 +1,6 @@
 """Public Talk must never load the operator localhost noVNC URL in the iframe.
 
-The /jarvis/api/jarvis/computer/screen contract still returns
+The /api/jarvis/computer/screen contract still returns
 session_url=http://127.0.0.1:6080/... for the host. That URL is for
 docker on the machine, not for a visitor's browser.
 """
@@ -44,14 +44,14 @@ def test_public_talk_iframe_never_uses_loopback():
     assert "http://127.0.0.1:6080" not in html
     assert "http://127.0.0.1:6081" not in html
     assert not re.search(r'setAttribute\(\s*"src"\s*,\s*["\']https?://(?:127\.0\.0\.1|localhost)', html)
-    assert "var LINUX_SESSION = \"/jarvis/novnc/vnc.html" in script
-    assert 'path=jarvis/novnc/websockify"' in script or "path=jarvis/novnc/websockify" in script
-    assert "/jarvis/android/" in script
+    assert "var LINUX_SESSION = \"/novnc/vnc.html" in script
+    assert 'path=novnc/websockify"' in script or "path=novnc/websockify" in script
+    assert "/android/" in script
     assert "ANDROID_WATCH_URL" not in html
     iframe = talk.split('id="pc-frame"', 1)[1].split(">", 1)[0]
     assert "127.0.0.1" not in iframe
     assert "localhost" not in iframe.lower()
-    assert 'frame.setAttribute("src", "/jarvis/screen?picture="' in talk
+    assert 'frame.setAttribute("src", "/screen?picture="' in talk
     assert "http://127.0.0.1:6080" not in talk
     assert "http://127.0.0.1:6081" not in talk
 
@@ -63,8 +63,8 @@ def test_public_session_rejects_operator_loopback_and_uses_watch_path():
     assert 'low.indexOf("://")' in script
     assert 'low.indexOf("127.0.0.1")' in script
     assert 'low.indexOf("localhost")' in script
-    assert 'isPublicWatchSrc(watch, "/jarvis/android/")' in script
-    assert 'isPublicWatchSrc(publicUrl, "/jarvis/novnc/")' in script
+    assert 'isPublicWatchSrc(watch, "/android/")' in script
+    assert 'isPublicWatchSrc(publicUrl, "/novnc/")' in script
     assert "data.session_url" not in script
     assert "data.url" not in script
 
@@ -73,6 +73,7 @@ def test_android_watch_stream_is_under_jarvis_prefix():
     watch = WATCH.read_text(encoding="utf-8")
     assert 'src="/stream.mjpeg"' not in watch
     assert 'src="stream.mjpeg"' in watch
+    assert "/android/stream.mjpeg" in watch
     assert "/jarvis/android/stream.mjpeg" in watch
 
 
@@ -109,21 +110,24 @@ async def client(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_public_screen_page_and_api_keep_operator_session_url(client):
-    page = await client.get("/jarvis/screen")
+    page = await client.get("/screen")
     assert page.status_code == 200
+    old = await client.get("/jarvis/screen", follow_redirects=False)
+    assert old.status_code == 301
+    assert old.headers["location"] == "/screen"
     assert "Jarvis's screen" in page.text
     assert "function publicSession" in page.text
     assert "SESSION = publicSession(data)" in page.text
     assert "http://127.0.0.1:6080" not in page.text
     assert "if (data && data.session_url) SESSION = String(data.session_url);" not in page.text
 
-    status = await client.get("/jarvis/api/jarvis/computer/screen")
+    status = await client.get("/api/jarvis/computer/screen")
     assert status.status_code == 200
     body = status.json()
     assert body["running"] is True
     assert body["kind"] == "linux"
     assert body["public_bind"] is False
-    assert body["watch_path"] == "/jarvis/novnc/"
+    assert body["watch_path"] == "/novnc/"
     assert "127.0.0.1" in body["session_url"]
     assert "6080" in body["session_url"]
     assert body["session_url"].startswith("http://127.0.0.1:6080")

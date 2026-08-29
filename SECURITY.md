@@ -15,4 +15,4 @@ Do **not** open a public issue that contains a key, token, password, or `.env` f
 - Never commit `.env` or any other `*.env` file (except `.env.example`).
 - Never put a real key in source, docs, tests, or HTML.
 
-Public Talk on [aicontrolroom.nl/jarvis](https://aicontrolroom.nl/jarvis/) is already set up for visitors ([berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias). Your local clone uses only the keys you put in `.env`.
+Public Talk on [aicontrolroom.nl](https://aicontrolroom.nl/) is already set up for visitors ([berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias). Your local clone uses only the keys you put in `.env`.

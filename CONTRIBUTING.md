@@ -2,7 +2,7 @@
 
 Thanks for helping with Jarvis.
 
-Public Talk: [https://aicontrolroom.nl/jarvis/](https://aicontrolroom.nl/jarvis/). [berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias.
+Public Talk: [https://aicontrolroom.nl/](https://aicontrolroom.nl/). [berkkarabacak.com/jarvis](https://berkkarabacak.com/jarvis/) is an alias.
 
 ## Run it
 

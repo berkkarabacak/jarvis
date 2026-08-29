@@ -1,4 +1,10 @@
-    # Public Jarvis (https://berkkarabacak.com/jarvis/)
+    # Public Jarvis alias (https://berkkarabacak.com/jarvis/)
+    # Canonical Talk is https://aicontrolroom.nl/. This host 301s the
+    # homepage there and keeps /jarvis/... working so old bookmarks do
+    # not die. Do not 404 the alias.
+    location = /jarvis { return 301 https://aicontrolroom.nl/; }
+    location = /jarvis/ { return 301 https://aicontrolroom.nl/; }
+
     # Windows installer stays on disk. Do not proxy the exe through the app.
     location ^~ /jarvis/download/ {
         alias /var/www/jarvis/download/;
@@ -29,9 +35,7 @@
         proxy_send_timeout 3600s;
     }
 
-    # Browser chat + talk. Do not keep serving the old static stub from
-    # /var/www/jarvis for /jarvis/ itself — that page cannot answer.
-    location = /jarvis { return 301 $scheme://$host/jarvis/; }
+    # Remaining /jarvis/... (voice-orb, screen, APIs) still reach Talk.
     location /jarvis/ {
         proxy_pass http://127.0.0.1:8895/jarvis/;
         proxy_set_header Host $host;

@@ -48,10 +48,14 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_root_redirects_to_public_ceo_and_keeps_operator_dashboard(client):
+async def test_root_serves_talk_and_keeps_operator_dashboard(client):
     r = await client.get("/", follow_redirects=False)
-    assert r.status_code == 307
-    assert r.headers["location"] == "ceo"
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "<title>Jarvis</title>" in r.text
+
+    ceo = await client.get("/ceo")
+    assert ceo.status_code == 200
 
     dashboard = await client.get("/dashboard")
     assert dashboard.status_code == 200

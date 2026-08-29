@@ -623,7 +623,7 @@ def public_computer_status() -> dict[str, Any]:
     backend = JARVIS_ANDROID if kind == "android" else JARVIS_COMPUTER
     label = "Android" if kind == "android" else "Linux"
     container = JARVIS_ANDROID if kind == "android" else CONTAINER_NAME
-    watch_path = "/jarvis/android/" if kind == "android" else "/jarvis/novnc/"
+    watch_path = "/android/" if kind == "android" else "/novnc/"
     live = False
     watch_url = ""
     try:

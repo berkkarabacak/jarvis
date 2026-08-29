@@ -23,7 +23,7 @@ ANDROID_CONTAINER = "jarvis-android"
 WATCH_HOST = "127.0.0.1"
 WATCH_PORT = 6081
 WATCH_URL = f"http://{WATCH_HOST}:{WATCH_PORT}"
-WATCH_PATH = "/jarvis/android/"
+WATCH_PATH = "/android/"
 
 # One Android box. Helpers only exec into this name. Never docker run / compose up.
 # Never the Linux desktop container.

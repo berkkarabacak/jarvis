@@ -319,7 +319,7 @@ def test_nginx_proxies_same_novnc_session():
 def test_public_page_can_show_the_screen():
     page = PAGE.read_text(encoding="utf-8")
     assert 'id="pc"' in page
-    assert "/jarvis/screen" in page
+    assert "/screen" in page
     assert 'aria-label="Screen"' in page
     assert 'id="wall"' not in page
     assert 'id="mute-me"' in page

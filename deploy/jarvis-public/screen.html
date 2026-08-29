@@ -45,7 +45,7 @@
       var picture = picturePref();
       var quality = picture === "smooth" ? "4" : "8";
       var compression = picture === "smooth" ? "6" : "2";
-      var LINUX_SESSION = "/jarvis/novnc/vnc.html?autoconnect=1&resize=scale&quality=" + quality + "&compression=" + compression + "&path=jarvis/novnc/websockify";
+      var LINUX_SESSION = "/novnc/vnc.html?autoconnect=1&resize=scale&quality=" + quality + "&compression=" + compression + "&path=novnc/websockify";
       var SESSION = LINUX_SESSION;
       var live = document.getElementById("live");
       var shot = document.getElementById("shot");
@@ -68,12 +68,12 @@
         var publicUrl = data && data.public_session_url ? String(data.public_session_url) : "";
         var watch = data && data.watch_path ? String(data.watch_path) : "";
         if (kind === "android") {
-          if (isPublicWatchSrc(publicUrl, "/jarvis/android/")) return publicUrl;
-          if (isPublicWatchSrc(watch, "/jarvis/android/")) return watch;
-          return "/jarvis/android/";
+          if (isPublicWatchSrc(publicUrl, "/android/") || isPublicWatchSrc(publicUrl, "/jarvis/android/")) return publicUrl;
+          if (isPublicWatchSrc(watch, "/android/") || isPublicWatchSrc(watch, "/jarvis/android/")) return watch;
+          return "/android/";
         }
-        if (isPublicWatchSrc(publicUrl, "/jarvis/novnc/")) return publicUrl;
-        if (isPublicWatchSrc(watch, "/jarvis/novnc/") && watch.indexOf("vnc.html") !== -1) return watch;
+        if (isPublicWatchSrc(publicUrl, "/novnc/") || isPublicWatchSrc(publicUrl, "/jarvis/novnc/")) return publicUrl;
+        if ((isPublicWatchSrc(watch, "/novnc/") || isPublicWatchSrc(watch, "/jarvis/novnc/")) && watch.indexOf("vnc.html") !== -1) return watch;
         return LINUX_SESSION;
       }
 
@@ -88,7 +88,7 @@
         live.hidden = true;
         live.removeAttribute("src");
         shot.hidden = false;
-        shot.src = "/jarvis/api/jarvis/screen.png?t=" + Date.now();
+        shot.src = "/api/jarvis/screen.png?t=" + Date.now();
       }
       function showDown() {
         live.hidden = true;
@@ -98,10 +98,10 @@
       }
       function tickShot() {
         if (shot.hidden) return;
-        shot.src = "/jarvis/api/jarvis/screen.png?t=" + Date.now();
+        shot.src = "/api/jarvis/screen.png?t=" + Date.now();
       }
       function load() {
-        fetch("/jarvis/api/jarvis/computer/screen", { credentials: "same-origin" })
+        fetch("/api/jarvis/computer/screen", { credentials: "same-origin" })
           .then(function (r) { return r.json(); })
           .then(function (data) {
             SESSION = publicSession(data);
@@ -109,7 +109,7 @@
               showLive();
               return;
             }
-            return fetch("/jarvis/api/jarvis/computer/screen/start", {
+            return fetch("/api/jarvis/computer/screen/start", {
               method: "POST",
               credentials: "same-origin",
               headers: { "Content-Type": "application/json" },

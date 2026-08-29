@@ -35,7 +35,7 @@ VOLUME_NAME = "jarvis-computer-home"
 ANDROID_CONTAINER = "jarvis-android"
 ANDROID_WATCH_PORT = 6081
 ANDROID_WATCH_URL = f"http://{NOVNC_HOST}:{ANDROID_WATCH_PORT}"
-ANDROID_WATCH_PATH = "/jarvis/android/"
+ANDROID_WATCH_PATH = "/android/"
 ANDROID_SESSION_URL = f"{ANDROID_WATCH_PATH}?autoconnect=1"
 DOWN_MESSAGE = "Jarvis's computer is not running."
 START_HINT = "docker start jarvis-computer (or docker compose up -d)"
@@ -89,7 +89,7 @@ def viewer_contract() -> dict[str, Any]:
         "down_message": DOWN_MESSAGE,
         "kind": "linux",
         "computer_kind": "linux",
-        "watch_path": "/jarvis/novnc/",
+        "watch_path": "/novnc/",
     }
 
 
