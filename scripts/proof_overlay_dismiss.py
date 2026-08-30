@@ -139,6 +139,7 @@ def scripted_proof() -> dict[str, Any]:
     )
     assert not look_has_blocking_overlay(after), after
     box = search_box_point(after)
+    assert box is not None, "vision must name the search box"
     click(x=box[0], y=box[1])
     query = web_search_query("find a hotel in central Rome")
     typed.append(query)
@@ -237,6 +238,7 @@ def live_proof() -> dict[str, Any]:
             },
         )
         box = search_box_point(after)
+        assert box is not None, "vision must name the search box"
         click(x=box[0], y=box[1])
         query = web_search_query("find a hotel in central Rome")
         linux_type(text=query)

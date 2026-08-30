@@ -342,6 +342,8 @@ def test_public_page_can_show_the_screen():
     assert "type" in abort_fn
     assert "30000" in abort_fn
     assert "12000" in abort_fn
+    assert "180000" in abort_fn
+    assert "looksLikeWebJob" in abort_fn
     assert "what's on" in abort_fn or "what'?s on" in abort_fn
 
 
