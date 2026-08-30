@@ -1955,6 +1955,7 @@
         try {
           rec.start();
           listening = true;
+          paintMic();
         } catch (_) {
           listening = false;
           setTimeout(function () {
@@ -2027,6 +2028,7 @@
         mintRealtime = false;
         duplexLive = false;
         connecting = false;
+        stopTracks();
         const Ctor = Rec();
         if (!Ctor) {
           hearFail();
@@ -2859,6 +2861,7 @@
               startBrowserTalk();
               return;
             }
+            stopTracks();
             showNote(true);
             return;
           }
@@ -2869,6 +2872,7 @@
             startBrowserTalk();
             return;
           }
+          stopTracks();
           showNote(true);
           return;
         }
@@ -3011,6 +3015,10 @@
         micRequest = navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         }).then(function (stream) {
+          if (!micRequest) {
+            try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {}
+            return null;
+          }
           micStream = stream;
           rememberMicGranted();
           setMicEnabled(!muteMe);
