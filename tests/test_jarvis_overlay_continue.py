@@ -14,6 +14,8 @@ from app.jarvis.overlay import (
     look_has_blocking_overlay,
     look_is_empty_desktop,
     look_is_footer,
+    look_is_loading_or_blank,
+    look_is_web_page,
     needs_web_query,
     overlay_dismiss_plan,
     overlay_kind,
@@ -36,6 +38,25 @@ from app.jarvis.virtual_pc import (
 )
 
 ROME = "find a hotel in central Rome"
+GRINDER = "go to bol.com and find a coffee grinder"
+
+BLANK_HOMEPAGE = {
+    "ok": True,
+    "title": "Booking.com",
+    "url": "https://www.booking.com/",
+    "vision_description": (
+        "Booking.com homepage. The page is mostly blank. A white loading screen."
+    ),
+}
+
+BLANK_SHOP = {
+    "ok": True,
+    "title": "bol.com",
+    "url": "https://www.bol.com/",
+    "vision_description": (
+        "bol.com homepage. The page is mostly blank. Still loading."
+    ),
+}
 
 
 def test_rome_hotel_is_a_web_computer_job_not_look_and_tell():
@@ -533,7 +554,7 @@ def test_speak_web_job_never_look_at_screen_or_footer_caption():
         "title": "Hotels in Rome",
         "vision_description": "Hotels in central Rome. Hotel Eden. Prices from 180 EUR.",
     }
-    for looked in (desktop, teal, footer, empty, HOMEPAGE_NO_BOX):
+    for looked in (desktop, teal, footer, empty, HOMEPAGE_NO_BOX, BLANK_HOMEPAGE):
         body = _speak_web_job(ROME, looked, ["see_screen"], opened=True)
         low = body["reply"].lower()
         assert "look at the screen" not in low
@@ -544,10 +565,13 @@ def test_speak_web_job_never_look_at_screen_or_footer_caption():
         assert "you can open chrome" not in low
         assert "all rights reserved" not in low
         assert "destinations we love" not in low
+        assert "mostly blank" not in low
+        assert "white loading" not in low
         via = _speak_looked(looked, ["see_screen"], opened=True, asked=ROME)
         assert "look at the screen" not in via["reply"].lower()
         assert "turquoise" not in via["reply"].lower()
         assert "you can access chrome" not in via["reply"].lower()
+        assert "mostly blank" not in via["reply"].lower()
     picked = _speak_web_job(ROME, pick, ["see_screen"], opened=True)
     assert "eden" in picked["reply"].lower() or "hotel" in picked["reply"].lower()
     assert "look at the screen" not in picked["reply"].lower()
@@ -697,3 +721,258 @@ def test_annotate_see_screen_web_job_must_act():
     )
     assert looked.get("speak_now") is False
     assert looked.get("next_must") == ["click", "type", "keys"]
+
+
+def test_blank_or_loading_look_is_not_a_ready_page():
+    """A site title with a blank/loading caption is not done. Generic, not hotel-only."""
+    assert look_is_loading_or_blank(BLANK_HOMEPAGE) is True
+    assert look_is_loading_or_blank(BLANK_SHOP) is True
+    assert look_is_web_page(BLANK_HOMEPAGE) is False
+    assert look_is_web_page(BLANK_SHOP) is False
+    assert search_box_point(BLANK_HOMEPAGE) is None
+    assert search_box_point(BLANK_SHOP) is None
+    assert needs_web_query(ROME, BLANK_HOMEPAGE, web_search_query(ROME)) is True
+    assert needs_web_query(GRINDER, BLANK_SHOP, web_search_query(GRINDER)) is True
+    assert look_is_loading_or_blank(HOMEPAGE_NO_BOX) is False
+    assert look_is_empty_desktop(BLANK_HOMEPAGE) is False
+
+
+def test_continue_web_search_waits_then_types_after_blank_look():
+    """First look blank/loading — look again, then type. Not a hotel-only path."""
+    looks = [
+        dict(BLANK_HOMEPAGE),
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=ROME,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert typed, "blank/loading first look must wait, then type"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert (640, 320) in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+    assert "Eden" in str(out.get("vision_description") or "")
+
+
+def _patch_voice_ask_web(monkeypatch, looks, *, clicks, typed, keys=None):
+    from app.jarvis import computer as computer_mod
+
+    n = {"i": 0}
+
+    def fake_see(ctx, args):
+        item = looks[min(n["i"], len(looks) - 1)]
+        n["i"] += 1
+        return dict(item)
+
+    def fake_click(ctx, args):
+        clicks.append((int(args.get("x") or 0), int(args.get("y") or 0)))
+        return {"ok": True, "x": args.get("x"), "y": args.get("y")}
+
+    def fake_type(ctx, args):
+        typed.append(str((args or {}).get("text") or ""))
+        return {"ok": True, "typed": len(typed[-1])}
+
+    def fake_keys(ctx, args):
+        if keys is not None:
+            keys.append(str(args.get("combo") or ""))
+        return {"ok": True, "combo": args.get("combo")}
+
+    def fake_close(*, app="chrome"):
+        return {"ok": True, "app": app, "method": "close-all"}
+
+    def capture_run(plan):
+        return {
+            "ok": True,
+            "started": plan.get("cmd"),
+            "argv": list(plan.get("argv") or []),
+            "window": True,
+            "opened": plan.get("url"),
+            "url": plan.get("url"),
+        }
+
+    def capture_plan(args):
+        return {"ok": True, "cmd": "chrome", "argv": ["chromium"], **args}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.tools._click", fake_click)
+    monkeypatch.setattr("app.jarvis.tools._type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.tools._keys", fake_keys)
+    monkeypatch.setattr("app.jarvis.desktop.close_windows", fake_close)
+    monkeypatch.setattr(computer_mod, "linux_run_app", capture_run)
+    monkeypatch.setattr(computer_mod, "plan_linux_run_app", capture_plan)
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_blank_look_types_before_speak_look_speed_off(
+    monkeypatch, tmp_path
+):
+    """Hotel-shaped example: blank first look + look_speed=off still types."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(BLANK_HOMEPAGE),
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "url": "https://www.booking.com/searchresults.html",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(ROME)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed, "look_speed=off must not skip typing after a blank look"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    low = body["reply"].lower()
+    assert "eden" in low or "hotel" in low
+    assert "mostly blank" not in low
+    assert "white loading" not in low
+    assert "you can open chrome" not in low
+    assert "turquoise" not in low
+    assert "look at the screen" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_blank_look_types_non_hotel_web_job(monkeypatch, tmp_path):
+    """Same path for a non-hotel find/search job. Not Booking.com-only."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(BLANK_SHOP),
+        {
+            "ok": True,
+            "title": "bol.com",
+            "url": "https://www.bol.com/",
+            "vision_description": (
+                "bol.com. Search box is empty at (640, 320). Coffee machines."
+            ),
+        },
+        {
+            "ok": True,
+            "title": "coffee grinder — bol.com",
+            "url": "https://www.bol.com/nl/nl/s/?searchtext=coffee+grinder",
+            "vision_description": (
+                "Search results for coffee grinder. Baratza Encore. From 89 EUR."
+            ),
+        },
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(GRINDER)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed
+    assert any("grinder" in t.lower() or "coffee" in t.lower() for t in typed)
+    low = body["reply"].lower()
+    assert "baratza" in low or "encore" in low or "grinder" in low
+    assert "mostly blank" not in low
+    assert "you can open chrome" not in low
+    assert "look at the screen" not in low
+
+
+def test_see_again_after_overlays_types_after_blank_look(monkeypatch):
+    """Agent see_screen path: blank first look still types before speak."""
+    from app.jarvis.tools import ToolContext, _see_again_after_overlays
+    from app.jarvis.workspace import Workspace, default_workspace
+
+    looks = [
+        dict(BLANK_SHOP),
+        {
+            "ok": True,
+            "title": "bol.com",
+            "vision_description": "Search box is empty at (640, 320).",
+        },
+        {
+            "ok": True,
+            "title": "coffee grinder — bol.com",
+            "vision_description": (
+                "Search results for coffee grinder. Baratza Encore. From 89 EUR."
+            ),
+        },
+    ]
+    n = {"i": 0}
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+
+    def fake_see(ctx, args):
+        n["i"] += 1
+        return dict(looks[min(n["i"], len(looks) - 1)])
+
+    def fake_click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def fake_type(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def fake_keys(*, combo="", **_k):
+        return {"ok": True, "combo": combo}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.desktop.click", fake_click)
+    monkeypatch.setattr("app.jarvis.desktop.type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.desktop.keys", fake_keys)
+
+    ctx = ToolContext(Workspace(default_workspace()), None)
+    out = _see_again_after_overlays(ctx, {"goal": GRINDER}, dict(BLANK_SHOP))
+    assert typed, "see_screen on a blank shop look must type the query"
+    assert any("grinder" in t.lower() or "coffee" in t.lower() for t in typed)
+    assert (640, 320) in clicks
+    assert out.get("_typed_query")
+    assert "Encore" in str(out.get("vision_description") or "")

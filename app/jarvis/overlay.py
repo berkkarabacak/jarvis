@@ -223,6 +223,26 @@ _FOOTER_RE = re.compile(
     r")",
     re.I,
 )
+# A painted window title is not enough. Vision of a white / empty / spinner
+# tab is not a loaded page — wait and look again before typing.
+_LOADING_OR_BLANK_RE = re.compile(
+    r"("
+    r"about:blank|"
+    r"\buntitled\b|"
+    r"\bnew tab\b|"
+    r"page mostly blank|"
+    r"mostly blank|"
+    r"still loading|"
+    r"page is (?:still )?(?:blank|empty|loading)|"
+    r"blank page|"
+    r"empty page|"
+    r"white (?:page|screen)|"
+    r"nothing (?:has )?loaded|"
+    r"\bspinner\b|"
+    r"loading (?:the )?(?:page|site|document)"
+    r")",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -412,9 +432,39 @@ def look_is_empty_destination(looked: dict[str, Any] | None) -> bool:
     return bool(_EMPTY_DEST_RE.search(look_blob(looked)))
 
 
+def look_is_loading_or_blank(looked: dict[str, Any] | None) -> bool:
+    """True when the tab is still empty / loading — not ready to type.
+
+    Off look_speed does not change this. A real site title with a blank
+    or spinner caption is still not done.
+    """
+    item = looked or {}
+    if item.get("page_ready") is False:
+        return True
+    blob = look_blob(item)
+    title = str(item.get("title") or "")
+    desc = str(item.get("vision_description") or "").strip()
+    if _LOADING_OR_BLANK_RE.search(title) or _LOADING_OR_BLANK_RE.search(blob):
+        return True
+    if look_is_empty_desktop(item):
+        return True
+    if item.get("ok") and not desc and not title.strip():
+        return True
+    return False
+
+
+def look_is_page_ready(looked: dict[str, Any] | None) -> bool:
+    """True when the window is a loaded page, not wallpaper / blank / loading."""
+    if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
+        return False
+    return look_is_web_page(looked) or search_box_point(looked) is not None
+
+
 def look_is_web_page(looked: dict[str, Any] | None) -> bool:
-    """True for a loaded site (Booking.com homepage), not wallpaper or footer."""
+    """True for a loaded site, not wallpaper, footer, or a blank/loading tab."""
     if look_is_empty_desktop(looked) or look_is_footer(looked):
+        return False
+    if look_is_loading_or_blank(looked):
         return False
     item = looked or {}
     url = str(item.get("url") or "")
@@ -428,14 +478,7 @@ def look_is_web_page(looked: dict[str, Any] | None) -> bool:
     ):
         return True
     blob = look_blob(item)
-    return bool(
-        re.search(
-            r"booking\.com|\bgoogle\b|where are you going|"
-            r"find your next stay|\bstays\b",
-            blob,
-            re.I,
-        )
-    )
+    return bool(_SEARCH_FIELD_RE.search(blob))
 
 
 def distinctive_query_tokens(query: str) -> list[str]:
@@ -458,17 +501,18 @@ def query_visible_on_look(looked: dict[str, Any] | None, query: str) -> bool:
 def needs_web_query(
     asked: str, looked: dict[str, Any] | None, query: str
 ) -> bool:
-    """True until the destination is typed or results are on screen.
+    """True until the query is typed or results are on screen.
 
-    A homepage that mentions 'hotel' is not a finished search.
+    A homepage that only mentions a generic word from the ask is not done.
+    A blank / loading look is not done.
     """
     if not (query or "").strip():
         return False
     if look_has_hotel_results(looked):
         return False
-    if look_is_empty_desktop(looked) or look_has_blocking_overlay(
-        looked, goal=asked
-    ):
+    if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
+        return True
+    if look_has_blocking_overlay(looked, goal=asked):
         return True
     if look_is_empty_destination(looked) or look_is_footer(looked):
         return True
@@ -500,6 +544,8 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
         return click_xy
     if look_is_footer(looked) or look_is_empty_desktop(looked):
         return None
+    if look_is_loading_or_blank(looked):
+        return None
     if _SEARCH_FIELD_RE.search(blob) or look_is_web_page(looked):
         return SEARCH_BOX_CLICK
     return None
@@ -521,17 +567,19 @@ def continue_web_search(
     scroll: Callable[..., dict[str, Any]] | None = None,
     max_rounds: int = 3,
 ) -> dict[str, Any]:
-    """Home if needed, click the field, type the query, Enter. Never pay.
+    """Wait until the page is ready, click the field, type, Enter. Never pay.
 
-    Product path after overlays. A homepage look that does not say
-    "search box" still types. Footer looks Home first — never (640, 320)
-    on copyright. Desktop looks again, then types only if a page appears.
+    Product path after overlays. look_speed=off does not skip this.
+    A blank / loading / empty-desktop look is not done — look again,
+    then type. A homepage that never says "search box" still types.
+    Footer looks Home first — never (640, 320) on copyright.
     """
     query = web_search_query(goal)
     current = dict(looked or {})
     blob = look_blob(current)
     if look_is_pay_control(blob) and "hotel" not in blob.lower():
         return current
+    typed_query = False
     for _ in range(max(1, int(max_rounds))):
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
@@ -539,12 +587,16 @@ def continue_web_search(
         if look_has_hotel_results(current) or not needs_web_query(
             goal, current, query
         ):
+            if typed_query:
+                current["_typed_query"] = query
             return current
-        if look_is_empty_desktop(current):
+        if look_is_loading_or_blank(current) or look_is_empty_desktop(current):
             _pause_after_web_act()
             current = look_again() or current
-            if look_is_empty_desktop(current) and search_box_point(current) is None:
-                return current
+            if (
+                look_is_loading_or_blank(current) or look_is_empty_desktop(current)
+            ) and search_box_point(current) is None:
+                continue
         if look_is_footer(current) or search_box_point(current) is None:
             keys(combo="home")
             _pause_after_web_act()
@@ -558,16 +610,20 @@ def continue_web_search(
                     current = look_again() or current
         xy = search_box_point(current)
         if xy is None:
-            return current
+            continue
         clicked = click(x=xy[0], y=xy[1])
         if not clicked or not clicked.get("ok"):
-            return current
+            continue
         _pause_after_web_act()
         typed = type_text(text=query)
         if typed and typed.get("ok"):
             keys(combo="enter")
+            typed_query = True
+            current["_typed_query"] = query
         _pause_after_web_act()
         current = look_again() or current
+        if typed_query:
+            current["_typed_query"] = query
     return current
 
 
