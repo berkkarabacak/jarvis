@@ -310,6 +310,7 @@ def test_named_windows_pc_wins_on_linux_host():
 
 def test_nginx_proxies_same_novnc_session():
     text = NGINX.read_text(encoding="utf-8")
+    assert "location = /jarvis/novnc/websockify" in text
     assert "location ^~ /jarvis/novnc/" in text
     assert "proxy_pass http://127.0.0.1:6080/;" in text
     assert "listen 0.0.0.0:6080" not in text

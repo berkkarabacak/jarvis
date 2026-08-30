@@ -46,6 +46,10 @@ def test_public_talk_iframe_never_uses_loopback():
     assert not re.search(r'setAttribute\(\s*"src"\s*,\s*["\']https?://(?:127\.0\.0\.1|localhost)', html)
     assert "var LINUX_SESSION = \"/novnc/vnc.html" in script
     assert 'path=novnc/websockify"' in script or "path=novnc/websockify" in script
+    linux_line = next(line for line in script.splitlines() if "var LINUX_SESSION =" in line)
+    assert "127.0.0.1" not in linux_line
+    assert "localhost" not in linux_line.lower()
+    assert linux_line.strip().startswith("var LINUX_SESSION = \"/novnc/")
     assert "/android/" in script
     assert "ANDROID_WATCH_URL" not in html
     iframe = talk.split('id="pc-frame"', 1)[1].split(">", 1)[0]
@@ -54,6 +58,20 @@ def test_public_talk_iframe_never_uses_loopback():
     assert 'frame.setAttribute("src", "/screen?picture="' in talk
     assert "http://127.0.0.1:6080" not in talk
     assert "http://127.0.0.1:6081" not in talk
+
+
+def test_public_screen_websocket_path_matches_nginx_exact_location():
+    """noVNC path= and nginx location = /novnc/websockify must stay in sync."""
+    html = SCREEN.read_text(encoding="utf-8")
+    script = _load_script(html)
+    vhost = (ROOT / "deploy" / "nginx-aicontrolroom.nl.conf").read_text(encoding="utf-8")
+    assert "path=novnc/websockify" in script
+    assert "location = /novnc/websockify" in vhost
+    assert "location = /novnc/websockify" in script
+    assert "Jarvis's computer is not running." in html
+    assert 'id="live"' in html
+    assert "function showLive" in script
+    assert "function showDown" in script
 
 
 def test_public_session_rejects_operator_loopback_and_uses_watch_path():

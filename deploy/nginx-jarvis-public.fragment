@@ -24,6 +24,20 @@
     }
 
     # Same live noVNC session, never bind 0.0.0.0:6080.
+    # Talk /screen uses ?path=novnc/websockify. websockify accepts the
+    # websocket at / on :6080, not /websockify. Keep this exact location
+    # in sync with path=novnc/websockify in screen.html.
+    location = /jarvis/novnc/websockify {
+        proxy_pass http://127.0.0.1:6080/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
     location ^~ /jarvis/novnc/ {
         proxy_pass http://127.0.0.1:6080/;
         proxy_http_version 1.1;

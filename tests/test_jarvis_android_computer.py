@@ -306,6 +306,7 @@ def test_watch_path_is_localhost_equivalent_of_novnc():
     nginx = (ROOT / "deploy" / "nginx-jarvis-public.fragment").read_text(encoding="utf-8")
     assert "location ^~ /jarvis/android/" in nginx
     assert "proxy_pass http://127.0.0.1:6081/" in nginx
+    assert "location = /jarvis/novnc/websockify" in nginx
     assert "location ^~ /jarvis/novnc/" in nginx
     watch = WATCH.read_text(encoding="utf-8")
     assert "Jarvis's screen" in watch
