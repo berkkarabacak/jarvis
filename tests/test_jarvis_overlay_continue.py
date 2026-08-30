@@ -7,11 +7,14 @@ import pytest
 from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     SANDBOX_DISMISS_CLICK,
+    SEARCH_BOX_CLICK,
     SIGNIN_DISMISS_CLICK,
+    continue_web_search,
     dismiss_blocking_overlays,
     look_has_blocking_overlay,
     look_is_empty_desktop,
     look_is_footer,
+    needs_web_query,
     overlay_dismiss_plan,
     overlay_kind,
     search_box_point,
@@ -218,6 +221,77 @@ def test_search_box_point_uses_named_field_not_footer_pixel():
     assert search_box_point(footer) is None
     assert look_is_footer(named) is False
     assert search_box_point(named) == (412, 210)
+
+
+HOMEPAGE_NO_BOX = {
+    "ok": True,
+    "title": "Booking.com",
+    "url": "https://www.booking.com/",
+    "vision_description": (
+        "Booking.com. Stays, flights, car rental. "
+        "Find hotels, homes and more. A form at the top."
+    ),
+}
+
+
+def test_search_box_point_homepage_without_search_box_words():
+    """Live miss: homepage look never says 'search box' — still a field."""
+    assert look_is_footer(HOMEPAGE_NO_BOX) is False
+    assert look_is_empty_desktop(HOMEPAGE_NO_BOX) is False
+    assert search_box_point(HOMEPAGE_NO_BOX) == SEARCH_BOX_CLICK
+    assert search_box_point(HOMEPAGE_NO_BOX) == (640, 320)
+    query = web_search_query(ROME)
+    assert "hotel" in query.lower()
+    assert needs_web_query(ROME, HOMEPAGE_NO_BOX, query) is True
+
+
+def test_continue_web_search_types_on_homepage_without_search_box():
+    looks = [
+        HOMEPAGE_NO_BOX,
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "url": "https://www.booking.com/searchresults.html",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=ROME,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert typed, "homepage without 'search box' must still type the query"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert (640, 320) in clicks
+    assert (640, 680) not in clicks
+    assert "enter" in keys
+    assert "Eden" in str(out.get("vision_description") or "")
 
 
 @pytest.mark.asyncio
@@ -433,6 +507,14 @@ def test_speak_web_job_never_look_at_screen_or_footer_caption():
         "title": "",
         "vision_description": "A turquoise desktop background fills the screenshot.",
     }
+    teal = {
+        "ok": True,
+        "title": "",
+        "vision_description": (
+            "A teal desktop with icons: Chrome, Files, Recycle Bin. "
+            "You can access Chrome to search for hotels."
+        ),
+    }
     footer = {
         "ok": True,
         "title": "Booking.com",
@@ -451,19 +533,154 @@ def test_speak_web_job_never_look_at_screen_or_footer_caption():
         "title": "Hotels in Rome",
         "vision_description": "Hotels in central Rome. Hotel Eden. Prices from 180 EUR.",
     }
-    for looked in (desktop, footer, empty):
+    for looked in (desktop, teal, footer, empty, HOMEPAGE_NO_BOX):
         body = _speak_web_job(ROME, looked, ["see_screen"], opened=True)
         low = body["reply"].lower()
         assert "look at the screen" not in low
         assert "turquoise" not in low
+        assert "teal" not in low
+        assert "recycle" not in low
+        assert "you can access chrome" not in low
+        assert "you can open chrome" not in low
         assert "all rights reserved" not in low
         assert "destinations we love" not in low
         via = _speak_looked(looked, ["see_screen"], opened=True, asked=ROME)
         assert "look at the screen" not in via["reply"].lower()
         assert "turquoise" not in via["reply"].lower()
+        assert "you can access chrome" not in via["reply"].lower()
     picked = _speak_web_job(ROME, pick, ["see_screen"], opened=True)
     assert "eden" in picked["reply"].lower() or "hotel" in picked["reply"].lower()
     assert "look at the screen" not in picked["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_rome_types_on_homepage_without_search_box(
+    monkeypatch,
+):
+    """Homepage look that never says 'search box' must still type Rome."""
+    from app.jarvis import computer as computer_mod
+    from app.jarvis.voice_ask import run_voice_ask
+
+    planned: list[dict] = []
+    launched: list[dict] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    looks = [
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "url": "https://www.booking.com/searchresults.html",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. The First Roma. "
+                "Prices from 180 EUR. No checkout."
+            ),
+        },
+    ]
+    n = {"i": 0}
+
+    def fake_see(ctx, args):
+        item = looks[min(n["i"], len(looks) - 1)]
+        n["i"] += 1
+        return dict(item)
+
+    def fake_click(ctx, args):
+        clicks.append((int(args.get("x") or 0), int(args.get("y") or 0)))
+        return {"ok": True, "x": args.get("x"), "y": args.get("y")}
+
+    def fake_type(ctx, args):
+        typed.append(str((args or {}).get("text") or ""))
+        return {"ok": True, "typed": len(typed[-1])}
+
+    def fake_keys(ctx, args):
+        return {"ok": True, "combo": args.get("combo")}
+
+    def fake_close(*, app="chrome"):
+        return {"ok": True, "app": app, "method": "close-all"}
+
+    def capture_run(plan):
+        launched.append(plan)
+        return {
+            "ok": True,
+            "started": plan.get("cmd"),
+            "argv": list(plan.get("argv") or []),
+            "window": True,
+            "opened": plan.get("url"),
+            "url": plan.get("url"),
+        }
+
+    def capture_plan(args):
+        planned.append(dict(args))
+        return {"ok": True, "cmd": "chrome", "argv": ["chromium"], **args}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.tools._click", fake_click)
+    monkeypatch.setattr("app.jarvis.tools._type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.tools._keys", fake_keys)
+    monkeypatch.setattr("app.jarvis.desktop.close_windows", fake_close)
+    monkeypatch.setattr(computer_mod, "linux_run_app", capture_run)
+    monkeypatch.setattr(computer_mod, "plan_linux_run_app", capture_plan)
+
+    body = await run_voice_ask(ROME)
+    assert typed, "must type the destination on a homepage that omits 'search box'"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert (640, 680) not in clicks
+    low = body["reply"].lower()
+    assert "eden" in low or "roma" in low or "hotel" in low
+    assert "look at the screen" not in low
+    assert "turquoise" not in low
+    assert "teal" not in low
+    assert "you can access chrome" not in low
+    assert "you can open chrome" not in low
+    assert "recycle" not in low
+
+
+def test_see_again_after_overlays_types_web_query(monkeypatch):
+    """Agent see_screen path must type before the model can speak a catalog."""
+    from app.jarvis.tools import _see_again_after_overlays
+    from app.jarvis.workspace import Workspace, default_workspace
+    from app.jarvis.tools import ToolContext
+
+    looks = [
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    n = {"i": 0}
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+
+    def fake_see(ctx, args):
+        n["i"] += 1
+        return dict(looks[min(n["i"], len(looks) - 1)])
+
+    def fake_click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def fake_type(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def fake_keys(*, combo="", **_k):
+        return {"ok": True, "combo": combo}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.desktop.click", fake_click)
+    monkeypatch.setattr("app.jarvis.desktop.type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.desktop.keys", fake_keys)
+
+    ctx = ToolContext(Workspace(default_workspace()), None)
+    out = _see_again_after_overlays(ctx, {"goal": ROME}, dict(HOMEPAGE_NO_BOX))
+    assert typed, "see_screen on a hotel job must type the query"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert (640, 320) in clicks
+    assert "Eden" in str(out.get("vision_description") or "")
 
 
 def test_annotate_see_screen_web_job_must_act():

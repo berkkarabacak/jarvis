@@ -11,7 +11,9 @@ Uses look / click / type only. Not Playwright. Not Selenium.
 
 from __future__ import annotations
 
+import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
@@ -83,12 +85,15 @@ _COOKIE_RE = re.compile(
 _EMPTY_DESKTOP_RE = re.compile(
     r"("
     r"\bturquoise\b|"
+    r"\bteal\b.{0,48}\b(desktop|background|wallpaper|icons?)\b|"
+    r"\b(desktop|background|wallpaper).{0,24}\bteal\b|"
     r"desktop\s+background|"
     r"wallpaper|"
     r"screenshot of (?:the )?(?:desktop|background)|"
     r"empty desktop|"
     r"plain (?:teal|turquoise|blue) (?:background|desktop)|"
-    r"desktop icons"
+    r"desktop icons|"
+    r"recycle bin"
     r")",
     re.I,
 )
@@ -152,11 +157,15 @@ _SEARCH_FIELD_RE = re.compile(
     r"("
     r"search box|"
     r"search field|"
+    r"search bar|"
+    r"search form|"
     r"destination|"
     r"where are you going|"
+    r"where to|"
+    r"find your next stay|"
     r"omnibox|"
     r"empty search|"
-    r"type (?:your )?(?:destination|city|query)"
+    r"type (?:your )?(?:destination|city|query|place)"
     r")",
     re.I,
 )
@@ -164,8 +173,8 @@ _SEARCH_FIELD_RE = re.compile(
 # (x,y) on the page (that is often a footer link).
 _SEARCH_XY_AFTER_RE = re.compile(
     r"(?:"
-    r"search box|search field|destination|where are you going|"
-    r"omnibox|empty search|type (?:your )?(?:destination|city|query)"
+    r"search box|search field|search bar|destination|where are you going|"
+    r"omnibox|empty search|type (?:your )?(?:destination|city|query|place)"
     r")"
     r"(?:[^.\n()]{0,80})?"
     r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
@@ -175,8 +184,30 @@ _SEARCH_XY_BEFORE_RE = re.compile(
     r"\((\d{2,4})\s*,\s*(\d{2,4})\)"
     r"(?:[^.\n()]{0,40})?"
     r"(?:"
-    r"search box|search field|destination|where are you going|omnibox"
+    r"search box|search field|search bar|destination|where are you going|omnibox"
     r")",
+    re.I,
+)
+_EMPTY_DEST_RE = re.compile(
+    r"search box is empty|destination is empty|where are you going|"
+    r"empty destination|type your destination",
+    re.I,
+)
+_HOTEL_RESULT_RE = re.compile(
+    r"("
+    r"\bhotels? in\b|"
+    r"\bsearch results\b|"
+    r"\bfrom \d+\s*(?:eur|usd|gbp|€|\$)\b|"
+    r"\bhotel [A-Za-z]|"
+    r"\bprices? from\b"
+    r")",
+    re.I,
+)
+# "hotel" on the Booking.com homepage is marketing, not a typed query.
+_GENERIC_QUERY_WORD_RE = re.compile(
+    r"^(?:hotels?|search|chrome|booking|find|stays?|rooms?|flights?|"
+    r"homes?|apartments?|city|cities|destination|query|central|"
+    r"using|use|please|the|and|for|in|a|an|to)$",
     re.I,
 )
 _FOOTER_RE = re.compile(
@@ -371,12 +402,89 @@ def look_is_footer(looked: dict[str, Any] | None) -> bool:
     return bool(_FOOTER_RE.search(blob))
 
 
+def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
+    """True when vision shows hotel search results, not the homepage form."""
+    blob = look_blob(looked)
+    return bool(_HOTEL_RESULT_RE.search(blob)) and not look_is_footer(looked)
+
+
+def look_is_empty_destination(looked: dict[str, Any] | None) -> bool:
+    return bool(_EMPTY_DEST_RE.search(look_blob(looked)))
+
+
+def look_is_web_page(looked: dict[str, Any] | None) -> bool:
+    """True for a loaded site (Booking.com homepage), not wallpaper or footer."""
+    if look_is_empty_desktop(looked) or look_is_footer(looked):
+        return False
+    item = looked or {}
+    url = str(item.get("url") or "")
+    if url and re.search(r"https?://", url, re.I):
+        return True
+    title = str(item.get("title") or "").strip()
+    if title and not re.search(
+        r"^(chrome|google chrome|chromium|desktop|xfce|untitled)\b",
+        title,
+        re.I,
+    ):
+        return True
+    blob = look_blob(item)
+    return bool(
+        re.search(
+            r"booking\.com|\bgoogle\b|where are you going|"
+            r"find your next stay|\bstays\b",
+            blob,
+            re.I,
+        )
+    )
+
+
+def distinctive_query_tokens(query: str) -> list[str]:
+    """Rome / grinder — not the generic 'hotel' on a booking homepage."""
+    return [
+        part
+        for part in (query or "").split()
+        if len(part) >= 3 and not _GENERIC_QUERY_WORD_RE.match(part)
+    ]
+
+
+def query_visible_on_look(looked: dict[str, Any] | None, query: str) -> bool:
+    tokens = distinctive_query_tokens(query)
+    if not tokens:
+        return False
+    blob = look_blob(looked).lower()
+    return all(token.lower() in blob for token in tokens)
+
+
+def needs_web_query(
+    asked: str, looked: dict[str, Any] | None, query: str
+) -> bool:
+    """True until the destination is typed or results are on screen.
+
+    A homepage that mentions 'hotel' is not a finished search.
+    """
+    if not (query or "").strip():
+        return False
+    if look_has_hotel_results(looked):
+        return False
+    if look_is_empty_desktop(looked) or look_has_blocking_overlay(
+        looked, goal=asked
+    ):
+        return True
+    if look_is_empty_destination(looked) or look_is_footer(looked):
+        return True
+    if query_visible_on_look(looked, query):
+        return False
+    return True
+
+
 def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     """Where to type the destination. None if the field is not on screen.
 
     Prefer the (x,y) vision names next to the search / destination field.
     Do not click a hardcoded mid-page pixel when the look is the footer —
     on a scrolled page that pixel is copyright / legal links.
+    A Booking.com homepage that never says "search box" still has a field —
+    use SEARCH_BOX_CLICK after Home, never on the footer or wallpaper.
     """
     blob = look_blob(looked)
     named = _search_field_xy(blob)
@@ -390,11 +498,77 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
         and not look_is_footer(looked)
     ):
         return click_xy
-    if look_is_footer(looked):
+    if look_is_footer(looked) or look_is_empty_desktop(looked):
         return None
-    if _SEARCH_FIELD_RE.search(blob):
+    if _SEARCH_FIELD_RE.search(blob) or look_is_web_page(looked):
         return SEARCH_BOX_CLICK
     return None
+
+
+def _pause_after_web_act() -> None:
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        time.sleep(0.4)
+
+
+def continue_web_search(
+    looked: dict[str, Any] | None,
+    *,
+    goal: str,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+    scroll: Callable[..., dict[str, Any]] | None = None,
+    max_rounds: int = 3,
+) -> dict[str, Any]:
+    """Home if needed, click the field, type the query, Enter. Never pay.
+
+    Product path after overlays. A homepage look that does not say
+    "search box" still types. Footer looks Home first — never (640, 320)
+    on copyright. Desktop looks again, then types only if a page appears.
+    """
+    query = web_search_query(goal)
+    current = dict(looked or {})
+    blob = look_blob(current)
+    if look_is_pay_control(blob) and "hotel" not in blob.lower():
+        return current
+    for _ in range(max(1, int(max_rounds))):
+        blob = look_blob(current)
+        if look_is_pay_control(blob) and "hotel" not in blob.lower():
+            return current
+        if look_has_hotel_results(current) or not needs_web_query(
+            goal, current, query
+        ):
+            return current
+        if look_is_empty_desktop(current):
+            _pause_after_web_act()
+            current = look_again() or current
+            if look_is_empty_desktop(current) and search_box_point(current) is None:
+                return current
+        if look_is_footer(current) or search_box_point(current) is None:
+            keys(combo="home")
+            _pause_after_web_act()
+            current = look_again() or current
+            if search_box_point(current) is None and (
+                look_is_footer(current) or look_is_empty_destination(current)
+            ):
+                if scroll is not None:
+                    scroll(dy=5)
+                    _pause_after_web_act()
+                    current = look_again() or current
+        xy = search_box_point(current)
+        if xy is None:
+            return current
+        clicked = click(x=xy[0], y=xy[1])
+        if not clicked or not clicked.get("ok"):
+            return current
+        _pause_after_web_act()
+        typed = type_text(text=query)
+        if typed and typed.get("ok"):
+            keys(combo="enter")
+        _pause_after_web_act()
+        current = look_again() or current
+    return current
 
 
 def dismiss_blocking_overlays(
