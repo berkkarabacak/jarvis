@@ -26,8 +26,12 @@ RESTORE_DISMISS_CLICK = (1248, 92)
 SANDBOX_DISMISS_CLICK = (1248, 148)
 # Booking.com Genius / generic sign-in card X (centered modal, not the window).
 SIGNIN_DISMISS_CLICK = (920, 170)
-# Destination / search box once the modal is gone.
+# Destination / search box once the modal is gone. Mid-page on 1280x720,
+# never a footer pixel. Only used when vision names a search field and
+# does not give coordinates.
 SEARCH_BOX_CLICK = (640, 320)
+# jarvis-computer Xvfb is 1280x720. y≥560 is the footer band.
+_FOOTER_Y = 560
 
 _XY_RE = re.compile(r"\((\d{2,4})\s*,\s*(\d{2,4})\)")
 
@@ -153,6 +157,38 @@ _SEARCH_FIELD_RE = re.compile(
     r"omnibox|"
     r"empty search|"
     r"type (?:your )?(?:destination|city|query)"
+    r")",
+    re.I,
+)
+# Coords that belong to the search / destination field, not the first
+# (x,y) on the page (that is often a footer link).
+_SEARCH_XY_AFTER_RE = re.compile(
+    r"(?:"
+    r"search box|search field|destination|where are you going|"
+    r"omnibox|empty search|type (?:your )?(?:destination|city|query)"
+    r")"
+    r"(?:[^.\n()]{0,80})?"
+    r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
+    re.I,
+)
+_SEARCH_XY_BEFORE_RE = re.compile(
+    r"\((\d{2,4})\s*,\s*(\d{2,4})\)"
+    r"(?:[^.\n()]{0,40})?"
+    r"(?:"
+    r"search box|search field|destination|where are you going|omnibox"
+    r")",
+    re.I,
+)
+_FOOTER_RE = re.compile(
+    r"("
+    r"\bfooter\b|"
+    r"all rights reserved|"
+    r"copyright|"
+    r"privacy(?:\s+policy)?|"
+    r"terms of (?:service|use)|"
+    r"cookie statement|"
+    r"destinations we love|"
+    r"scrolled to the (?:bottom|footer)"
     r")",
     re.I,
 )
@@ -311,16 +347,54 @@ def overlay_dismiss_plan(
     )
 
 
-def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int]:
-    """Where to type the destination after overlays are gone."""
+def _xy_in_page(x: int, y: int) -> bool:
+    return 0 <= x <= 1280 and 0 <= y < _FOOTER_Y
+
+
+def _search_field_xy(blob: str) -> tuple[int, int] | None:
+    """Coords vision tied to the search / destination field. Not the footer."""
+    for rx in (_SEARCH_XY_AFTER_RE, _SEARCH_XY_BEFORE_RE):
+        match = rx.search(blob or "")
+        if not match:
+            continue
+        x, y = int(match.group(1)), int(match.group(2))
+        if _xy_in_page(x, y):
+            return x, y
+    return None
+
+
+def look_is_footer(looked: dict[str, Any] | None) -> bool:
+    """True when vision is the page footer, not the destination field."""
     blob = look_blob(looked)
-    match = _XY_RE.search(blob)
-    if match and _SEARCH_FIELD_RE.search(blob):
-        return int(match.group(1)), int(match.group(2))
-    named = _named_click_from_look(looked)
-    if named and _SEARCH_FIELD_RE.search(blob):
+    if _search_field_xy(blob):
+        return False
+    return bool(_FOOTER_RE.search(blob))
+
+
+def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
+    """Where to type the destination. None if the field is not on screen.
+
+    Prefer the (x,y) vision names next to the search / destination field.
+    Do not click a hardcoded mid-page pixel when the look is the footer —
+    on a scrolled page that pixel is copyright / legal links.
+    """
+    blob = look_blob(looked)
+    named = _search_field_xy(blob)
+    if named:
         return named
-    return SEARCH_BOX_CLICK
+    click_xy = _named_click_from_look(looked)
+    if (
+        click_xy
+        and _SEARCH_FIELD_RE.search(blob)
+        and _xy_in_page(click_xy[0], click_xy[1])
+        and not look_is_footer(looked)
+    ):
+        return click_xy
+    if look_is_footer(looked):
+        return None
+    if _SEARCH_FIELD_RE.search(blob):
+        return SEARCH_BOX_CLICK
+    return None
 
 
 def dismiss_blocking_overlays(
@@ -351,7 +425,7 @@ def web_search_query(asked: str) -> str:
     raw = (asked or "").strip()
     raw = re.sub(
         r"\b(please|can you|could you|on (?:the|your) (?:screen|computer)|"
-        r"using chrome|in chrome|with chrome)\b",
+        r"using chrome|use chrome|in chrome|with chrome)\b",
         " ",
         raw,
         flags=re.I,

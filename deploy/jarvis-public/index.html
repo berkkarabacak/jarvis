@@ -2421,6 +2421,14 @@
         return false;
       }
 
+      function looksLikeWebJob(text) {
+        const t = String(text || "");
+        return (
+          /\b(find(?:\s+me)?|search(?:\s+for)?|look\s+up|book|hotels?|flights?)\b/i.test(t)
+          || /\b(?:use|using)\s+chrome\b/i.test(t)
+        );
+      }
+
       function emptySpeech(text) {
         const raw = String(text || "").replace(/\s+/g, " ").trim();
         return !raw || raw === "{}" || raw === "[]" || raw === "null" || raw === "undefined";
@@ -3093,6 +3101,9 @@
             && /\b(html|tetris|games?|files?|pages?)\b/.test(t)
           )
         ) {
+          return 180000;
+        }
+        if (looksLikeWebJob(t)) {
           return 180000;
         }
         if (

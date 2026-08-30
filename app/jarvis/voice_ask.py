@@ -27,6 +27,7 @@ from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     look_has_blocking_overlay,
     look_is_empty_desktop,
+    look_is_footer,
     overlay_dismiss_plan,
     search_box_point,
     web_search_query,
@@ -83,6 +84,32 @@ _SCREEN_FAIL = "Could not do that on the screen."
 # for N distinct file briefs. Realtime voice utterances stay 400.
 ASK_TALK_MAX = 400
 ASK_HIRE_MAX = 2000
+# Public Talk fetch abort. Hello stays 12s. Look/click stays 30s.
+# Find / search / book / hotel / use-Chrome needs minutes (same as hire).
+ASK_TALK_ABORT_MS = 12_000
+ASK_LOOK_ABORT_MS = 30_000
+ASK_WEB_ABORT_MS = 180_000
+ASK_HIRE_ABORT_MS = 180_000
+_WEB_ABORT_RE = re.compile(
+    r"("
+    r"\bfind(?:\s+me)?\b|"
+    r"\bsearch(?:\s+for)?\b|"
+    r"\blook\s+up\b|"
+    r"\bbook\b|"
+    r"\bhotels?\b|"
+    r"\bflights?\b|"
+    r"\b(?:use|using)\s+chrome\b"
+    r")",
+    re.I,
+)
+_LOOK_ABORT_RE = re.compile(
+    r"("
+    r"\b(show|open|look|see|click|type|close|scroll|agree|read|install)\b|"
+    r"what do you see|what are you seeing|what'?s on|on (the|your) screen|"
+    r"look together|news together|popup|headline|\bnews\b"
+    r")",
+    re.I,
+)
 
 
 def ask_text_max(text: str) -> int:
@@ -93,6 +120,27 @@ def ask_text_max(text: str) -> int:
     if goal_is_hire_job(raw):
         return ASK_HIRE_MAX
     return ASK_TALK_MAX
+
+
+def ask_abort_ms(text: str) -> int:
+    """Public Talk /ask abort. Web/computer jobs get minutes. Hello stays 12s."""
+    from app.jarvis.virtual_pc import goal_is_hire_job, wants_web_job
+
+    raw = (text or "").strip()
+    if not raw:
+        return ASK_TALK_ABORT_MS
+    if goal_is_hire_job(raw):
+        return ASK_HIRE_ABORT_MS
+    if wants_web_job(raw) or _WEB_ABORT_RE.search(raw):
+        return ASK_WEB_ABORT_MS
+    if _LOOK_ABORT_RE.search(raw):
+        return ASK_LOOK_ABORT_MS
+    return ASK_TALK_ABORT_MS
+
+
+def ask_deadline_s(text: str) -> float:
+    """Server wait for one /ask. Same buckets as Public Talk askAbortMs."""
+    return max(12.0, float(ask_abort_ms(text)) / 1000.0)
 
 
 _HIRE_BUDGET_S = 90.0
@@ -283,7 +331,6 @@ _SHOPPING_EN = "Milk, bread, eggs, apples, coffee"
 _SHOPPING_TR = "Süt, ekmek, yumurta, elma, kahve"
 _INSTALL_LIST = "I can install mines, solitaire, the calculator, or the text editor."
 _INSTALL_FAIL = "I could not install that."
-_ASK_HARD_CAP_S = 25.0
 _INSTALL_LEAD_RE = re.compile(
     r"(?:^|\b)(?:please\s+|can you\s+|could you\s+)?"
     r"(?:install|apt(?:-get)?(?:\s+install)?|add(?:\s+a)?\s+package)\s+",
@@ -444,6 +491,35 @@ _DESKTOP_TALK_RE = re.compile(
     r")",
     re.I,
 )
+_FOOTER_TALK_RE = re.compile(
+    r"("
+    r"\bfooter\b|"
+    r"all rights reserved|"
+    r"copyright|"
+    r"privacy policy|"
+    r"terms of (?:service|use)|"
+    r"cookie statement|"
+    r"destinations we love|"
+    r"scrolled to the (?:bottom|footer)"
+    r")",
+    re.I,
+)
+_EMPTY_DEST_RE = re.compile(
+    r"search box is empty|destination is empty|where are you going",
+    re.I,
+)
+_HOTEL_RESULT_RE = re.compile(
+    r"("
+    r"\bhotels? in\b|"
+    r"\bsearch results\b|"
+    r"\bfrom \d+\s*(?:eur|usd|gbp|€|\$)\b|"
+    r"\bhotel [A-Za-z]|"
+    r"\bprices? from\b"
+    r")",
+    re.I,
+)
+_LOOK_AT_SCREEN_RE = re.compile(r"look at the screen\.?", re.I)
+_WEB_STUCK = "I could not finish the hotel search."
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
     "Istanbul cats treat the city like they own it. "
@@ -1993,6 +2069,60 @@ def _look_fail_reply(looked: dict[str, Any], *, opened: bool) -> str:
     return _LOOK_FAILED
 
 
+def _is_footer_talk(text: str) -> bool:
+    return bool(_FOOTER_TALK_RE.search(text or ""))
+
+
+def _hotel_results_visible(looked: dict[str, Any]) -> bool:
+    blob = _look_blob(looked)
+    return bool(_HOTEL_RESULT_RE.search(blob)) and not look_is_footer(looked)
+
+
+def _speak_web_job(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    opened: bool,
+) -> dict[str, Any]:
+    """Find-hotel / search job: a pick or an honest stuck. Never a caption."""
+    from app.jarvis.overlay import look_is_pay_control
+
+    blob = _look_blob(looked)
+    desc = str(looked.get("vision_description") or "").strip()
+    payload = _no_look_confirm(looked)
+    if look_is_pay_control(blob) and "hotel" not in blob.lower():
+        reply = "I stopped. I will not pay or check out."
+    elif look_is_empty_desktop(looked) or _is_desktop_talk(desc):
+        reply = "I opened the page but I am stuck on the desktop. I did not pick a hotel."
+    elif look_is_footer(looked) or (
+        _is_footer_talk(desc) and not _hotel_results_visible(looked)
+    ):
+        reply = "I opened the page but I am stuck at the footer. I did not pick a hotel."
+    elif _EMPTY_DEST_RE.search(blob) and not _hotel_results_visible(looked):
+        reply = "The destination field is still empty. I could not finish the hotel search."
+    elif _looks_like_ssl_or_error_page(blob):
+        reply = "The page did not load. The browser shows a security or error page."
+    else:
+        reply = _spoken_from_screen(desc)
+        if (
+            _is_desktop_talk(reply)
+            or _is_footer_talk(reply)
+            or _LOOK_AT_SCREEN_RE.search(reply)
+            or not _usable_tell_text(reply)
+        ):
+            reply = _WEB_STUCK
+    if _LOOK_AT_SCREEN_RE.search(reply):
+        reply = _WEB_STUCK
+    return {
+        "ok": True,
+        "reply": reply,
+        "tools_used": tools,
+        "result": payload,
+        "ui": payload,
+    }
+
+
 def _speak_looked(
     looked: dict[str, Any],
     tools: list[str],
@@ -2000,7 +2130,12 @@ def _speak_looked(
     opened: bool,
     article: bool = False,
     headlines: bool = False,
+    asked: str = "",
 ) -> dict[str, Any]:
+    from app.jarvis.virtual_pc import wants_web_job
+
+    if asked and wants_web_job(asked):
+        return _speak_web_job(asked, looked, tools, opened=opened)
     blob = _look_blob(looked)
     payload = _no_look_confirm(looked)
     if headlines and look_is_404(looked) and not _looks_like_ssl_or_error_page(blob):
@@ -2371,6 +2506,70 @@ def _finish_news_tell(
     return _speak_looked(looked, tools, opened=True, article=True, headlines=True)
 
 
+def _needs_web_query(asked: str, looked: dict[str, Any], query: str) -> bool:
+    """True when the destination / search field still needs the query typed."""
+    if not query:
+        return False
+    blob = _look_blob(looked)
+    if look_is_empty_desktop(looked) or look_has_blocking_overlay(looked, goal=asked):
+        return True
+    if _EMPTY_DEST_RE.search(blob):
+        return True
+    if look_is_footer(looked):
+        return True
+    if look_is_serp(looked):
+        return False
+    parts = query.split()
+    if not parts:
+        return False
+    head = parts[0]
+    if len(head) >= 3 and head.lower() not in blob.lower():
+        return True
+    return False
+
+
+def _scroll_to_search(
+    asked: str, looked: dict[str, Any], tools: list[str]
+) -> dict[str, Any]:
+    """Footer / no named box — Home or scroll up, then look. Never a footer click."""
+    _keys_now("home")
+    _note_tool(tools, "keys")
+    _wait_after_act()
+    current = _look_opened_site(asked)
+    current = _dismiss_overlays_if_needed(asked, current, tools)
+    if search_box_point(current) is None and (
+        look_is_footer(current) or _EMPTY_DEST_RE.search(_look_blob(current))
+    ):
+        _scroll_now(dy=5)
+        _note_tool(tools, "scroll")
+        _wait_after_act()
+        current = _look_opened_site(asked)
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+    return current
+
+
+def _type_web_query(
+    asked: str, looked: dict[str, Any], tools: list[str], query: str
+) -> tuple[dict[str, Any], bool]:
+    """Click the named search field, type, Enter. False if there is no field."""
+    xy = search_box_point(looked)
+    if xy is None:
+        return looked, False
+    clicked = _click_now(xy[0], xy[1])
+    _note_tool(tools, "click")
+    if not clicked.get("ok"):
+        return looked, False
+    acted = _type_now(query)
+    _note_tool(tools, "type")
+    if acted.get("ok"):
+        _keys_now("enter")
+        _note_tool(tools, "keys")
+    _wait_after_act()
+    current = _look_opened_site(asked)
+    current = _dismiss_overlays_if_needed(asked, current, tools)
+    return current, True
+
+
 def _continue_web_job(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
@@ -2386,42 +2585,23 @@ def _continue_web_job(
     blob = _look_blob(current)
     if look_is_pay_control(blob) and "hotel" not in blob.lower():
         return current
-    needs_type = bool(query) and (
-        look_is_empty_desktop(current)
-        or look_has_blocking_overlay(current, goal=asked)
-        or bool(
-            re.search(
-                r"search box is empty|destination is empty|where are you going",
-                blob,
-                re.I,
-            )
-        )
-        or (
-            not look_is_serp(current)
-            and not re.search(re.escape(query.split()[0]), blob, re.I)
-            if query.split()
-            else False
-        )
-    )
-    # Homepage / booking with no query typed yet — type even without "empty".
-    if query and not look_is_serp(current) and query.split():
-        head = query.split()[0]
-        if len(head) >= 3 and head.lower() not in blob.lower():
-            needs_type = True
-    if not needs_type or not query:
-        return current
-    xy = search_box_point(current)
-    clicked = _click_now(xy[0], xy[1])
-    _note_tool(tools, "click")
-    if clicked.get("ok"):
-        acted = _type_now(query)
-        _note_tool(tools, "type")
-        if acted.get("ok"):
-            _keys_now("enter")
-            _note_tool(tools, "keys")
-        _wait_after_act()
-        current = _look_opened_site(asked)
-        current = _dismiss_overlays_if_needed(asked, current, tools)
+    for _ in range(3):
+        blob = _look_blob(current)
+        if look_is_pay_control(blob) and "hotel" not in blob.lower():
+            return current
+        if _hotel_results_visible(current):
+            return current
+        if not _needs_web_query(asked, current, query):
+            return current
+        if look_is_footer(current) or search_box_point(current) is None:
+            current = _scroll_to_search(asked, current, tools)
+            if look_is_pay_control(_look_blob(current)) and "hotel" not in _look_blob(
+                current
+            ).lower():
+                return current
+        current, typed = _type_web_query(asked, current, tools, query)
+        if not typed:
+            return current
     return current
 
 
@@ -2466,7 +2646,7 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
 
     if wants_web_job(asked):
         looked = _continue_web_job(asked, looked, tools)
-        return _speak_looked(looked, tools, opened=True)
+        return _speak_looked(looked, tools, opened=True, asked=asked)
     opened_search = "duckduckgo.com" in str(
         opened.get("opened") or opened.get("url") or ""
     ).lower()
@@ -2504,7 +2684,7 @@ def _tell_from_current_screen(asked: str) -> dict[str, Any]:
 
     if wants_web_job(asked):
         looked = _continue_web_job(asked, looked, tools)
-        return _speak_looked(looked, tools, opened=False)
+        return _speak_looked(looked, tools, opened=False, asked=asked)
     if wants_news_tell(asked) or look_is_news_page(looked):
         return _finish_news_tell(
             asked, looked, tools, {"url": str(looked.get("url") or "")}
@@ -3671,7 +3851,7 @@ async def run_voice_ask(text: str) -> dict[str, Any]:
     rounds = resolve_tool_rounds(asked, None)
     if _is_computer_ask(asked):
         rounds = 32
-    cap = _ASK_HARD_CAP_S if _is_computer_ask(asked) else 180
+    cap = ask_deadline_s(asked)
     agent = build_jarvis_agent(
         api_key=key,
         tool_source="ask",

@@ -171,12 +171,56 @@ def test_public_page_source_is_chat_and_talk():
     assert "180000" in abort_fn
     assert "spawn_child" in abort_fn
     assert "what's on" in abort_fn or "what'?s on" in abort_fn
+    assert "looksLikeWebJob" in abort_fn
+    assert "looksLikeWebJob" in page
+    web_fn = page.split("function looksLikeWebJob", 1)[1].split("function emptySpeech", 1)[0]
+    assert "hotel" in web_fn
+    assert "find" in web_fn
+    assert "chrome" in web_fn
+    assert "search" in web_fn
+    assert "book" in web_fn
     assert "function askTextMax" in page
     assert "return 2000" in page.split("function askTextMax", 1)[1].split("function askAbortMs", 1)[0]
     assert 'maxlength="2000"' in page
     send_user = page.split("function sendUserText", 1)[1].split("\n      function ", 1)[0]
     assert "slice(0, 400)" in send_user
     _assert_no_secret_values(page)
+
+
+def _eval_ask_abort_ms(text: str) -> int:
+    """Run the live Public Talk askAbortMs in node. Same function the browser uses."""
+    import shutil
+    import subprocess
+
+    page = PAGE.read_text(encoding="utf-8")
+    hire = page.split("function looksLikeHireAsk", 1)[1].split("function looksLikeWebJob", 1)[0]
+    web = page.split("function looksLikeWebJob", 1)[1].split("function emptySpeech", 1)[0]
+    abort = page.split("function askAbortMs", 1)[1].split("async function ask", 1)[0]
+    script = (
+        "function looksLikeHireAsk" + hire
+        + "function looksLikeWebJob" + web
+        + "function askAbortMs" + abort
+        + "process.stdout.write(String(askAbortMs(" + json.dumps(text) + ")));\n"
+    )
+    node = shutil.which("node")
+    assert node, "node is required to eval Public Talk askAbortMs"
+    proc = subprocess.run(
+        [node, "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return int(proc.stdout.strip())
+
+
+def test_public_ask_abort_ms_web_job_is_minutes_hello_stays_short():
+    assert _eval_ask_abort_ms("hello") == 12000
+    assert _eval_ask_abort_ms("find a hotel in central Rome") == 180000
+    assert _eval_ask_abort_ms("use Chrome to find a hotel") == 180000
+    assert _eval_ask_abort_ms("search for a hotel in Rome") == 180000
+    assert _eval_ask_abort_ms("book a hotel in central Rome") == 180000
+    assert _eval_ask_abort_ms("what's on the screen") == 30000
 
 
 def test_public_talk_two_button_idle_chrome():

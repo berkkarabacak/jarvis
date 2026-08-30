@@ -251,7 +251,8 @@ _WEB_JOB_RE = re.compile(
     r"\blook\s+up\b|"
     r"\bbook\s+(?:a\s+)?(?:hotel|flight|room|table)\b|"
     r"\bhotels?\s+in\b|"
-    r"\bflights?\s+to\b"
+    r"\bflights?\s+to\b|"
+    r"\b(?:use|using)\s+chrome\b"
     r")",
     re.I,
 )
