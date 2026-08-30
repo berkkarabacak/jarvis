@@ -57,10 +57,7 @@ _SIGNIN_RE = re.compile(
     r"("
     r"sign in, save money|"
     r"genius|"
-    r"sign[\s-]?in to|"
-    r"log[\s-]?in to|"
-    r"create an account|"
-    r"sign[\s-]?in (?:modal|dialog|popup|overlay)|"
+    r"sign[\s-]?in (?:modal|dialog|popup|overlay|banner)|"
     r"login (?:modal|dialog|popup|overlay)|"
     r"save money by signing"
     r")",

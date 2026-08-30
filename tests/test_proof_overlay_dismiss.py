@@ -30,6 +30,7 @@ def test_proof_script_uses_look_click_type_not_playwright():
     assert "web_search_query" in text
     assert "playwright" not in text.lower()
     assert "selenium" not in text.lower()
+    assert "webdriver" not in text.lower()
     assert "Sign in, save money" in html
     assert 'id="dismiss"' in html
     assert "Sign in" in html

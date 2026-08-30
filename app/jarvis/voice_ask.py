@@ -2031,7 +2031,7 @@ def _speak_looked(
             "result": payload,
             "ui": payload,
         }
-    if look_has_blocking_overlay(looked):
+    if _restore_blocking(looked):
         return {
             "ok": True,
             "reply": "I opened the page.",

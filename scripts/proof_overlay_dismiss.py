@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Proof: open a page with a dismissable overlay, click dismiss, then continue.
 
-Uses Jarvis look/click/type helpers — not Playwright, not Selenium.
+Uses Jarvis look/click/type helpers — not a browser-driver harness.
 Scripted path always runs (fake looks). Live path uses jarvis-computer when up.
 
     python scripts/proof_overlay_dismiss.py
@@ -192,13 +192,12 @@ def live_proof() -> dict[str, Any]:
                 "invented": False,
             }
         dest = "/home/jarvis/Exports/overlay_continue.html"
-        raw = FIXTURE.read_text(encoding="utf-8")
-        # Keep the HTML local; open via file URL after copying with a here-doc.
+        # Keep the HTML local; open via file URL after a mkdir on the computer.
         copy = exec_in_computer(
             [
                 "bash",
                 "-lc",
-                f"mkdir -p /home/jarvis/Exports && cat > {dest}",
+                "mkdir -p /home/jarvis/Exports",
             ]
         )
         if not copy.get("ok"):
