@@ -45,6 +45,8 @@
       var picture = picturePref();
       var quality = picture === "smooth" ? "4" : "8";
       var compression = picture === "smooth" ? "6" : "2";
+      // Public /novnc/... only — never 127.0.0.1. path=novnc/websockify must
+      // stay in sync with nginx `location = /novnc/websockify` (proxies to / on :6080).
       var LINUX_SESSION = "/novnc/vnc.html?autoconnect=1&resize=scale&quality=" + quality + "&compression=" + compression + "&path=novnc/websockify";
       var SESSION = LINUX_SESSION;
       var live = document.getElementById("live");

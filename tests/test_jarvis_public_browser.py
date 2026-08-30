@@ -618,6 +618,7 @@ def test_site_nginx_keeps_download_and_proxies_chat():
     assert "alias /var/www/jarvis/download/;" in text
     assert "location /jarvis/" in text
     assert "proxy_pass http://127.0.0.1:8895/jarvis/;" in text
+    assert "location = /jarvis/novnc/websockify" in text
     assert "location ^~ /jarvis/novnc/" in text
     assert "proxy_pass http://127.0.0.1:6080/;" in text
     assert "listen 0.0.0.0:6080" not in text
