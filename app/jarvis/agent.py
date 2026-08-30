@@ -86,7 +86,9 @@ You can:
   see_screen looks at the Chrome page that matches the goal, not the desktop.
 -   After screenshot or see_screen, do not catalog icons. On a computer job
   (click / type / close / open / find / I can still see), next tool must be click,
-  type, keys, or close. Batch clicks. Do not see_screen between every click.
+  type, keys, or close. On a find / search / hotel / use-Chrome job, type the
+  query into the destination field before any spoken reply. Do not say you can
+  open Chrome. Batch clicks. Do not see_screen between every click.
   Speak one short line only after the job is verified.
   After you open a site, look again. Dismiss blocking overlays (X / No thanks /
   Cancel / Reject) — never Sign in, never Restore unless they asked, never pay.
@@ -147,7 +149,11 @@ LOOK_JOB_STOP_PROMPT = (
     "You have one computer. If they asked you to do a thing, call tools until "
     "the new look shows it is done. Do not stop for taint. Do not interview them. "
     "After see_screen, click / type / keys / close — do not catalog icons. "
-    "Speak one short line after the job is verified. "
+    "On a find / search / hotel / use-Chrome job, after overlays, click the "
+    "destination field and type the query, then Enter, before any spoken reply. "
+    "Do not speak a desktop or icon catalog. Do not say you can open Chrome or "
+    "look at the screen. If the field is not on screen, Home / scroll up, look "
+    "again, then type. Speak one short line after the job is verified. "
     "Never ask the person to click. After you open a site, look again. If a "
     "modal, cookie wall, sign-in, Restore pages, or --no-sandbox banner is "
     "blocking, click dismiss (X, No thanks, Cancel, Reject, Not now) — never "

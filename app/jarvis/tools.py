@@ -316,6 +316,9 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "Do not speak a catalog of icons. "
                 "On a computer job (click / type / close / open / I can still see), "
                 "next tool is click, type, keys, or close. "
+                "On a find / search / hotel / use-Chrome job, after overlays, "
+                "click the destination field and type the query, then Enter — "
+                "do not speak a desktop catalog or say you can open Chrome. "
                 "Speak one short line only after the job is verified. "
                 "After run_app opens a URL, this prints that Chrome window "
                 "(goal / ntv.com.tr / NTV Haber), not the desktop. "
@@ -1254,7 +1257,8 @@ def annotate_see_screen(looked: dict[str, Any], goal: str) -> dict[str, Any]:
             out["speak_now"] = False
             out["hint"] = (
                 "Do not catalog icons. Next tool: click, type, keys, or close. "
-                "Speak one short line after the job is verified."
+                "On a find / hotel / search job, type the query now. "
+                "Do not speak. Do not say you can open Chrome."
             )
         else:
             out.setdefault("speak_now", True)
@@ -1320,7 +1324,7 @@ def _see_again_after_overlays(
     if args.get("_restore_tried"):
         tries = max(tries, 1)
     if tries >= 3:
-        return looked
+        return _continue_web_job_after_see(ctx, args, looked)
     goal = str(args.get("goal") or "")
     try:
         from app.jarvis.overlay import (
@@ -1329,13 +1333,13 @@ def _see_again_after_overlays(
             overlay_dismiss_plan,
         )
     except Exception:
-        return looked
+        return _continue_web_job_after_see(ctx, args, looked)
 
     need_retry = look_has_blocking_overlay(looked, goal=goal)
     if not need_retry and tries == 0 and look_is_empty_desktop(looked):
         need_retry = True
     if not need_retry:
-        return looked
+        return _continue_web_job_after_see(ctx, args, looked)
     try:
         from app.jarvis.desktop import click, keys
 
@@ -1356,13 +1360,60 @@ def _see_again_after_overlays(
     retry_args["_overlay_tries"] = tries + 1
     again = _see_screen(ctx, retry_args)
     if again.get("ok") and str(again.get("vision_description") or "").strip():
-        return again
+        return _continue_web_job_after_see(ctx, args, again)
     if str(looked.get("vision_description") or "").strip():
         kept = dict(looked)
         kept["ok"] = True
         kept.pop("error", None)
-        return kept
-    return again if again else looked
+        return _continue_web_job_after_see(ctx, args, kept)
+    return _continue_web_job_after_see(ctx, args, again if again else looked)
+
+
+def _continue_web_job_after_see(
+    ctx: ToolContext, args: dict[str, Any], looked: dict[str, Any]
+) -> dict[str, Any]:
+    """After overlays: type the hotel / search query before the model can speak."""
+    if args.get("_skip_web_type") or looked.get("_web_typed"):
+        return looked
+    goal = str(args.get("goal") or "")
+    try:
+        from app.jarvis.overlay import (
+            continue_web_search,
+            needs_web_query,
+            web_search_query,
+        )
+        from app.jarvis.virtual_pc import wants_web_job
+    except Exception:
+        return looked
+    if not wants_web_job(goal):
+        return looked
+    query = web_search_query(goal)
+    if not needs_web_query(goal, looked, query):
+        return looked
+    try:
+        from app.jarvis.desktop import click, keys, type_text
+    except Exception:
+        return looked
+
+    def look_again() -> dict[str, Any]:
+        retry = dict(args)
+        retry["fresh"] = True
+        retry["_skip_web_type"] = True
+        retry["_overlay_tries"] = 0
+        retry.pop("_restore_tried", None)
+        return _see_screen(ctx, retry) or looked
+
+    out = continue_web_search(
+        looked,
+        goal=goal,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    if isinstance(out, dict):
+        out["_web_typed"] = True
+    return out
 
 
 def _confirm_screen_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
