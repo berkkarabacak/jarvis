@@ -243,6 +243,18 @@ _DESKTOP_OPERATE_RE = re.compile(
     r"\bi still see\b",
     re.I,
 )
+# Find / search / book on the web — Chrome job, not look-and-tell.
+_WEB_JOB_RE = re.compile(
+    r"("
+    r"\bfind(?:\s+me)?\b|"
+    r"\bsearch(?:\s+for)?\b|"
+    r"\blook\s+up\b|"
+    r"\bbook\s+(?:a\s+)?(?:hotel|flight|room|table)\b|"
+    r"\bhotels?\s+in\b|"
+    r"\bflights?\s+to\b"
+    r")",
+    re.I,
+)
 AFTER_SEE_ACT_TOOLS = frozenset({"click", "type", "keys"})
 
 # Hire / spawn helpers for multi-part legwork. Do not require the words
@@ -412,6 +424,18 @@ def wants_talk_followup(goal: str) -> bool:
     return bool(_TALK_FOLLOWUP_RE.search(g))
 
 
+def wants_web_job(goal: str) -> bool:
+    """Find a hotel / search the web — Chrome, dismiss overlays, then type."""
+    g = (goal or "").strip()
+    if not g:
+        return False
+    if goal_is_hire_job(g) or wants_spoken_news(g):
+        return False
+    if wants_look_job(g) and not _WEB_JOB_RE.search(g):
+        return False
+    return bool(_WEB_JOB_RE.search(g))
+
+
 def wants_desktop_operate(goal: str) -> bool:
     """Click / type / close / open / still-see — operate, do not catalog icons."""
     g = goal or ""
@@ -419,11 +443,15 @@ def wants_desktop_operate(goal: str) -> bool:
         return True
     if goal_is_install_job(g) or goal_is_desktop_file_job(g):
         return True
+    if wants_web_job(g):
+        return True
     return bool(_DESKTOP_OPERATE_RE.search(g))
 
 
 def after_see_must_act(goal: str) -> bool:
     """After see_screen on an operate job, next tool is click/type/keys/close."""
+    if wants_web_job(goal):
+        return True
     if not goal_is_computer_job(goal):
         return False
     return wants_desktop_operate(goal)
@@ -570,6 +598,8 @@ def goal_is_simple_talk(goal: str) -> bool:
         return True
     if wants_look_job(g) or wants_still_see(g) or wants_screen_job(g):
         return False
+    if wants_web_job(g):
+        return False
     if goal_asks_own_machine(g):
         return False
     if wants_stop_talk(g) or wants_talk_followup(g):
@@ -626,6 +656,8 @@ def goal_is_computer_job(goal: str) -> bool:
     if goal_asks_own_machine(g):
         return True
     if goal_is_install_job(g) or goal_is_desktop_file_job(g):
+        return True
+    if wants_web_job(g):
         return True
     return bool(_USE_THE_PC_VERB.search(g) and _USE_THE_PC_NOUN.search(g))
 

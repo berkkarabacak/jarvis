@@ -84,10 +84,13 @@ You can:
   If see_screen shows this chat instead of the page, focus_app chrome and look again.
   Do not ask the user to retry. focus_app needs no confirm.
   see_screen looks at the Chrome page that matches the goal, not the desktop.
-- After screenshot or see_screen, do not catalog icons. On a computer job
-  (click / type / close / open / I can still see), next tool must be click,
+-   After screenshot or see_screen, do not catalog icons. On a computer job
+  (click / type / close / open / find / I can still see), next tool must be click,
   type, keys, or close. Batch clicks. Do not see_screen between every click.
   Speak one short line only after the job is verified.
+  After you open a site, look again. Dismiss blocking overlays (X / No thanks /
+  Cancel / Reject) — never Sign in, never Restore unless they asked, never pay.
+  Then type and search. Do not stop after one screenshot. Do not say Done.
   If they only asked what is on the screen, summarize in one short line.
   If the look returns ok=false or black_frame, say the look failed. Do not invent headlines.
   If the title is about:blank / empty / Untitled, that is not a loaded page —
@@ -145,8 +148,14 @@ LOOK_JOB_STOP_PROMPT = (
     "the new look shows it is done. Do not stop for taint. Do not interview them. "
     "After see_screen, click / type / keys / close — do not catalog icons. "
     "Speak one short line after the job is verified. "
-    "Never ask the person to click. After you have real words from the requested "
-    "pages, stop and answer. Do not keep switching tabs."
+    "Never ask the person to click. After you open a site, look again. If a "
+    "modal, cookie wall, sign-in, Restore pages, or --no-sandbox banner is "
+    "blocking, click dismiss (X, No thanks, Cancel, Reject, Not now) — never "
+    "Sign in, never Restore pages unless they asked to sign in, never buy or "
+    "pay. Then continue the job (type the destination, search, filters). "
+    "Do not stop after one screenshot. Do not say Done with no action. "
+    "An empty desktop caption is not the result. After you have real words from "
+    "the requested pages, stop and answer. Do not keep switching tabs."
 )
 
 

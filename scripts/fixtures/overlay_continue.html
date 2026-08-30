@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Overlay continue proof</title>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    #modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #card { background: #fff; padding: 2rem 3rem; position: relative; }
+    #dismiss { position: absolute; top: 8px; right: 10px; }
+    #q { width: 20rem; font-size: 1.1rem; }
+    #status { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Find a hotel</h1>
+  <input id="q" placeholder="Where are you going?"/>
+  <button id="go" type="button">Search</button>
+  <p id="status">waiting</p>
+  <div id="modal">
+    <div id="card">
+      <button id="dismiss" type="button">X</button>
+      <h2>Sign in, save money</h2>
+      <button type="button" id="signin">Sign in</button>
+    </div>
+  </div>
+  <script>
+    function continueJob() {
+      document.getElementById("modal").remove();
+      document.body.dataset.ready = "1";
+      document.getElementById("status").textContent = "overlay dismissed";
+    }
+    document.getElementById("dismiss").onclick = continueJob;
+    document.getElementById("go").onclick = function () {
+      var q = document.getElementById("q").value || "";
+      document.getElementById("status").textContent = "searched:" + q;
+      document.body.dataset.searched = q;
+    };
+    document.getElementById("signin").onclick = function () {
+      document.getElementById("status").textContent = "signed-in (wrong)";
+    };
+  </script>
+</body>
+</html>

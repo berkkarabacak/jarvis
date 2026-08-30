@@ -23,6 +23,14 @@ import httpx
 
 from app.jarvis.gateway import get_gateway, model_view
 from app.jarvis.realtime import openrouter_api_key
+from app.jarvis.overlay import (
+    RESTORE_DISMISS_CLICK,
+    look_has_blocking_overlay,
+    look_is_empty_desktop,
+    overlay_dismiss_plan,
+    search_box_point,
+    web_search_query,
+)
 from app.jarvis.serp import (
     DEFAULT_LEAVE_SERP_URL,
     is_search_engine_url,
@@ -541,7 +549,7 @@ _HOWTO_SPEECH_RE = re.compile(
 CHROME_SEARCH_RESULT_CLICKS = ((420, 320), (420, 400))
 # Restore pages? X on 1280x720 Xvfb: right edge of the crash-restore
 # infobar under the toolbar. Not the window-close button at y≈12.
-_RESTORE_DISMISS_CLICK = (1248, 92)
+_RESTORE_DISMISS_CLICK = RESTORE_DISMISS_CLICK
 _CLICK_SETTLE_S = 0.8
 _LOOK_AFTER_ACT = "what is on the screen now"
 _XY_RE = re.compile(r"\((\d{2,4})\s*,\s*(\d{2,4})\)")
@@ -668,6 +676,12 @@ def _is_computer_ask(asked: str) -> bool:
 
     if goal_is_hire_job(asked) or goal_is_simple_talk(asked):
         return False
+    try:
+        from app.jarvis.virtual_pc import wants_web_job
+    except Exception:
+        wants_web_job = None
+    if wants_web_job is not None and wants_web_job(asked):
+        return True
     return bool(goal_is_virtual_pc_job(asked) or goal_is_computer_job(asked))
 
 
@@ -1415,7 +1429,18 @@ def _sanitize_computer_agent_reply(
     essay = _looks_like_news_essay(text)
     untouched = _agent_left_screen_untouched(text, tools)
     if not essay and not untouched:
-        return None
+        try:
+            from app.jarvis.virtual_pc import wants_web_job
+        except Exception:
+            wants_web_job = None
+        desktop_caption = _is_desktop_talk(text)
+        only_looked = not ({"click", "type", "keys"} & set(used))
+        if not (
+            wants_web_job
+            and wants_web_job(asked)
+            and (desktop_caption or only_looked or _BARE_ACK.match(text))
+        ):
+            return None
     recovered = _hire_children_now(asked)
     if recovered is not None:
         return recovered
@@ -1892,16 +1917,11 @@ def look_blocked_by_restore(looked: dict[str, Any] | None) -> bool:
 
 def _restore_blocking(looked: dict[str, Any]) -> bool:
     """Chromium Restore pages? overlay — title dialog or vision bubble."""
-    title = str(looked.get("title") or "")
-    try:
-        from app.jarvis.desktop import is_dismissible_chrome_dialog
+    from app.jarvis.overlay import overlay_kind
 
-        if is_dismissible_chrome_dialog(title):
-            return True
-    except Exception:
-        if _RESTORE_VISION_RE.search(title):
-            return True
-    return bool(_RESTORE_VISION_RE.search(_look_blob(looked)))
+    return overlay_kind(looked) == "restore" or bool(
+        _RESTORE_VISION_RE.search(_look_blob(looked))
+    )
 
 
 def _restore_dismiss_point(looked: dict[str, Any]) -> tuple[int, int] | None:
@@ -2003,7 +2023,15 @@ def _speak_looked(
             "ui": payload,
         }
     desc = str(looked.get("vision_description") or "").strip()
-    if _restore_blocking(looked):
+    if look_is_empty_desktop(looked) or _is_desktop_talk(desc):
+        return {
+            "ok": True,
+            "reply": "The page is still opening. I am looking again.",
+            "tools_used": tools,
+            "result": payload,
+            "ui": payload,
+        }
+    if look_has_blocking_overlay(looked):
         return {
             "ok": True,
             "reply": "I opened the page.",
@@ -2089,39 +2117,58 @@ def _click_search_result(
     return _look_opened_site(asked)
 
 
+def _dismiss_overlays_if_needed(
+    asked: str, looked: dict[str, Any], tools: list[str], *, rounds: int = 3
+) -> dict[str, Any]:
+    """Dismiss Restore / sandbox / sign-in / cookies, then look. Never Sign in."""
+    current = looked
+    for _ in range(max(1, int(rounds))):
+        if look_is_empty_desktop(current):
+            _wait_after_act()
+            current = _look_opened_site(asked)
+            if not look_is_empty_desktop(current) and not look_has_blocking_overlay(
+                current, goal=asked
+            ):
+                return current
+        plan = overlay_dismiss_plan(current, goal=asked)
+        if plan is None:
+            return current
+        if plan.click is not None:
+            clicked = _click_now(plan.click[0], plan.click[1])
+            _note_tool(tools, "click")
+            if not clicked.get("ok") and plan.kind == "restore":
+                _click_now(*_RESTORE_DISMISS_CLICK)
+                _note_tool(tools, "click")
+        if plan.keys:
+            _keys_now(plan.keys)
+            _note_tool(tools, "keys")
+        _wait_after_act()
+        current = _look_opened_site(asked)
+    return current
+
+
 def _dismiss_restore_if_needed(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
-    """Look already happened. Click Restore/the X (or the documented X), then look.
+    """Look already happened. Click the X (never Restore), then look.
 
     Escape alone does not close Chromium Restore pages? on this Xvfb. Click
-    first, then Escape, then a fresh look. Retry once. Never speak a title
-    while the bubble is still up — caller must check _restore_blocking.
+    first, then Escape, then a fresh look. Also dismiss sandbox / sign-in /
+    cookie overlays so a web job can continue. Never speak a title while
+    the bubble is still up.
     """
-    if not _restore_blocking(looked):
+    if not look_has_blocking_overlay(looked, goal=asked) and not _restore_blocking(
+        looked
+    ):
         return looked
-    xy = _restore_dismiss_point(looked) or _RESTORE_DISMISS_CLICK
-    clicked = _click_now(xy[0], xy[1])
-    _note_tool(tools, "click")
-    _keys_now("escape")
-    _note_tool(tools, "keys")
-    if not clicked.get("ok"):
-        _click_now(*_RESTORE_DISMISS_CLICK)
-        _note_tool(tools, "click")
-    _wait_after_act()
-    looked = _look_opened_site(asked)
-    if not _restore_blocking(looked):
-        return looked
-    _click_now(*_RESTORE_DISMISS_CLICK)
-    _note_tool(tools, "click")
-    _keys_now("escape")
-    _note_tool(tools, "keys")
-    _wait_after_act()
-    return _look_opened_site(asked)
+    return _dismiss_overlays_if_needed(asked, looked, tools)
 
 
 def _cookie_dismiss_point(looked: dict[str, Any]) -> tuple[int, int] | None:
-    """Accept / I agree / Continue only when vision names that control."""
+    """Reject / No thanks when named; Accept only if that is the named control."""
+    plan = overlay_dismiss_plan(looked)
+    if plan is not None and plan.kind == "cookie":
+        return plan.click
     blob = _look_blob(looked)
     match = _COOKIE_XY_RE.search(blob)
     if match:
@@ -2134,21 +2181,12 @@ def _cookie_dismiss_point(looked: dict[str, Any]) -> tuple[int, int] | None:
 def _dismiss_cookie_if_needed(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
-    """He clicks Accept. Never ask the person to click."""
-    if not look_has_cookie_overlay(looked):
+    """He clicks Reject / the named dismiss. Never ask the person to click."""
+    if not look_has_cookie_overlay(looked) and overlay_dismiss_plan(
+        looked, goal=asked
+    ) is None:
         return looked
-    xy = _cookie_dismiss_point(looked)
-    if xy:
-        clicked = _click_now(xy[0], xy[1])
-        _note_tool(tools, "click")
-        if not clicked.get("ok"):
-            _keys_now("enter")
-            _note_tool(tools, "keys")
-    else:
-        _keys_now("enter")
-        _note_tool(tools, "keys")
-    _wait_after_act()
-    return _look_now(asked, app="chrome", fresh=True)
+    return _dismiss_overlays_if_needed(asked, looked, tools)
 
 
 def _open_news_homepage(
@@ -2333,6 +2371,60 @@ def _finish_news_tell(
     return _speak_looked(looked, tools, opened=True, article=True, headlines=True)
 
 
+def _continue_web_job(
+    asked: str, looked: dict[str, Any], tools: list[str]
+) -> dict[str, Any]:
+    """After overlays: type the destination / query, look at results. Never pay."""
+    from app.jarvis.overlay import look_is_pay_control
+
+    current = _dismiss_overlays_if_needed(asked, looked, tools)
+    if look_is_empty_desktop(current):
+        _wait_after_act()
+        current = _look_opened_site(asked)
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+    query = web_search_query(asked)
+    blob = _look_blob(current)
+    if look_is_pay_control(blob) and "hotel" not in blob.lower():
+        return current
+    needs_type = bool(query) and (
+        look_is_empty_desktop(current)
+        or look_has_blocking_overlay(current, goal=asked)
+        or bool(
+            re.search(
+                r"search box is empty|destination is empty|where are you going",
+                blob,
+                re.I,
+            )
+        )
+        or (
+            not look_is_serp(current)
+            and not re.search(re.escape(query.split()[0]), blob, re.I)
+            if query.split()
+            else False
+        )
+    )
+    # Homepage / booking with no query typed yet — type even without "empty".
+    if query and not look_is_serp(current) and query.split():
+        head = query.split()[0]
+        if len(head) >= 3 and head.lower() not in blob.lower():
+            needs_type = True
+    if not needs_type or not query:
+        return current
+    xy = search_box_point(current)
+    clicked = _click_now(xy[0], xy[1])
+    _note_tool(tools, "click")
+    if clicked.get("ok"):
+        acted = _type_now(query)
+        _note_tool(tools, "type")
+        if acted.get("ok"):
+            _keys_now("enter")
+            _note_tool(tools, "keys")
+        _wait_after_act()
+        current = _look_opened_site(asked)
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+    return current
+
+
 def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]:
     """Look, maybe click a real result, speak from the screen. Never 'Look there.'"""
     looked = _look_now(asked, app="chrome", fresh=True)
@@ -2370,6 +2462,11 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
     looked = _reopen_if_blank(asked, looked, tools, opened)
     looked = _dismiss_restore_if_needed(asked, looked, tools)
     looked = _dismiss_cookie_if_needed(asked, looked, tools)
+    from app.jarvis.virtual_pc import wants_web_job
+
+    if wants_web_job(asked):
+        looked = _continue_web_job(asked, looked, tools)
+        return _speak_looked(looked, tools, opened=True)
     opened_search = "duckduckgo.com" in str(
         opened.get("opened") or opened.get("url") or ""
     ).lower()
@@ -2403,6 +2500,11 @@ def _tell_from_current_screen(asked: str) -> dict[str, Any]:
     looked = _look_now(asked, fresh=True)
     looked = _dismiss_restore_if_needed(asked, looked, tools)
     looked = _dismiss_cookie_if_needed(asked, looked, tools)
+    from app.jarvis.virtual_pc import wants_web_job
+
+    if wants_web_job(asked):
+        looked = _continue_web_job(asked, looked, tools)
+        return _speak_looked(looked, tools, opened=False)
     if wants_news_tell(asked) or look_is_news_page(looked):
         return _finish_news_tell(
             asked, looked, tools, {"url": str(looked.get("url") or "")}
@@ -3393,11 +3495,11 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
     mail = bool(_MAIL_RE.search(asked or ""))
     notepad = bool(_NOTEPAD_RE.search(asked or ""))
     calc = bool(_CALC_RE.search(asked or "") or _OPEN_CALC_RE.search(asked or ""))
-    from app.jarvis.virtual_pc import wants_screen_job
+    from app.jarvis.virtual_pc import wants_screen_job, wants_web_job
 
     opening = bool(named or mail or notepad or calc) or (
         wants_news_search(asked) and wants_screen_job(asked)
-    )
+    ) or wants_web_job(asked)
     if opening:
         allow_hit = _talk_allow_hit("run_app")
         if allow_hit is False:
@@ -3417,6 +3519,7 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
         wants_look_at_screen(asked)
         and not named
         and not wants_news_search(asked)
+        and not wants_web_job(asked)
         and not mail
         and not notepad
         and not calc
@@ -3435,6 +3538,14 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
     url = named
     if not url and wants_news_search(asked):
         url = news_homepage_from_ask(asked)
+    if not url:
+        try:
+            from app.jarvis.virtual_pc import wants_web_job
+        except Exception:
+            wants_web_job = None
+        if wants_web_job and wants_web_job(asked):
+            q = web_search_query(asked) or asked
+            url = "https://www.google.com/search?q=" + quote_plus(q)
     if not url and not _is_computer_ask(asked):
         return None
 
