@@ -743,7 +743,7 @@
     <span id="listen-chip" data-state="on"><span id="listen-label">Listening</span></span>
     <span id="doing">Ready</span>
   </div>
-  <button type="button" id="mic" data-voice="listening" title="Mute me" aria-label="Mute me" aria-pressed="false">
+  <button type="button" id="mic" data-voice="idle" title="Listen" aria-label="Listen" aria-pressed="false">
     <span id="orb" aria-hidden="true"></span>
   </button>
   <div id="more-wrap">
@@ -995,6 +995,7 @@
       let pc = null;
       let dc = null;
       let micStream = null;
+      let micRequest = null;
       let duplexLive = false;
       let mintRealtime = true;
       let canListen = true;
@@ -1680,10 +1681,14 @@
         if (on) pinLog();
       }
 
+      function talkSessionLive() {
+        return !!((duplexLive && micStream) || listening);
+      }
+
       function paintStatus() {
         let listen = "Listening";
         let state = "on";
-        if (muteMe) {
+        if (muteMe || !talkSessionLive()) {
           listen = "Mic off";
           state = "off";
         } else if (!canListen) {
@@ -1696,7 +1701,7 @@
         if (connecting) doing = "Starting";
         else if (speaking) doing = "Talking";
         else if (muteMe && wantListen) doing = "Mic is off";
-        else if (duplexLive || listening) doing = "Listening to you";
+        else if (talkSessionLive()) doing = "Listening to you";
         else if (lastToolAt && (Date.now() - lastToolAt) < 8000) doing = "On the computer";
         if (doingEl) doingEl.textContent = doing;
       }
@@ -1706,7 +1711,8 @@
         if (speaking) return "speaking";
         if (connecting) return "processing";
         if (!canListen) return "error";
-        return "listening";
+        if (talkSessionLive()) return "listening";
+        return "idle";
       }
 
       function paintMic() {
@@ -1722,10 +1728,10 @@
         const voice = orbTalkState();
         mic.dataset.voice = voice;
         if (voiceOrb) voiceOrb.setState(voice);
-        if (muteMe) {
+        if (muteMe || !talkSessionLive()) {
           mic.setAttribute("aria-label", "Listen");
           mic.setAttribute("title", "Listen");
-          mic.setAttribute("aria-pressed", "true");
+          mic.setAttribute("aria-pressed", muteMe ? "true" : "false");
         } else {
           mic.setAttribute("aria-label", "Mute me");
           mic.setAttribute("title", "Mute me");
@@ -1949,7 +1955,6 @@
         try {
           rec.start();
           listening = true;
-          rememberMicGranted();
         } catch (_) {
           listening = false;
           setTimeout(function () {
@@ -2144,6 +2149,7 @@
           if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
         } catch (_) {}
         micStream = null;
+        micRequest = null;
       }
 
       function stopDuplex() {
@@ -2869,9 +2875,11 @@
 
         try {
           if (!micStream) {
-            micStream = await navigator.mediaDevices.getUserMedia({
+            const stream = await (micRequest || navigator.mediaDevices.getUserMedia({
               audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            });
+            }));
+            if (!stream) throw new Error("mic");
+            micStream = stream;
           }
           rememberMicGranted();
           setMicEnabled(!muteMe);
@@ -2997,15 +3005,32 @@
         document.addEventListener("click", firstClickTalk, true);
       }
 
+      function requestMicNow() {
+        if (micStream || micRequest) return;
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        micRequest = navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        }).then(function (stream) {
+          micStream = stream;
+          rememberMicGranted();
+          setMicEnabled(!muteMe);
+          paintMic();
+          return stream;
+        }).catch(function () {
+          micRequest = null;
+          return null;
+        });
+      }
+
       async function micAlreadyAllowed() {
-        if (rememberedMicGranted()) return true;
         try {
           if (navigator.permissions && navigator.permissions.query) {
             const st = await navigator.permissions.query({ name: "microphone" });
             if (st && st.state === "granted") return true;
+            if (st && (st.state === "prompt" || st.state === "denied")) return false;
           }
         } catch (_) {}
-        return false;
+        return rememberedMicGranted();
       }
 
       async function bootTalk() {
@@ -3030,9 +3055,10 @@
           return;
         }
         prefetchSession();
+        requestMicNow();
         const upgrade = mintRealtime;
         if (upgrade) void connectRealtime();
-        startListen();
+        if (!upgrade) startListen();
         paintMic();
       }
 
@@ -3177,7 +3203,7 @@
 
       if (mic) {
         mic.addEventListener("click", function () {
-          if (!duplexLive && !listening) {
+          if (!talkSessionLive()) {
             void startTalk();
             return;
           }
@@ -3333,6 +3359,7 @@
         }
       }
       paintMute();
+      paintMic();
       paintStatus();
       pinLog();
       if (!Rec()) {

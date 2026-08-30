@@ -206,6 +206,10 @@ def test_public_talk_two_button_idle_chrome():
     assert len(visible) == 2
     assert any('id="mic"' in btn for btn in visible)
     assert any('id="more"' in btn for btn in visible)
+    mic_btn = next(btn for btn in visible if 'id="mic"' in btn)
+    assert 'data-voice="idle"' in mic_btn
+    assert 'aria-label="Listen"' in mic_btn
+    assert 'aria-label="Mute me"' not in mic_btn
     assert 'aria-label="Mute me"' in chrome
     assert 'aria-label="More"' in chrome
     assert 'aria-label="Talk"' not in page
@@ -596,12 +600,14 @@ def test_public_page_auto_starts_talk_and_first_click_anywhere():
     assert "if (duplexLive)" in start_talk
     assert "return;" in start_talk
     assert "startListen()" in start_talk
+    assert "requestMicNow()" in start_talk
     assert "prefetchSession()" in start_talk
     assert "void connectRealtime()" in start_talk
     assert "speakFirstHello" not in start_talk
     assert "/jarvis/hello/" not in start_talk
     assert "/api/jarvis/health" not in start_talk
-    assert start_talk.index("prefetchSession()") < start_talk.index("connectRealtime")
+    assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
     assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
     assert 'rec.lang = "es-ES"' not in page
     assert "es-ES" not in page
@@ -716,12 +722,14 @@ def test_public_first_open_defers_catalog_screen_and_fonts():
     assert "startListen()" in start_talk
     assert "const upgrade = mintRealtime" in start_talk
     assert "prefetchSession()" in start_talk
+    assert "requestMicNow()" in start_talk
     assert "if (upgrade) void connectRealtime()" in start_talk
     assert "speakFirstHello" not in start_talk
     assert "await " not in start_talk
     assert "/api/jarvis/realtime/session" not in start_talk
     assert "/api/jarvis/health" not in start_talk
-    assert start_talk.index("prefetchSession()") < start_talk.index("const upgrade = mintRealtime")
+    assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("const upgrade = mintRealtime")
     assert start_talk.index("const upgrade = mintRealtime") < start_talk.index("connectRealtime")
     assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
     assert "startBrowserTalk()" not in start_talk

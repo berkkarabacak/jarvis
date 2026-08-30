@@ -54,7 +54,8 @@ def test_public_talk_uses_hosted_webrtc_when_health_says_realtime():
     assert "const upgrade = mintRealtime" in _fn(page, "startTalk")
     assert "prefetchSession()" in _fn(page, "startTalk")
     assert "if (upgrade) void connectRealtime()" in _fn(page, "startTalk")
-    assert "startListen()" in _fn(page, "startTalk")
+    assert "requestMicNow()" in _fn(page, "startTalk")
+    assert "if (!upgrade) startListen()" in _fn(page, "startTalk")
     assert "speakFirstHello" not in _fn(page, "startTalk")
     assert "/jarvis/hello/" not in _fn(page, "startTalk")
     assert "/api/jarvis/health" not in _fn(page, "startTalk")
@@ -309,7 +310,7 @@ def test_mint_409_falls_back_to_browser_speech_and_ask():
     start_browser = _fn(page, "startBrowserTalk")
     assert "token.fallback === \"browser_speech\"" in connect
     assert "startBrowserTalk()" in connect
-    assert "startListen()" in start_talk
+    assert "if (!upgrade) startListen()" in start_talk
     assert "startBrowserTalk()" not in start_talk
     assert "OPENAI_API_KEY" not in connect
     assert "required" not in connect.lower()
@@ -332,9 +333,10 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert "wantListen = true" in start_talk
     assert "canListen = true" in start_talk
     assert "prefetchSession()" in start_talk
+    assert "requestMicNow()" in start_talk
     assert "const upgrade = mintRealtime" in start_talk
     assert "if (upgrade) void connectRealtime()" in start_talk
-    assert "startListen()" in start_talk
+    assert "if (!upgrade) startListen()" in start_talk
     assert "paintMic()" in start_talk
     assert "speakFirstHello" not in start_talk
     assert "playHelloSrc" not in start_talk
@@ -344,7 +346,8 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert "await connectRealtime" not in start_talk
     assert "/api/jarvis/realtime/session" not in start_talk
     assert "/api/jarvis/health" not in start_talk
-    assert start_talk.index("prefetchSession()") < start_talk.index("connectRealtime")
+    assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
     assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
     assert "startBrowserTalk()" not in start_talk
     assert "mintRealtime = false" in _fn(page, "startBrowserTalk")
@@ -651,7 +654,7 @@ def test_mute_me_is_the_only_stop():
     click = page[page.find('mic.addEventListener("click"') :]
     click_fn = click.split("});", 1)[0]
     assert "void startTalk()" in click_fn
-    assert "if (!duplexLive && !listening)" in click_fn
+    assert "if (!talkSessionLive())" in click_fn
     assert "onMuteMe()" in click_fn
     assert "startListen()" not in click_fn
     start_talk = _fn(page, "startTalk")
@@ -660,6 +663,76 @@ def test_mute_me_is_the_only_stop():
     mute = _fn(page, "onMuteMe")
     assert "stopListen()" in mute
     assert "setMicEnabled(false)" in mute
+
+
+def test_first_orb_tap_requests_mic_before_session_is_live():
+    """Visitor first tap starts talk + getUserMedia. Orb is not Mute me until live."""
+    page = _page()
+    live = _fn(page, "talkSessionLive")
+    orb = _fn(page, "orbTalkState")
+    paint = _fn(page, "paintMic")
+    start_talk = _fn(page, "startTalk")
+    request_mic = _fn(page, "requestMicNow")
+    allowed = _fn(page, "micAlreadyAllowed")
+    click = page[page.find('mic.addEventListener("click"') :].split("});", 1)[0]
+    mic_btn = page.split('id="mic"', 1)[1].split(">", 1)[0]
+    assert 'data-voice="idle"' in mic_btn
+    assert 'aria-label="Listen"' in mic_btn
+    assert 'aria-label="Mute me"' not in mic_btn
+    assert "duplexLive && micStream" in live
+    assert "listening" in live
+    assert 'return "idle"' in orb
+    assert "talkSessionLive()" in orb
+    assert "muteMe || !talkSessionLive()" in paint
+    assert 'aria-label", "Listen"' in paint
+    assert 'aria-label", "Mute me"' in paint
+    assert "if (!talkSessionLive())" in click
+    assert "void startTalk()" in click
+    assert "onMuteMe()" in click
+    assert "requestMicNow()" in start_talk
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
+    assert "await " not in start_talk
+    assert "getUserMedia" in request_mic
+    assert "/api/jarvis/realtime/session" not in request_mic
+    assert "st.state === \"prompt\"" in allowed
+    assert "return false" in allowed
+    assert "muteMe" not in _fn(page, "ask")
+    script = (
+        live
+        + orb
+        + """
+    let duplexLive = false;
+    let micStream = null;
+    let listening = false;
+    let muteMe = false;
+    let speaking = false;
+    let connecting = false;
+    let canListen = true;
+    if (talkSessionLive()) process.exit(2);
+    if (orbTalkState() !== "idle") process.exit(3);
+    connecting = true;
+    if (talkSessionLive()) process.exit(4);
+    if (orbTalkState() !== "processing") process.exit(5);
+    connecting = false;
+    duplexLive = true;
+    if (talkSessionLive()) process.exit(6);
+    if (orbTalkState() !== "idle") process.exit(7);
+    micStream = { getAudioTracks: function () { return []; } };
+    if (!talkSessionLive()) process.exit(8);
+    if (orbTalkState() !== "listening") process.exit(9);
+    muteMe = true;
+    if (orbTalkState() !== "idle") process.exit(10);
+    process.stdout.write("ok");
+    """
+    )
+    result = subprocess.run(
+        ["node", "-e", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip() == "ok"
 
 
 def test_public_page_does_not_pin_spanish_speech_recognition():
