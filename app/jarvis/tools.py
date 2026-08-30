@@ -1285,7 +1285,7 @@ def _see_screen(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         },
     )
     if not shot.get("ok"):
-        return annotate_see_screen(_see_again_after_restore(ctx, args, shot), goal)
+        return annotate_see_screen(_see_again_after_overlays(ctx, args, shot), goal)
     from app.jarvis.screen_loop import run_async_blocking, run_see_screen
 
     looked = run_async_blocking(
@@ -1297,27 +1297,55 @@ def _see_screen(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         remember_last_look(looked)
     except Exception:
         pass
-    return annotate_see_screen(_see_again_after_restore(ctx, args, looked), goal)
+    return annotate_see_screen(_see_again_after_overlays(ctx, args, looked), goal)
 
 
 def _see_again_after_restore(
     ctx: ToolContext, args: dict[str, Any], looked: dict[str, Any]
 ) -> dict[str, Any]:
-    """Dismiss Restore pages? once, then look again. Keep the first vision."""
+    """Back-compat name. Dismiss Restore / sandbox / sign-in / cookies."""
+    return _see_again_after_overlays(ctx, args, looked)
+
+
+def _see_again_after_overlays(
+    ctx: ToolContext, args: dict[str, Any], looked: dict[str, Any]
+) -> dict[str, Any]:
+    """Dismiss a blocking overlay, then look again. Keep the first vision.
+
+    Restore pages?, --no-sandbox, Genius sign-in, cookie walls. Click X /
+    No thanks / Cancel / Reject — never Sign in, never Restore, never Pay.
+    Empty desktop after opening a site is not the result — look once more.
+    """
+    tries = int(args.get("_overlay_tries") or 0)
     if args.get("_restore_tried"):
+        tries = max(tries, 1)
+    if tries >= 3:
         return looked
+    goal = str(args.get("goal") or "")
     try:
-        from app.jarvis.voice_ask import look_blocked_by_restore
+        from app.jarvis.overlay import (
+            look_has_blocking_overlay,
+            look_is_empty_desktop,
+            overlay_dismiss_plan,
+        )
     except Exception:
-        look_blocked_by_restore = None
-    if not (look_blocked_by_restore and look_blocked_by_restore(looked)):
+        return looked
+
+    need_retry = look_has_blocking_overlay(looked, goal=goal)
+    if not need_retry and tries == 0 and look_is_empty_desktop(looked):
+        need_retry = True
+    if not need_retry:
         return looked
     try:
         from app.jarvis.desktop import click, keys
-        from app.jarvis.voice_ask import _RESTORE_DISMISS_CLICK
 
-        click(x=_RESTORE_DISMISS_CLICK[0], y=_RESTORE_DISMISS_CLICK[1])
-        keys(combo="escape")
+        plan = overlay_dismiss_plan(looked, goal=goal)
+        if plan is not None and plan.click is not None:
+            click(x=plan.click[0], y=plan.click[1])
+        if plan is not None and plan.keys:
+            keys(combo=plan.keys)
+        elif need_retry and plan is None:
+            keys(combo="escape")
         if not os.environ.get("PYTEST_CURRENT_TEST"):
             time.sleep(0.4)
     except Exception:
@@ -1325,6 +1353,7 @@ def _see_again_after_restore(
     retry_args = dict(args)
     retry_args["fresh"] = True
     retry_args["_restore_tried"] = True
+    retry_args["_overlay_tries"] = tries + 1
     again = _see_screen(ctx, retry_args)
     if again.get("ok") and str(again.get("vision_description") or "").strip():
         return again
