@@ -1157,6 +1157,13 @@ def _keys(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     result = keys(combo=combo)
     if not result.get("ok") or not is_chrome_tab_combo(combo):
         return result
+    from app.jarvis.desktop import parse_hotkey
+
+    parsed = parse_hotkey(combo)
+    mods = set(parsed.get("modifiers") or [])
+    # Ctrl+T opens a blank tab on purpose — do not wait for a leftover page.
+    if str(parsed.get("key") or "") == "t" and "shift" not in mods:
+        return result
 
     from app.jarvis.capture import look_has_http_url, remember_tab_switch
 
