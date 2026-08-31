@@ -32,9 +32,12 @@ from app.jarvis.overlay import (
     look_is_empty_destination,
     look_is_footer,
     look_is_loading_or_blank,
+    look_is_page_ready,
     needs_web_query,
     overlay_dismiss_plan,
+    query_visible_on_look,
     search_box_point,
+    web_look_pause_s,
     web_search_query,
 )
 from app.jarvis.serp import (
@@ -146,6 +149,28 @@ def ask_abort_ms(text: str) -> int:
 def ask_deadline_s(text: str) -> float:
     """Server wait for one /ask. Same buckets as Public Talk askAbortMs."""
     return max(12.0, float(ask_abort_ms(text)) / 1000.0)
+
+
+_ASK_STARTED_MONO: float | None = None
+
+
+def mark_ask_clock() -> None:
+    """Start the /ask wait budget. Hello stays short; web jobs get minutes."""
+    global _ASK_STARTED_MONO
+    _ASK_STARTED_MONO = time.monotonic()
+
+
+def remaining_ask_deadline_s(asked: str) -> float:
+    """Seconds left on this /ask. Used as the wait-for-page budget."""
+    budget = ask_deadline_s(asked)
+    if _ASK_STARTED_MONO is None:
+        return budget
+    return max(0.0, budget - (time.monotonic() - _ASK_STARTED_MONO))
+
+
+def web_job_deadline(asked: str) -> float:
+    """monotonic timestamp when wait-then-type must stop looking."""
+    return time.monotonic() + remaining_ask_deadline_s(asked)
 
 
 _HIRE_BUDGET_S = 90.0
@@ -2130,22 +2155,42 @@ def _speak_web_job(
     desc = str(looked.get("vision_description") or "").strip()
     payload = _no_look_confirm(looked)
     query = web_search_query(asked)
+    spoken = _spoken_from_screen(desc)
+    usable = bool(
+        spoken
+        and _usable_tell_text(spoken)
+        and not _web_job_caption_forbidden(spoken)
+    )
+    typed = bool(looked.get("_typed_query")) or "type" in tools
     if look_is_pay_control(blob) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
-    elif look_has_hotel_results(looked):
-        reply = _spoken_from_screen(desc)
-        if _web_job_caption_forbidden(reply) or not _usable_tell_text(reply):
-            reply = _WEB_STUCK
+    elif look_has_hotel_results(looked) and usable:
+        reply = spoken
+    elif query_visible_on_look(looked, query) and usable:
+        reply = spoken
+    elif typed and usable:
+        reply = spoken
     elif look_is_loading_or_blank(looked) or _page_not_ready(looked):
-        reply = "The page is still opening. I could not finish the search."
+        # Never "still opening / could not finish" — type happens first.
+        reply = "I typed the search." if typed else _WEB_STUCK
     elif look_is_empty_desktop(looked) or _is_desktop_talk(desc):
         reply = "I opened the page but I am stuck on the desktop. I did not finish the search."
     elif look_is_footer(looked) or _is_footer_talk(desc):
         reply = "I opened the page but I am stuck at the footer. I did not finish the search."
     elif look_is_empty_destination(looked) or needs_web_query(asked, looked, query):
-        reply = "The search field is still empty. I could not finish the search."
+        reply = (
+            spoken
+            if typed and usable
+            else (
+                "I typed the search."
+                if typed
+                else "The search field is still empty. I could not finish the search."
+            )
+        )
     elif _looks_like_ssl_or_error_page(blob):
         reply = "The page did not load. The browser shows a security or error page."
+    elif usable:
+        reply = spoken
     else:
         reply = _WEB_STUCK
     if _LOOK_AT_SCREEN_RE.search(reply):
@@ -2594,19 +2639,36 @@ def _type_web_query(
 
 
 def _wait_until_page_ready(
-    asked: str, looked: dict[str, Any], tools: list[str], *, rounds: int = 3
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
-    """After run_app: wait until the page is not blank/loading/empty-desktop.
+    """After run_app: keep looking until a loaded page or the ask deadline.
 
-    look_speed=off does not skip this. Off only skips extra periodic looks.
+    look_speed=off does not skip this. Sleep seconds between looks, not 0.4s.
     """
+    from app.jarvis.overlay import BLANK_LOOKS_BEFORE_OMNIBOX
+
     current = looked
-    for _ in range(max(1, int(rounds))):
+    blank_looks = 0
+    cap = 64 if deadline is not None else max(1, int(BLANK_LOOKS_BEFORE_OMNIBOX))
+    for _ in range(cap):
+        if look_is_page_ready(current):
+            return current
         if not look_is_loading_or_blank(current) and not look_is_empty_desktop(
             current
         ):
             return current
-        _wait_after_act()
+        blank_looks += 1
+        if blank_looks >= BLANK_LOOKS_BEFORE_OMNIBOX or (
+            deadline is not None and time.monotonic() >= deadline
+        ):
+            return current
+        wait = web_look_pause_s()
+        if wait > 0:
+            time.sleep(wait)
         current = _look_opened_site(asked)
         _note_tool(tools, "see_screen")
         current = _dismiss_overlays_if_needed(asked, current, tools)
@@ -2616,13 +2678,18 @@ def _wait_until_page_ready(
 def _continue_web_job(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
-    """After overlays: wait until ready, type the query, look. Never pay.
+    """After overlays: wait on the ask deadline, type the query, look.
 
-    click / type / keys are recorded on tools_used. look_speed=off does not
-    skip that — Off means no extra periodic looks, not "don't type."
+    click / type / keys are recorded on tools_used before any spoken reply.
+    look_speed=off does not skip that. Untitled / blank looks wait in
+    seconds, then type the page field or the Chromium omnibox. Never
+    return without type when a query is needed. Never pay.
     """
+    deadline = web_job_deadline(asked)
     current = _dismiss_overlays_if_needed(asked, looked, tools)
-    current = _wait_until_page_ready(asked, current, tools)
+    current = _wait_until_page_ready(
+        asked, current, tools, deadline=deadline
+    )
 
     def click(*, x, y, **_k):
         _note_tool(tools, "click")
@@ -2653,6 +2720,7 @@ def _continue_web_job(
         keys=keys,
         look_again=look_again,
         scroll=scroll,
+        deadline=deadline,
     )
 
 
@@ -3843,6 +3911,7 @@ async def run_voice_ask(text: str) -> dict[str, Any]:
             "ui": {"ok": False, "error": "empty"},
         }
 
+    mark_ask_clock()
     gw = get_gateway()
     gw.clear_taint("ask", goal=asked)
 

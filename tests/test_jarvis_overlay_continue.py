@@ -5,10 +5,13 @@ from __future__ import annotations
 import pytest
 
 from app.jarvis.overlay import (
+    BLANK_LOOKS_BEFORE_OMNIBOX,
+    OMNIBOX_CLICK,
     RESTORE_DISMISS_CLICK,
     SANDBOX_DISMISS_CLICK,
     SEARCH_BOX_CLICK,
     SIGNIN_DISMISS_CLICK,
+    WEB_LOOK_PAUSE_S,
     continue_web_search,
     dismiss_blocking_overlays,
     look_has_blocking_overlay,
@@ -29,6 +32,7 @@ from app.jarvis.voice_ask import (
     ASK_WEB_ABORT_MS,
     ask_abort_ms,
     ask_deadline_s,
+    remaining_ask_deadline_s,
 )
 from app.jarvis.virtual_pc import (
     after_see_must_act,
@@ -39,6 +43,14 @@ from app.jarvis.virtual_pc import (
 
 ROME = "find a hotel in central Rome"
 GRINDER = "go to bol.com and find a coffee grinder"
+WEATHER = "use Chrome to look up the weather in Amsterdam"
+
+UNTITLED_CHROME = {
+    "ok": True,
+    "title": "Untitled - Chromium",
+    "url": "about:blank",
+    "vision_description": "A blank Chromium window. The page is still loading.",
+}
 
 BLANK_HOMEPAGE = {
     "ok": True,
@@ -70,6 +82,9 @@ def test_rome_hotel_is_a_web_computer_job_not_look_and_tell():
     assert wants_web_job("hello") is False
     assert wants_web_job("use Chrome to find a hotel in Rome") is True
     assert wants_web_job("use Chrome") is True
+    assert wants_web_job(WEATHER) is True
+    assert wants_web_job(GRINDER) is True
+    assert goal_is_simple_talk(WEATHER) is False
 
 
 def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
@@ -81,6 +96,8 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
     assert ask_abort_ms("search for a hotel in Rome") == ASK_WEB_ABORT_MS
     assert ask_abort_ms("book a hotel in central Rome") == ASK_WEB_ABORT_MS
     assert ask_abort_ms("open booking.com and look for a hotel") == ASK_WEB_ABORT_MS
+    assert ask_abort_ms(WEATHER) == ASK_WEB_ABORT_MS
+    assert ask_abort_ms(GRINDER) == ASK_WEB_ABORT_MS
     assert ask_abort_ms("what's on the screen") == ASK_LOOK_ABORT_MS
     assert ask_abort_ms("what's on the screen") == 30_000
     hire = (
@@ -976,3 +993,259 @@ def test_see_again_after_overlays_types_after_blank_look(monkeypatch):
     assert (640, 320) in clicks
     assert out.get("_typed_query")
     assert "Encore" in str(out.get("vision_description") or "")
+
+
+def test_web_look_pause_is_seconds_not_a_fraction():
+    """Live wait between Untitled looks is seconds. 0.4s is not a wait."""
+    assert WEB_LOOK_PAUSE_S >= 1.0
+    assert BLANK_LOOKS_BEFORE_OMNIBOX >= 2
+    assert OMNIBOX_CLICK[1] < 110
+    assert OMNIBOX_CLICK != SEARCH_BOX_CLICK
+
+
+def test_untitled_look_is_not_a_ready_page():
+    assert look_is_loading_or_blank(UNTITLED_CHROME) is True
+    assert look_is_web_page(UNTITLED_CHROME) is False
+    assert search_box_point(UNTITLED_CHROME) is None
+    assert needs_web_query(WEATHER, UNTITLED_CHROME, web_search_query(WEATHER)) is True
+
+
+def test_continue_web_search_untitled_waits_then_types_field():
+    """Untitled first look must keep looking, then type the real field."""
+    looks = [
+        dict(UNTITLED_CHROME),
+        dict(UNTITLED_CHROME),
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=ROME,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert i["n"] >= 2, "Untitled must be looked at more than once before type"
+    assert typed, "Untitled first look must wait, then type"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK in clicks
+    assert OMNIBOX_CLICK not in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+    assert "Eden" in str(out.get("vision_description") or "")
+
+
+def test_continue_web_search_untitled_types_omnibox_after_few_looks():
+    """Still Untitled after a few looks — type the omnibox. Never return without type."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(UNTITLED_CHROME)
+
+    out = continue_web_search(
+        dict(UNTITLED_CHROME),
+        goal=WEATHER,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert i["n"] >= 2, "must keep looking at Untitled before omnibox type"
+    assert typed, "never return without type on a still-Untitled tab"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert OMNIBOX_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+
+
+def test_speak_web_job_untitled_is_not_still_opening():
+    """Do not speak the opening-stuck caption after one Untitled look."""
+    from app.jarvis.voice_ask import _speak_looked, _speak_web_job
+
+    body = _speak_web_job(
+        WEATHER, dict(UNTITLED_CHROME), ["run_app", "see_screen"], opened=True
+    )
+    low = body["reply"].lower()
+    assert "still opening" not in low
+    assert "mostly blank" not in low
+    assert "you can open chrome" not in low
+    via = _speak_looked(
+        dict(UNTITLED_CHROME), ["run_app", "see_screen"], opened=True, asked=WEATHER
+    )
+    assert "still opening" not in via["reply"].lower()
+    typed = dict(UNTITLED_CHROME)
+    typed["_typed_query"] = "weather in Amsterdam"
+    after = _speak_web_job(
+        WEATHER, typed, ["run_app", "see_screen", "click", "type", "keys"], opened=True
+    )
+    assert "still opening" not in after["reply"].lower()
+    assert "could not finish" not in after["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_untitled_first_look_waits_then_types(monkeypatch, tmp_path):
+    """Untitled first look + look_speed=off still waits, then records click+type+keys."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+    assert remaining_ask_deadline_s(ROME) >= 12.0
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(UNTITLED_CHROME),
+        dict(UNTITLED_CHROME),
+        dict(UNTITLED_CHROME),
+        dict(HOMEPAGE_NO_BOX),
+        {
+            "ok": True,
+            "title": "Hotels in Rome — Booking.com",
+            "url": "https://www.booking.com/searchresults.html",
+            "vision_description": (
+                "Hotels in central Rome. Hotel Eden. Prices from 180 EUR."
+            ),
+        },
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(ROME)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed, "Untitled first look must wait then type before speak"
+    assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    low = body["reply"].lower()
+    assert "still opening" not in low
+    assert "could not finish" not in low
+    assert "eden" in low or "hotel" in low
+    assert "look at the screen" not in low
+    assert "you can open chrome" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_untitled_non_shop_job_same_path(monkeypatch, tmp_path):
+    """A non-shop / non-hotel job takes the same wait-then-type path."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(UNTITLED_CHROME),
+        dict(UNTITLED_CHROME),
+        dict(UNTITLED_CHROME),
+        {
+            "ok": True,
+            "title": "Google",
+            "url": "https://www.google.com/",
+            "vision_description": "Google. Search box is empty at (640, 320).",
+        },
+        {
+            "ok": True,
+            "title": "weather in Amsterdam - Google Search",
+            "url": "https://www.google.com/search?q=weather+amsterdam",
+            "vision_description": (
+                "Search results for weather in Amsterdam. "
+                "12 degrees. Clear skies."
+            ),
+        },
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(WEATHER)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    low = body["reply"].lower()
+    assert "still opening" not in low
+    assert "could not finish" not in low
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    assert "you can open chrome" not in low
+    assert "look at the screen" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_untitled_does_not_speak_stuck_while_opening(
+    monkeypatch, tmp_path
+):
+    """Stuck caption is not allowed while Untitled is still opening inside the deadline."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [dict(UNTITLED_CHROME)]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(GRINDER)
+    assert remaining_ask_deadline_s(GRINDER) > 0
+    assert "type" in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed, "must type into the omnibox before any spoken reply"
+    assert any("grinder" in t.lower() or "coffee" in t.lower() for t in typed)
+    assert OMNIBOX_CLICK in clicks
+    low = body["reply"].lower()
+    assert "still opening" not in low
+    assert "could not finish" not in low
+    assert "you can open chrome" not in low
+    assert "turquoise" not in low

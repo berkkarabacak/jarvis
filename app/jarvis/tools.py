@@ -1372,10 +1372,11 @@ def _see_again_after_overlays(
 def _continue_web_job_after_see(
     ctx: ToolContext, args: dict[str, Any], looked: dict[str, Any]
 ) -> dict[str, Any]:
-    """After overlays: wait until the page is ready, then type the query.
+    """After overlays: wait on the ask deadline, then type the query.
 
     look_speed=off does not skip this. Off means no extra periodic looks,
-    not "don't type." Only mark _web_typed when type actually ran.
+    not "don't type." Untitled / blank looks wait in seconds, then type
+    the page field or the omnibox. Only mark _web_typed when type ran.
     """
     if args.get("_skip_web_type") or looked.get("_web_typed"):
         return looked
@@ -1383,7 +1384,6 @@ def _continue_web_job_after_see(
     try:
         from app.jarvis.overlay import (
             continue_web_search,
-            look_is_empty_desktop,
             look_is_loading_or_blank,
             needs_web_query,
             web_search_query,
@@ -1412,10 +1412,13 @@ def _continue_web_job_after_see(
         return _see_screen(ctx, retry) or looked
 
     current = looked
-    if look_is_loading_or_blank(current) or look_is_empty_desktop(current):
-        if not os.environ.get("PYTEST_CURRENT_TEST"):
-            time.sleep(0.4)
-        current = look_again() or current
+    deadline = None
+    try:
+        from app.jarvis.voice_ask import web_job_deadline
+
+        deadline = web_job_deadline(goal)
+    except Exception:
+        deadline = time.monotonic() + 180.0
 
     out = continue_web_search(
         current,
@@ -1424,6 +1427,7 @@ def _continue_web_job_after_see(
         type_text=type_text,
         keys=keys,
         look_again=look_again,
+        deadline=deadline,
     )
     if isinstance(out, dict) and out.get("_typed_query"):
         out["_web_typed"] = True
