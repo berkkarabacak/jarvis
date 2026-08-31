@@ -2246,11 +2246,6 @@ def _speak_looked(
 
     if asked and wants_web_job(asked):
         return _speak_web_job(asked, looked, tools, opened=opened)
-    if look_is_http_error(looked) or (
-        asked and look_is_leftover_for_ask(looked, asked)
-    ):
-        # Leftover 403 / unrelated tab — never _spoken_from_screen of that caption.
-        return _speak_web_job(asked, looked, tools, opened=opened)
     blob = _look_blob(looked)
     payload = _no_look_confirm(looked)
     if headlines and look_is_404(looked) and not _looks_like_ssl_or_error_page(blob):
