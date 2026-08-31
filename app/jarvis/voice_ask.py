@@ -31,6 +31,7 @@ from app.jarvis.overlay import (
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
+    look_is_loading_or_blank,
     needs_web_query,
     overlay_dismiss_plan,
     search_box_point,
@@ -513,7 +514,7 @@ _FOOTER_TALK_RE = re.compile(
     re.I,
 )
 _LOOK_AT_SCREEN_RE = re.compile(r"look at the screen\.?", re.I)
-_WEB_STUCK = "I could not finish the hotel search."
+_WEB_STUCK = "I could not finish the search."
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
     "Istanbul cats treat the city like they own it. "
@@ -539,7 +540,9 @@ _CLOSED_LIE_RE = re.compile(
     re.I,
 )
 _BLANK_PAGE_RE = re.compile(
-    r"about:blank|\buntitled\b|\bnew tab\b",
+    r"about:blank|\buntitled\b|\bnew tab\b|"
+    r"page mostly blank|mostly blank|blank page|"
+    r"still loading|page is (?:still )?(?:blank|empty|loading)",
     re.I,
 )
 _CONTROL_ACT_RE = re.compile(
@@ -2109,6 +2112,7 @@ def _web_job_caption_forbidden(text: str) -> bool:
         or _is_chrome_coach(raw)
         or _ICON_CATALOG_RE.search(raw)
         or _LOOK_AT_SCREEN_RE.search(raw)
+        or _BLANK_PAGE_RE.search(raw)
     )
 
 
@@ -2119,7 +2123,7 @@ def _speak_web_job(
     *,
     opened: bool,
 ) -> dict[str, Any]:
-    """Find-hotel / search job: a pick or an honest stuck. Never a caption."""
+    """Find / search / use-Chrome job: a pick or an honest stuck. Never a caption."""
     from app.jarvis.overlay import look_is_pay_control
 
     blob = _look_blob(looked)
@@ -2132,12 +2136,14 @@ def _speak_web_job(
         reply = _spoken_from_screen(desc)
         if _web_job_caption_forbidden(reply) or not _usable_tell_text(reply):
             reply = _WEB_STUCK
+    elif look_is_loading_or_blank(looked) or _page_not_ready(looked):
+        reply = "The page is still opening. I could not finish the search."
     elif look_is_empty_desktop(looked) or _is_desktop_talk(desc):
-        reply = "I opened the page but I am stuck on the desktop. I did not pick a hotel."
+        reply = "I opened the page but I am stuck on the desktop. I did not finish the search."
     elif look_is_footer(looked) or _is_footer_talk(desc):
-        reply = "I opened the page but I am stuck at the footer. I did not pick a hotel."
+        reply = "I opened the page but I am stuck at the footer. I did not finish the search."
     elif look_is_empty_destination(looked) or needs_web_query(asked, looked, query):
-        reply = "The destination field is still empty. I could not finish the hotel search."
+        reply = "The search field is still empty. I could not finish the search."
     elif _looks_like_ssl_or_error_page(blob):
         reply = "The page did not load. The browser shows a security or error page."
     else:
@@ -2230,11 +2236,15 @@ def _speak_looked(
 
 
 def _page_not_ready(looked: dict[str, Any]) -> bool:
-    """about:blank / Untitled / empty look — not a loaded article."""
+    """Blank / loading / empty look — not a loaded page. Not look_speed."""
+    if look_is_loading_or_blank(looked):
+        return True
     title = str(looked.get("title") or "")
     desc = str(looked.get("vision_description") or "").strip()
     blob = _look_blob(looked)
     if _BLANK_PAGE_RE.search(title) or _BLANK_PAGE_RE.search(blob):
+        return True
+    if looked.get("page_ready") is False:
         return True
     return bool(looked.get("ok") and not desc and not title.strip())
 
@@ -2583,15 +2593,36 @@ def _type_web_query(
     return current, True
 
 
+def _wait_until_page_ready(
+    asked: str, looked: dict[str, Any], tools: list[str], *, rounds: int = 3
+) -> dict[str, Any]:
+    """After run_app: wait until the page is not blank/loading/empty-desktop.
+
+    look_speed=off does not skip this. Off only skips extra periodic looks.
+    """
+    current = looked
+    for _ in range(max(1, int(rounds))):
+        if not look_is_loading_or_blank(current) and not look_is_empty_desktop(
+            current
+        ):
+            return current
+        _wait_after_act()
+        current = _look_opened_site(asked)
+        _note_tool(tools, "see_screen")
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+    return current
+
+
 def _continue_web_job(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
-    """After overlays: type the destination / query, look at results. Never pay."""
+    """After overlays: wait until ready, type the query, look. Never pay.
+
+    click / type / keys are recorded on tools_used. look_speed=off does not
+    skip that — Off means no extra periodic looks, not "don't type."
+    """
     current = _dismiss_overlays_if_needed(asked, looked, tools)
-    if look_is_empty_desktop(current):
-        _wait_after_act()
-        current = _look_opened_site(asked)
-        current = _dismiss_overlays_if_needed(asked, current, tools)
+    current = _wait_until_page_ready(asked, current, tools)
 
     def click(*, x, y, **_k):
         _note_tool(tools, "click")
@@ -2607,6 +2638,7 @@ def _continue_web_job(
 
     def look_again():
         again = _look_opened_site(asked)
+        _note_tool(tools, "see_screen")
         return _dismiss_overlays_if_needed(asked, again, tools)
 
     def scroll(*, dy=5, **_k):
@@ -2625,8 +2657,12 @@ def _continue_web_job(
 
 
 def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]:
-    """Look, maybe click a real result, speak from the screen. Never 'Look there.'"""
-    looked = _look_now(asked, app="chrome", fresh=True)
+    """Look, type if this is a find/search job, then speak. Never a blank caption.
+
+    First look skips in-see typing so click/type/keys are recorded on
+    tools_used. look_speed=off does not skip wait + type.
+    """
+    looked = _look_now(asked, app="chrome", fresh=True, skip_web_type=True)
     tools = ["run_app", "see_screen"]
     if wants_news_tell(asked):
         looked = _dismiss_restore_if_needed(asked, looked, tools)
@@ -2638,9 +2674,12 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
             again = _open_news_homepage(asked, tools)
             if again.get("ok"):
                 opened = again
-                looked = _look_now(asked, app="chrome", fresh=True)
+                looked = _look_now(asked, app="chrome", fresh=True, skip_web_type=True)
         return _finish_news_tell(asked, looked, tools, opened)
     wanted = str(opened.get("opened") or opened.get("url") or "")
+    from app.jarvis.virtual_pc import wants_web_job
+
+    web_job = wants_web_job(asked)
     if _page_not_ready(looked) or look_is_dead_page(looked) or not looked.get("ok"):
         looked = _reopen_if_blank(asked, looked, tools, opened)
     looked = _dismiss_restore_if_needed(asked, looked, tools)
@@ -2650,9 +2689,14 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
         if again.get("ok"):
             _note_tool(tools, "run_app")
             _wait_after_act()
-            looked = _look_now(asked, app="chrome", fresh=True)
+            looked = _look_now(asked, app="chrome", fresh=True, skip_web_type=True)
             looked = _dismiss_restore_if_needed(asked, looked, tools)
             looked = _dismiss_cookie_if_needed(asked, looked, tools)
+    if web_job:
+        # A blank / loading / failed first look is not done. Wait, look again,
+        # click+type, then speak. Never return a homepage caption here.
+        looked = _continue_web_job(asked, looked, tools)
+        return _speak_looked(looked, tools, opened=True, asked=asked)
     blob = _look_blob(looked)
     if _looks_like_ssl_or_error_page(blob) and looked.get("ok"):
         return _speak_looked(looked, tools, opened=True)
@@ -2661,11 +2705,6 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
     looked = _reopen_if_blank(asked, looked, tools, opened)
     looked = _dismiss_restore_if_needed(asked, looked, tools)
     looked = _dismiss_cookie_if_needed(asked, looked, tools)
-    from app.jarvis.virtual_pc import wants_web_job
-
-    if wants_web_job(asked):
-        looked = _continue_web_job(asked, looked, tools)
-        return _speak_looked(looked, tools, opened=True, asked=asked)
     opened_search = "duckduckgo.com" in str(
         opened.get("opened") or opened.get("url") or ""
     ).lower()
@@ -2680,7 +2719,7 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
     spoken = _spoken_headlines(desc) if news else _spoken_from_screen(desc)
     if not _usable_tell_text(spoken) or _page_not_ready(looked):
         looked = _reopen_if_blank(asked, looked, tools, opened)
-        looked = _look_now(asked, app="chrome", fresh=True)
+        looked = _look_now(asked, app="chrome", fresh=True, skip_web_type=True)
         if "see_screen" not in tools:
             tools.append("see_screen")
     return _speak_looked(looked, tools, opened=True, article=news, headlines=news)
@@ -2696,7 +2735,7 @@ def _tell_from_current_news(asked: str) -> dict[str, Any]:
 def _tell_from_current_screen(asked: str) -> dict[str, Any]:
     """Look at what is already on the screen. Do not invent a URL."""
     tools = ["see_screen"]
-    looked = _look_now(asked, fresh=True)
+    looked = _look_now(asked, fresh=True, skip_web_type=True)
     looked = _dismiss_restore_if_needed(asked, looked, tools)
     looked = _dismiss_cookie_if_needed(asked, looked, tools)
     from app.jarvis.virtual_pc import wants_web_job

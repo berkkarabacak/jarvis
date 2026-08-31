@@ -1372,13 +1372,19 @@ def _see_again_after_overlays(
 def _continue_web_job_after_see(
     ctx: ToolContext, args: dict[str, Any], looked: dict[str, Any]
 ) -> dict[str, Any]:
-    """After overlays: type the hotel / search query before the model can speak."""
+    """After overlays: wait until the page is ready, then type the query.
+
+    look_speed=off does not skip this. Off means no extra periodic looks,
+    not "don't type." Only mark _web_typed when type actually ran.
+    """
     if args.get("_skip_web_type") or looked.get("_web_typed"):
         return looked
     goal = str(args.get("goal") or "")
     try:
         from app.jarvis.overlay import (
             continue_web_search,
+            look_is_empty_desktop,
+            look_is_loading_or_blank,
             needs_web_query,
             web_search_query,
         )
@@ -1388,7 +1394,9 @@ def _continue_web_job_after_see(
     if not wants_web_job(goal):
         return looked
     query = web_search_query(goal)
-    if not needs_web_query(goal, looked, query):
+    if not needs_web_query(goal, looked, query) and not look_is_loading_or_blank(
+        looked
+    ):
         return looked
     try:
         from app.jarvis.desktop import click, keys, type_text
@@ -1403,15 +1411,21 @@ def _continue_web_job_after_see(
         retry.pop("_restore_tried", None)
         return _see_screen(ctx, retry) or looked
 
+    current = looked
+    if look_is_loading_or_blank(current) or look_is_empty_desktop(current):
+        if not os.environ.get("PYTEST_CURRENT_TEST"):
+            time.sleep(0.4)
+        current = look_again() or current
+
     out = continue_web_search(
-        looked,
+        current,
         goal=goal,
         click=click,
         type_text=type_text,
         keys=keys,
         look_again=look_again,
     )
-    if isinstance(out, dict):
+    if isinstance(out, dict) and out.get("_typed_query"):
         out["_web_typed"] = True
     return out
 
