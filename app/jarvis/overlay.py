@@ -32,6 +32,13 @@ SIGNIN_DISMISS_CLICK = (920, 170)
 # never a footer pixel. Only used when vision names a search field and
 # does not give coordinates.
 SEARCH_BOX_CLICK = (640, 320)
+# Chromium omnibox / address bar on 1280x720 (y≈0–110 chrome, not the page).
+OMNIBOX_CLICK = (420, 52)
+# Seconds between looks while the tab is Untitled / blank / loading.
+# look_speed=off does not skip this. 0.4s is not a wait.
+WEB_LOOK_PAUSE_S = 2.0
+# After this many Untitled/blank looks, type the query in the omnibox.
+BLANK_LOOKS_BEFORE_OMNIBOX = 3
 # jarvis-computer Xvfb is 1280x720. y≥560 is the footer band.
 _FOOTER_Y = 560
 
@@ -551,9 +558,60 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     return None
 
 
+def _in_pytest() -> bool:
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 def _pause_after_web_act() -> None:
-    if not os.environ.get("PYTEST_CURRENT_TEST"):
+    if not _in_pytest():
         time.sleep(0.4)
+
+
+def web_look_pause_s() -> float:
+    """Seconds to sleep between looks while the page is still opening.
+
+    look_speed=off does not skip this. Tests skip the sleep so they stay fast.
+    """
+    if _in_pytest():
+        return 0.0
+    return float(WEB_LOOK_PAUSE_S)
+
+
+def _pause_for_page_load() -> None:
+    wait = web_look_pause_s()
+    if wait > 0:
+        time.sleep(wait)
+
+
+def _deadline_passed(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= float(deadline)
+
+
+def _type_query_at(
+    xy: tuple[int, int],
+    query: str,
+    current: dict[str, Any],
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    """Click xy, type the query, Enter. Returns (look, typed)."""
+    clicked = click(x=xy[0], y=xy[1])
+    if not clicked or not clicked.get("ok"):
+        return current, False
+    _pause_after_web_act()
+    typed = type_text(text=query)
+    ok = bool(typed and typed.get("ok"))
+    if ok:
+        keys(combo="enter")
+        current["_typed_query"] = query
+    _pause_after_web_act()
+    nxt = look_again() or current
+    if ok:
+        nxt["_typed_query"] = query
+    return nxt, ok
 
 
 def continue_web_search(
@@ -566,38 +624,53 @@ def continue_web_search(
     look_again: Callable[[], dict[str, Any]],
     scroll: Callable[..., dict[str, Any]] | None = None,
     max_rounds: int = 3,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """Wait until the page is ready, click the field, type, Enter. Never pay.
 
     Product path after overlays. look_speed=off does not skip this.
-    A blank / loading / empty-desktop look is not done — look again,
-    then type. A homepage that never says "search box" still types.
-    Footer looks Home first — never (640, 320) on copyright.
+    Sleep seconds between looks (not 0.4s) until a loaded page or ``deadline``.
+    A blank / Untitled / loading look is not done — look again. After a few
+    still-blank looks, type the query into the Chromium omnibox. Never return
+    without type when a query is needed. A homepage that never says
+    "search box" still types. Footer looks Home first — never (640, 320)
+    on copyright.
     """
     query = web_search_query(goal)
     current = dict(looked or {})
     blob = look_blob(current)
     if look_is_pay_control(blob) and "hotel" not in blob.lower():
         return current
-    typed_query = False
-    for _ in range(max(1, int(max_rounds))):
+    if not (query or "").strip():
+        return current
+    typed_query = bool(current.get("_typed_query"))
+    blank_looks = 0
+    if deadline is not None:
+        limit = 64
+    else:
+        limit = max(int(max_rounds), BLANK_LOOKS_BEFORE_OMNIBOX)
+
+    def _mark(item: dict[str, Any]) -> dict[str, Any]:
+        if typed_query:
+            item["_typed_query"] = query
+        return item
+
+    for i in range(limit):
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
-            return current
+            return _mark(current)
         if look_has_hotel_results(current) or not needs_web_query(
             goal, current, query
         ):
-            if typed_query:
-                current["_typed_query"] = query
-            return current
-        if look_is_loading_or_blank(current) or look_is_empty_desktop(current):
-            _pause_after_web_act()
-            current = look_again() or current
-            if (
-                look_is_loading_or_blank(current) or look_is_empty_desktop(current)
-            ) and search_box_point(current) is None:
-                continue
-        if look_is_footer(current) or search_box_point(current) is None:
+            return _mark(current)
+        if typed_query:
+            if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
+                return _mark(current)
+            _pause_for_page_load()
+            current = _mark(look_again() or current)
+            continue
+
+        if look_is_footer(current):
             keys(combo="home")
             _pause_after_web_act()
             current = look_again() or current
@@ -608,23 +681,63 @@ def continue_web_search(
                     scroll(dy=5)
                     _pause_after_web_act()
                     current = look_again() or current
+            xy = search_box_point(current)
+            if xy is not None:
+                current, typed_query = _type_query_at(
+                    xy,
+                    query,
+                    current,
+                    click=click,
+                    type_text=type_text,
+                    keys=keys,
+                    look_again=look_again,
+                )
+            continue
+
         xy = search_box_point(current)
-        if xy is None:
+        if xy is not None:
+            current, typed_query = _type_query_at(
+                xy,
+                query,
+                current,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
             continue
-        clicked = click(x=xy[0], y=xy[1])
-        if not clicked or not clicked.get("ok"):
-            continue
-        _pause_after_web_act()
-        typed = type_text(text=query)
-        if typed and typed.get("ok"):
-            keys(combo="enter")
-            typed_query = True
-            current["_typed_query"] = query
-        _pause_after_web_act()
+
+        blank_looks += 1
+        last = i >= limit - 1
+        if (
+            blank_looks >= BLANK_LOOKS_BEFORE_OMNIBOX
+            or _deadline_passed(deadline)
+            or last
+        ):
+            current, typed_query = _type_query_at(
+                OMNIBOX_CLICK,
+                query,
+                current,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
+            return _mark(current)
+        _pause_for_page_load()
         current = look_again() or current
-        if typed_query:
-            current["_typed_query"] = query
-    return current
+
+    if not typed_query:
+        current, typed_query = _type_query_at(
+            OMNIBOX_CLICK,
+            query,
+            current,
+            click=click,
+            type_text=type_text,
+            keys=keys,
+            look_again=look_again,
+        )
+    return _mark(current)
 
 
 def dismiss_blocking_overlays(
