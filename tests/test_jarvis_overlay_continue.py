@@ -17,7 +17,9 @@ from app.jarvis.overlay import (
     look_has_blocking_overlay,
     look_is_empty_desktop,
     look_is_footer,
+    look_is_leftover_for_ask,
     look_is_loading_or_blank,
+    look_is_page_ready,
     look_is_web_page,
     needs_web_query,
     overlay_dismiss_plan,
@@ -1249,3 +1251,261 @@ async def test_voice_ask_untitled_does_not_speak_stuck_while_opening(
     assert "could not finish" not in low
     assert "you can open chrome" not in low
     assert "turquoise" not in low
+
+
+LEFTOVER_SHOP = {
+    "ok": True,
+    "title": "www.bol.com - Chromium",
+    "url": "https://www.bol.com/",
+    "vision_description": (
+        "The visible desktop screenshot shows a browser window titled "
+        "www.bol.com - Chromium. The page displays an HTTP 403 error. "
+        "Three leftover shop tabs stay on screen."
+    ),
+}
+
+LEFTOVER_WEATHER = {
+    "ok": True,
+    "title": "weather in Amsterdam - Google Search",
+    "url": "https://www.google.com/search?q=weather+amsterdam",
+    "vision_description": (
+        "Search results for weather in Amsterdam. 12 degrees. Clear skies."
+    ),
+}
+
+WEATHER_AFTER_TYPE = {
+    "ok": True,
+    "title": "today's weather in Amsterdam - Google Search",
+    "url": "https://www.google.com/search?q=today+weather+amsterdam",
+    "vision_description": (
+        "Today's weather in Amsterdam. 12 degrees. Clear skies. No rain."
+    ),
+}
+
+SHOP_AFTER_TYPE = {
+    "ok": True,
+    "title": "coffee grinder — bol.com",
+    "url": "https://www.bol.com/nl/nl/s/?searchtext=coffee+grinder",
+    "vision_description": (
+        "Search results for coffee grinder. Baratza Encore. From 89 EUR."
+    ),
+}
+
+
+def test_leftover_title_is_not_a_ready_page_for_this_ask():
+    """Shop vs weather, weather vs shop — leftover is not done. Hotel homepage is."""
+    assert look_is_leftover_for_ask(LEFTOVER_SHOP, WEATHER) is True
+    assert look_is_page_ready(LEFTOVER_SHOP, WEATHER) is False
+    assert needs_web_query(WEATHER, LEFTOVER_SHOP, web_search_query(WEATHER)) is True
+    assert look_is_leftover_for_ask(LEFTOVER_WEATHER, GRINDER) is True
+    assert look_is_page_ready(LEFTOVER_WEATHER, GRINDER) is False
+    assert needs_web_query(GRINDER, LEFTOVER_WEATHER, web_search_query(GRINDER)) is True
+    assert look_is_leftover_for_ask(HOMEPAGE_NO_BOX, ROME) is False
+    assert look_is_page_ready(HOMEPAGE_NO_BOX, ROME) is True
+    assert look_is_leftover_for_ask(UNTITLED_CHROME, WEATHER) is False
+
+
+def _run_continue(looks, goal, clicks, typed, keys):
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    return continue_web_search(
+        looks[0],
+        goal=goal,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+
+
+def test_continue_web_search_leftover_shop_types_weather_in_new_tab():
+    """Leftover shop look + weather ask: Ctrl+T or omnibox, never the shop field."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    out = _run_continue(
+        [dict(LEFTOVER_SHOP), dict(WEATHER_AFTER_TYPE)],
+        WEATHER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert typed, "leftover shop must type THIS weather query"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    new_tab = "ctrl+t" in {k.lower() for k in keys} or OMNIBOX_CLICK in clicks
+    assert new_tab, "must Ctrl+T or omnibox-type, not the leftover shop field"
+    assert SEARCH_BOX_CLICK not in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+    blob = str(out.get("vision_description") or "").lower()
+    assert "amsterdam" in blob or "weather" in blob or "degrees" in blob
+    assert "403" not in blob
+    assert "bol.com" not in blob or "weather" in blob
+
+
+def test_continue_web_search_leftover_weather_types_shop_in_new_tab():
+    """Leftover weather look + shop ask takes the same new-tab / omnibox path."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    out = _run_continue(
+        [dict(LEFTOVER_WEATHER), dict(SHOP_AFTER_TYPE)],
+        GRINDER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert typed
+    assert any("grinder" in t.lower() or "coffee" in t.lower() for t in typed)
+    new_tab = "ctrl+t" in {k.lower() for k in keys} or OMNIBOX_CLICK in clicks
+    assert new_tab, "must Ctrl+T or omnibox-type the shop query"
+    assert SEARCH_BOX_CLICK not in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+    blob = str(out.get("vision_description") or "").lower()
+    assert "grinder" in blob or "baratza" in blob or "encore" in blob
+    assert "amsterdam" not in blob or "grinder" in blob
+
+
+def test_speak_web_job_never_speaks_leftover_caption():
+    from app.jarvis.voice_ask import _speak_looked, _speak_web_job
+
+    for looked, asked in (
+        (LEFTOVER_SHOP, WEATHER),
+        (LEFTOVER_WEATHER, GRINDER),
+    ):
+        body = _speak_web_job(asked, dict(looked), ["see_screen"], opened=False)
+        low = body["reply"].lower()
+        assert "bol.com" not in low
+        assert "www.bol.com" not in low
+        assert "403" not in low
+        assert "visible desktop screenshot" not in low
+        assert "look at the screen" not in low
+        via = _speak_looked(dict(looked), ["see_screen"], opened=False, asked=asked)
+        assert "bol.com" not in via["reply"].lower()
+        assert "visible desktop screenshot" not in via["reply"].lower()
+    typed = dict(LEFTOVER_SHOP)
+    typed["_typed_query"] = "today's weather in Amsterdam"
+    after = _speak_web_job(
+        WEATHER,
+        typed,
+        ["see_screen", "click", "type", "keys"],
+        opened=False,
+    )
+    low = after["reply"].lower()
+    assert "bol.com" not in low
+    assert "visible desktop screenshot" not in low
+    assert "403" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_shop_types_weather_look_speed_off(
+    monkeypatch, tmp_path
+):
+    """Chrome already on leftover shop: type weather in a new tab, never the caption."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [dict(LEFTOVER_SHOP), dict(WEATHER_AFTER_TYPE)]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(WEATHER)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed, "look_speed=off must not skip leftover new-tab type"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    new_tab = "ctrl+t" in {k.lower() for k in keys} or OMNIBOX_CLICK in clicks
+    assert new_tab
+    assert SEARCH_BOX_CLICK not in clicks
+    low = body["reply"].lower()
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    assert "bol.com" not in low
+    assert "www.bol.com" not in low
+    assert "403" not in low
+    assert "visible desktop screenshot" not in low
+    assert "look at the screen" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_weather_types_shop_same_path(
+    monkeypatch, tmp_path
+):
+    """Leftover weather look + shop ask: same new-tab / omnibox path."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [dict(LEFTOVER_WEATHER), dict(SHOP_AFTER_TYPE)]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(GRINDER)
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed
+    assert any("grinder" in t.lower() or "coffee" in t.lower() for t in typed)
+    new_tab = "ctrl+t" in {k.lower() for k in keys} or OMNIBOX_CLICK in clicks
+    assert new_tab
+    assert SEARCH_BOX_CLICK not in clicks
+    low = body["reply"].lower()
+    assert "grinder" in low or "baratza" in low or "encore" in low
+    assert "amsterdam" not in low or "grinder" in low
+    assert "look at the screen" not in low
+
+
+@pytest.mark.asyncio
+async def test_tell_from_current_screen_leftover_shop_no_run_app(
+    monkeypatch, tmp_path
+):
+    """Chrome already open — no run_app. Leftover shop is not spoken."""
+    from app.jarvis.voice_ask import _tell_from_current_screen
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [dict(LEFTOVER_SHOP), dict(WEATHER_AFTER_TYPE)]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = _tell_from_current_screen(WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "see_screen" in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    new_tab = "ctrl+t" in {k.lower() for k in keys} or OMNIBOX_CLICK in clicks
+    assert new_tab
+    low = body["reply"].lower()
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    assert "bol.com" not in low
+    assert "visible desktop screenshot" not in low

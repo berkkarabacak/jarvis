@@ -217,6 +217,75 @@ _GENERIC_QUERY_WORD_RE = re.compile(
     r"using|use|please|the|and|for|in|a|an|to)$",
     re.I,
 )
+# Painted host in a title / URL. Chromium chrome is not a site.
+_LOOK_HOST_RE = re.compile(
+    r"\b(?:www\.)?([a-z0-9-]+\.(?:com|nl|de|org|net|io|co\.uk|co|uk|edu|app))\b",
+    re.I,
+)
+_HTTP_ERROR_RE = re.compile(
+    r"("
+    r"\bhttp\s*403\b|"
+    r"\b403\b(?:\s+(?:forbidden|error))?|"
+    r"access denied|"
+    r"this site can(?:not|'t|’t) be reached"
+    r")",
+    re.I,
+)
+# Look-side topic from the leftover title / host, not the ask wording.
+_LOOK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "shop",
+        re.compile(
+            r"\b(bol\.com|amazon|ebay|zalando|webshop|add to cart|shopping)\b",
+            re.I,
+        ),
+    ),
+    (
+        "weather",
+        re.compile(r"\b(weather|forecast|accuweather|°[cf]|degrees)\b", re.I),
+    ),
+    (
+        "hotel",
+        re.compile(
+            r"\b(booking\.com|hotels?\.com|airbnb|expedia|hotels? in)\b",
+            re.I,
+        ),
+    ),
+    (
+        "calculator",
+        re.compile(r"\b(calculator|galculator)\b", re.I),
+    ),
+    (
+        "news",
+        re.compile(r"\b(reuters|bbc\.com|cnn|nzz|bloomberg|swissinfo)\b", re.I),
+    ),
+)
+# Ask-side topic. Shop vs weather, hotel vs calculator — not the same job.
+_ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "shop",
+        re.compile(
+            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon)\b",
+            re.I,
+        ),
+    ),
+    (
+        "weather",
+        re.compile(r"\b(weather|forecast|temperature)\b", re.I),
+    ),
+    (
+        "hotel",
+        re.compile(r"\b(hotel|booking|airbnb|stay)\b", re.I),
+    ),
+    (
+        "calculator",
+        re.compile(r"\b(calculator|galculator|compute)\b", re.I),
+    ),
+    (
+        "news",
+        re.compile(r"\b(news|headlines)\b", re.I),
+    ),
+)
 _FOOTER_RE = re.compile(
     r"("
     r"\bfooter\b|"
@@ -460,8 +529,79 @@ def look_is_loading_or_blank(looked: dict[str, Any] | None) -> bool:
     return False
 
 
-def look_is_page_ready(looked: dict[str, Any] | None) -> bool:
-    """True when the window is a loaded page, not wallpaper / blank / loading."""
+def look_host_label(looked: dict[str, Any] | None) -> str:
+    """bol.com / booking.com from the title or URL. Not chromium."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "") for key in ("url", "title", "vision_description")
+    )
+    match = _LOOK_HOST_RE.search(blob)
+    if not match:
+        return ""
+    host = match.group(1).lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host in {"google.com", "duckduckgo.com", "bing.com"}:
+        return ""
+    return host
+
+
+def look_is_http_error(looked: dict[str, Any] | None) -> bool:
+    """403 / unreachable leftover — not a page we type a shop query into."""
+    return bool(_HTTP_ERROR_RE.search(look_blob(looked)))
+
+
+def _topic_from(blob: str, table: tuple[tuple[str, re.Pattern[str]], ...]) -> str:
+    for name, rx in table:
+        if rx.search(blob or ""):
+            return name
+    return ""
+
+
+def look_topic(looked: dict[str, Any] | None) -> str:
+    return _topic_from(look_blob(looked), _LOOK_TOPIC_RES)
+
+
+def ask_topic(asked: str) -> str:
+    return _topic_from(asked or "", _ASK_TOPIC_RES)
+
+
+def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
+    """True when this look is a previous job's tab, not THIS ask.
+
+    A leftover shop title vs a weather ask (or weather vs shop, hotel vs
+    calculator) is not done. HTTP 403 leftovers are not done. Untitled /
+    blank / wallpaper are not leftover — they are still opening. A
+    Booking.com homepage for a hotel ask is the same job, not leftover.
+    look_speed=off does not change this.
+    """
+    if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
+        return False
+    query = web_search_query(asked)
+    if query_visible_on_look(looked, query):
+        return False
+    host = look_host_label(looked)
+    raw_ask = (asked or "").lower()
+    if host and host in raw_ask and not look_is_http_error(looked):
+        return False
+    if look_is_http_error(looked):
+        return True
+    look_t = look_topic(looked)
+    ask_t = ask_topic(asked)
+    if look_t and ask_t and look_t != ask_t:
+        return True
+    return False
+
+
+def look_is_page_ready(
+    looked: dict[str, Any] | None, asked: str = ""
+) -> bool:
+    """True when the window is THIS ask's loaded page, not leftover / blank.
+
+    A leftover title that does not match this ask is not a ready page.
+    """
+    if asked and look_is_leftover_for_ask(looked, asked):
+        return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
         return False
     return look_is_web_page(looked) or search_box_point(looked) is not None
@@ -512,9 +652,12 @@ def needs_web_query(
 
     A homepage that only mentions a generic word from the ask is not done.
     A blank / loading look is not done.
+    A leftover tab from a previous job is not done.
     """
     if not (query or "").strip():
         return False
+    if look_is_leftover_for_ask(looked, asked):
+        return True
     if look_has_hotel_results(looked):
         return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
@@ -614,6 +757,28 @@ def _type_query_at(
     return nxt, ok
 
 
+def _type_new_tab_or_omnibox(
+    query: str,
+    current: dict[str, Any],
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    """Leftover tab: Ctrl+T, then omnibox-type THIS ask. Never the old field."""
+    keys(combo="ctrl+t")
+    return _type_query_at(
+        OMNIBOX_CLICK,
+        query,
+        current,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+
+
 def continue_web_search(
     looked: dict[str, Any] | None,
     *,
@@ -630,11 +795,12 @@ def continue_web_search(
 
     Product path after overlays. look_speed=off does not skip this.
     Sleep seconds between looks (not 0.4s) until a loaded page or ``deadline``.
-    A blank / Untitled / loading look is not done — look again. After a few
-    still-blank looks, type the query into the Chromium omnibox. Never return
-    without type when a query is needed. A homepage that never says
-    "search box" still types. Footer looks Home first — never (640, 320)
-    on copyright.
+    A blank / Untitled / loading look is not done — look again. A leftover
+    tab from a previous job is not done — Ctrl+T or omnibox-type THIS ask,
+    then look again. After a few still-blank looks, type the query into the
+    Chromium omnibox. Never return without type when a query is needed. A
+    homepage that never says "search box" still types. Footer looks Home
+    first — never (640, 320) on copyright.
     """
     query = web_search_query(goal)
     current = dict(looked or {})
@@ -668,6 +834,17 @@ def continue_web_search(
                 return _mark(current)
             _pause_for_page_load()
             current = _mark(look_again() or current)
+            continue
+
+        if look_is_leftover_for_ask(current, goal):
+            current, typed_query = _type_new_tab_or_omnibox(
+                query,
+                current,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
             continue
 
         if look_is_footer(current):

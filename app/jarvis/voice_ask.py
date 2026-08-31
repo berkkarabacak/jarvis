@@ -31,6 +31,7 @@ from app.jarvis.overlay import (
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
+    look_is_leftover_for_ask,
     look_is_loading_or_blank,
     look_is_page_ready,
     needs_web_query,
@@ -2162,7 +2163,11 @@ def _speak_web_job(
         and not _web_job_caption_forbidden(spoken)
     )
     typed = bool(looked.get("_typed_query")) or "type" in tools
-    if look_is_pay_control(blob) and "hotel" not in blob.lower():
+    leftover = look_is_leftover_for_ask(looked, asked)
+    if leftover:
+        # Never speak a previous job's caption / 403 / leftover shop title.
+        reply = "I typed the search." if typed else _WEB_STUCK
+    elif look_is_pay_control(blob) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
     elif look_has_hotel_results(looked) and usable:
         reply = spoken
@@ -2655,7 +2660,9 @@ def _wait_until_page_ready(
     blank_looks = 0
     cap = 64 if deadline is not None else max(1, int(BLANK_LOOKS_BEFORE_OMNIBOX))
     for _ in range(cap):
-        if look_is_page_ready(current):
+        if look_is_page_ready(current, asked):
+            return current
+        if look_is_leftover_for_ask(current, asked):
             return current
         if not look_is_loading_or_blank(current) and not look_is_empty_desktop(
             current
