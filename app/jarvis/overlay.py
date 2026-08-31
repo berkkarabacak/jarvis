@@ -825,6 +825,16 @@ def continue_web_search(
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
+        if look_is_leftover_for_ask(current, goal) and not typed_query:
+            current, typed_query = _type_new_tab_or_omnibox(
+                query,
+                current,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
+            continue
         if look_has_hotel_results(current) or not needs_web_query(
             goal, current, query
         ):
@@ -834,17 +844,6 @@ def continue_web_search(
                 return _mark(current)
             _pause_for_page_load()
             current = _mark(look_again() or current)
-            continue
-
-        if look_is_leftover_for_ask(current, goal):
-            current, typed_query = _type_new_tab_or_omnibox(
-                query,
-                current,
-                click=click,
-                type_text=type_text,
-                keys=keys,
-                look_again=look_again,
-            )
             continue
 
         if look_is_footer(current):
