@@ -6,6 +6,8 @@ import pytest
 
 from app.jarvis.overlay import (
     BLANK_LOOKS_BEFORE_OMNIBOX,
+    NEW_TAB_CLICK,
+    NEW_TAB_FOCUS_CLICKS,
     OMNIBOX_CLICK,
     RESTORE_DISMISS_CLICK,
     SANDBOX_DISMISS_CLICK,
@@ -16,7 +18,9 @@ from app.jarvis.overlay import (
     dismiss_blocking_overlays,
     look_has_blocking_overlay,
     look_is_empty_desktop,
+    look_is_focused_new_tab,
     look_is_footer,
+    look_is_http_error,
     look_is_leftover_for_ask,
     look_is_loading_or_blank,
     look_is_page_ready,
@@ -46,6 +50,10 @@ from app.jarvis.virtual_pc import (
 ROME = "find a hotel in central Rome"
 GRINDER = "go to bol.com and find a coffee grinder"
 WEATHER = "use Chrome to look up the weather in Amsterdam"
+LIVE_WEATHER = (
+    "Open Chrome. Look, click and type like a person. "
+    "Look up today's weather in Amsterdam."
+)
 
 UNTITLED_CHROME = {
     "ok": True,
@@ -997,12 +1005,78 @@ def test_see_again_after_overlays_types_after_blank_look(monkeypatch):
     assert "Encore" in str(out.get("vision_description") or "")
 
 
+def test_see_again_leftover_403_focuses_new_tab_before_type(monkeypatch):
+    """see_screen leftover 403: one Ctrl+T, click New Tab, then omnibox type."""
+    from app.jarvis.tools import ToolContext, _see_again_after_overlays
+    from app.jarvis.workspace import Workspace, default_workspace
+
+    looks = [
+        dict(LEFTOVER_SHOP),
+        dict(LEFTOVER_SHOP),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    n = {"i": 0}
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+
+    def fake_see(ctx, args):
+        n["i"] += 1
+        return dict(looks[min(n["i"], len(looks) - 1)])
+
+    def fake_click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def fake_type(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def fake_keys(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True, "combo": combo}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.desktop.click", fake_click)
+    monkeypatch.setattr("app.jarvis.desktop.type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.desktop.keys", fake_keys)
+
+    ctx = ToolContext(Workspace(default_workspace()), None)
+    out = _see_again_after_overlays(ctx, {"goal": LIVE_WEATHER}, dict(LEFTOVER_SHOP))
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    assert out.get("_typed_query")
+    assert "click" in (out.get("_tools_used") or [])
+    assert "type" in (out.get("_tools_used") or [])
+    assert "keys" in (out.get("_tools_used") or [])
+    blob = str(out.get("vision_description") or "").lower()
+    assert "403" not in blob
+    assert "bol.com" not in blob or "weather" in blob
+
+
+def test_annotate_see_screen_leftover_does_not_speak():
+    from app.jarvis.tools import annotate_see_screen
+
+    looked = annotate_see_screen(dict(LEFTOVER_SHOP), LIVE_WEATHER)
+    assert looked.get("speak_now") is False
+    assert looked.get("next_must") == ["click", "type", "keys"]
+    hint = str(looked.get("hint") or "").lower()
+    assert "leftover" in hint or "new tab" in hint or "omnibox" in hint
+
+
 def test_web_look_pause_is_seconds_not_a_fraction():
     """Live wait between Untitled looks is seconds. 0.4s is not a wait."""
     assert WEB_LOOK_PAUSE_S >= 1.0
     assert BLANK_LOOKS_BEFORE_OMNIBOX >= 2
     assert OMNIBOX_CLICK[1] < 110
     assert OMNIBOX_CLICK != SEARCH_BOX_CLICK
+    assert NEW_TAB_CLICK[1] < 40
+    assert NEW_TAB_CLICK in NEW_TAB_FOCUS_CLICKS
 
 
 def test_untitled_look_is_not_a_ready_page():
@@ -1291,6 +1365,18 @@ SHOP_AFTER_TYPE = {
     ),
 }
 
+NEW_TAB_CHROME = {
+    "ok": True,
+    "title": "New Tab - Chromium",
+    "url": "chrome://newtab",
+    "vision_description": "A Chromium New Tab. The omnibox is empty.",
+}
+
+LEFTOVER_403_CAPTION = (
+    'The focused window is titled "www.bol.com - Chromium." '
+    'The page displays an error message stating, "Access Denied" HTTP 403.'
+)
+
 
 def test_leftover_title_is_not_a_ready_page_for_this_ask():
     """Shop vs weather, weather vs shop — leftover is not done. Hotel homepage is."""
@@ -1303,6 +1389,16 @@ def test_leftover_title_is_not_a_ready_page_for_this_ask():
     assert look_is_leftover_for_ask(HOMEPAGE_NO_BOX, ROME) is False
     assert look_is_page_ready(HOMEPAGE_NO_BOX, ROME) is True
     assert look_is_leftover_for_ask(UNTITLED_CHROME, WEATHER) is False
+    assert look_is_http_error(LEFTOVER_SHOP) is True
+    assert look_is_focused_new_tab(LEFTOVER_SHOP) is False
+    assert look_is_focused_new_tab(NEW_TAB_CHROME) is True
+    assert look_is_focused_new_tab(UNTITLED_CHROME) is True
+    still_shop = dict(LEFTOVER_SHOP)
+    still_shop["vision_description"] = (
+        "www.bol.com HTTP 403. Two New Tab tabs sit on the right of the strip."
+    )
+    assert look_is_focused_new_tab(still_shop) is False
+    assert wants_web_job(LIVE_WEATHER) is True
 
 
 def _run_continue(looks, goal, clicks, typed, keys):
@@ -1359,6 +1455,39 @@ def test_continue_web_search_leftover_shop_types_weather_in_new_tab():
     assert "bol.com" not in blob or "weather" in blob
 
 
+def test_continue_web_search_ctrl_t_without_focus_clicks_new_tab():
+    """Ctrl+T that leaves leftover 403 focused is a fail — click New Tab first."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    out = _run_continue(
+        [
+            dict(LEFTOVER_SHOP),
+            dict(LEFTOVER_SHOP),
+            dict(NEW_TAB_CHROME),
+            dict(WEATHER_AFTER_TYPE),
+        ],
+        WEATHER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert keys.count("ctrl+t") == 1, "Ctrl+T once — do not spray empty tabs"
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks), (
+        "must click the new tab until title is New Tab, not leftover"
+    )
+    assert OMNIBOX_CLICK in clicks
+    assert typed, "weather query must be typed after New Tab is focused"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    assert look_is_focused_new_tab(out) or "weather" in str(
+        out.get("vision_description") or ""
+    ).lower()
+    blob = str(out.get("title") or "").lower()
+    assert "bol.com" not in blob
+    assert "403" not in str(out.get("vision_description") or "").lower()
+
+
 def test_continue_web_search_leftover_weather_types_shop_in_new_tab():
     """Leftover weather look + shop ask takes the same new-tab / omnibox path."""
     clicks: list[tuple[int, int]] = []
@@ -1412,6 +1541,27 @@ def test_speak_web_job_never_speaks_leftover_caption():
     assert "bol.com" not in low
     assert "visible desktop screenshot" not in low
     assert "403" not in low
+
+
+def test_speak_looked_without_asked_never_leaks_leftover_403():
+    """_speak_web_job leftover guard must run even when asked was omitted."""
+    from app.jarvis.voice_ask import (
+        _reply_leaks_leftover,
+        _speak_looked,
+        spoken_job_line,
+    )
+
+    leaked = _speak_looked(dict(LEFTOVER_SHOP), ["see_screen"], opened=False)
+    low = leaked["reply"].lower()
+    assert "bol.com" not in low
+    assert "www.bol.com" not in low
+    assert "403" not in low
+    assert "focused window is titled" not in low
+    assert "access" not in low or "denied" not in low
+    assert _reply_leaks_leftover(LEFTOVER_403_CAPTION, WEATHER) is True
+    assert _reply_leaks_leftover(LEFTOVER_403_CAPTION, LIVE_WEATHER) is True
+    line = spoken_job_line(LEFTOVER_403_CAPTION)
+    assert "bol.com" not in line.lower() or line == "I looked."
 
 
 @pytest.mark.asyncio
@@ -1509,3 +1659,85 @@ async def test_tell_from_current_screen_leftover_shop_no_run_app(
     assert "amsterdam" in low or "weather" in low or "degrees" in low
     assert "bol.com" not in low
     assert "visible desktop screenshot" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_403_focuses_new_tab_then_types(
+    monkeypatch, tmp_path
+):
+    """Live leftover 403: one Ctrl+T, focus New Tab, type weather. Never leftover speech."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_SHOP),
+        dict(LEFTOVER_SHOP),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert keys.count("ctrl+t") == 1, "Ctrl+T without focus is a fail — do not spray tabs"
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert typed, "must type THIS weather query after New Tab is focused"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    low = body["reply"].lower()
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    assert "bol.com" not in low
+    assert "www.bol.com" not in low
+    assert "403" not in low
+    assert "focused window is titled" not in low
+    assert "visible desktop screenshot" not in low
+    assert not low.rstrip().endswith('"access')
+    assert "access." not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_last_look_skips_run_app(monkeypatch, tmp_path):
+    """A leftover last_look is enough — no run_app, same New Tab path."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_SHOP))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_SHOP),
+        dict(LEFTOVER_SHOP),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert typed
+    low = body["reply"].lower()
+    assert "bol.com" not in low
+    assert "403" not in low
+    reset_last_look()

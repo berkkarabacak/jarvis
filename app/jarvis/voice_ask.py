@@ -31,6 +31,7 @@ from app.jarvis.overlay import (
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
+    look_is_http_error,
     look_is_leftover_for_ask,
     look_is_loading_or_blank,
     look_is_page_ready,
@@ -687,6 +688,9 @@ _PAGE_FAIL_RE = re.compile(
     r"net::err|dns_probe_finished|"
     r"empty response|"
     r"\b404\b|"
+    r"\bhttp\s*403\b|"
+    r"\b403\b(?:\s+(?:forbidden|error))?|"
+    r"access denied|"
     r"page not found|"
     r"this page (?:does not|doesn't) exist"
     r")",
@@ -1507,6 +1511,15 @@ async def _simple_talk_answer(asked: str) -> dict[str, Any]:
     return _talk_ok(reply, asked)
 
 
+def _reply_leaks_leftover(text: str, asked: str) -> bool:
+    """True when speech is a leftover title / 403 / vision caption, not THIS ask."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    fake = {"ok": True, "title": raw[:200], "vision_description": raw}
+    return look_is_http_error(fake) or look_is_leftover_for_ask(fake, asked)
+
+
 def _sanitize_computer_agent_reply(
     asked: str, reply: str, tools: list[Any]
 ) -> dict[str, Any] | None:
@@ -1535,6 +1548,14 @@ def _sanitize_computer_agent_reply(
     if not _is_computer_ask(asked):
         return None
     text = (reply or "").strip()
+    try:
+        from app.jarvis.virtual_pc import wants_web_job as _wants_web
+    except Exception:
+        _wants_web = None
+    if _wants_web and _wants_web(asked) and _reply_leaks_leftover(text, asked):
+        recovered = _tell_from_current_screen(asked)
+        if recovered is not None:
+            return recovered
     essay = _looks_like_news_essay(text)
     untouched = _agent_left_screen_untouched(text, tools)
     if not essay and not untouched:
@@ -1736,6 +1757,9 @@ def spoken_job_line(text: str) -> str:
     raw = _strip_howto_speech(text)
     if not raw:
         raw = re.sub(r"\s+", " ", (text or "").strip())
+    fake = {"ok": True, "title": raw[:200], "vision_description": raw}
+    if look_is_http_error(fake):
+        return "I looked."
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", raw) if p.strip()]
     kept = [
         p
@@ -2221,6 +2245,11 @@ def _speak_looked(
     from app.jarvis.virtual_pc import wants_web_job
 
     if asked and wants_web_job(asked):
+        return _speak_web_job(asked, looked, tools, opened=opened)
+    if look_is_http_error(looked) or (
+        asked and look_is_leftover_for_ask(looked, asked)
+    ):
+        # Leftover 403 / unrelated tab — never _spoken_from_screen of that caption.
         return _speak_web_job(asked, looked, tools, opened=opened)
     blob = _look_blob(looked)
     payload = _no_look_confirm(looked)
@@ -3053,6 +3082,11 @@ def _control_from_screen(asked: str) -> dict[str, Any]:
     """Look first, then click/type/keys from what is actually there."""
     if wants_close_all(asked):
         return _close_all_from_ask(asked)
+    from app.jarvis.virtual_pc import wants_web_job
+
+    if wants_web_job(asked):
+        # "Look, click and type like a person" is coaching, not a control job.
+        return _tell_from_current_screen(asked)
     looked = _look_now(asked)
     tools = ["see_screen"]
     if not looked.get("ok"):
@@ -3118,7 +3152,11 @@ def _control_from_screen(asked: str) -> dict[str, Any]:
     if news_or_read and _search_page_look(looked):
         looked = _leave_search_for_article(asked, looked, tools, {"url": ""})
     body = _speak_looked(
-        looked, tools, opened=False, article=news_or_read or wants_news_search(asked)
+        looked,
+        tools,
+        opened=False,
+        article=news_or_read or wants_news_search(asked),
+        asked=asked,
     )
     if wants_close_tab(asked) and _HOWTO_SPEECH_RE.search(str(body.get("reply") or "")):
         leftover = _spoken_from_screen(str(looked.get("vision_description") or ""))
@@ -3127,12 +3165,16 @@ def _control_from_screen(asked: str) -> dict[str, Any]:
         body["reply"] = leftover
     else:
         try:
-            from app.jarvis.virtual_pc import after_see_must_act
-
-            operate = after_see_must_act(asked)
+            from app.jarvis.virtual_pc import after_see_must_act, wants_web_job
         except Exception:
-            operate = False
-        if operate and not news_or_read:
+            after_see_must_act = None
+            wants_web_job = None
+        operate = bool(after_see_must_act and after_see_must_act(asked))
+        web_job = bool(wants_web_job and wants_web_job(asked))
+        leftover_look = look_is_http_error(looked) or look_is_leftover_for_ask(
+            looked, asked
+        )
+        if operate and not news_or_read and not web_job and not leftover_look:
             body["reply"] = spoken_job_line(
                 str(looked.get("vision_description") or body.get("reply") or "")
             )
@@ -3827,7 +3869,18 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
     elif wants_close_all(asked) and not named and not mail and not notepad and not calc:
         return _close_all_from_ask(asked)
     elif wants_control_screen(asked) and not named and not mail and not notepad and not calc:
+        if wants_web_job(asked):
+            return _with_prior_tools(_tell_from_current_screen(asked), prior_tools)
         return _control_from_screen(asked)
+    if wants_web_job(asked) and not named and not mail and not notepad and not calc:
+        try:
+            from app.jarvis.capture import last_look
+
+            prior = last_look() or {}
+        except Exception:
+            prior = {}
+        if look_is_leftover_for_ask(prior, asked) or look_is_http_error(prior):
+            return _with_prior_tools(_tell_from_current_screen(asked), prior_tools)
     if (
         wants_look_at_screen(asked)
         and not named
