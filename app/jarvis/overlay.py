@@ -34,6 +34,10 @@ SIGNIN_DISMISS_CLICK = (920, 170)
 SEARCH_BOX_CLICK = (640, 320)
 # Chromium omnibox / address bar on 1280x720 (y≈0–110 chrome, not the page).
 OMNIBOX_CLICK = (420, 52)
+# Newest tab on the tab strip (above the omnibox). keys(ctrl+t) often opens
+# a New Tab without focusing it — click until the title is New Tab / Untitled.
+NEW_TAB_CLICK = (720, 16)
+NEW_TAB_FOCUS_CLICKS = ((560, 16), (720, 16), (880, 16))
 # Seconds between looks while the tab is Untitled / blank / loading.
 # look_speed=off does not skip this. 0.4s is not a wait.
 WEB_LOOK_PAUSE_S = 2.0
@@ -551,6 +555,27 @@ def look_is_http_error(looked: dict[str, Any] | None) -> bool:
     return bool(_HTTP_ERROR_RE.search(look_blob(looked)))
 
 
+def look_is_focused_new_tab(looked: dict[str, Any] | None) -> bool:
+    """True when the focused window title is New Tab / Untitled / about:blank.
+
+    Vision of leftover shop tabs plus a New Tab on the right is not enough —
+    the focused title must leave the leftover host. HTTP 403 is never a new tab.
+    """
+    if look_is_http_error(looked):
+        return False
+    title = str((looked or {}).get("title") or "").strip()
+    if not title:
+        return False
+    try:
+        from app.jarvis.desktop import is_placeholder_title
+
+        if is_placeholder_title(title):
+            return True
+    except Exception:
+        pass
+    return bool(re.search(r"^(new tab|untitled|about:blank)\b", title, re.I))
+
+
 def _topic_from(blob: str, table: tuple[tuple[str, re.Pattern[str]], ...]) -> str:
     for name, rx in table:
         if rx.search(blob or ""):
@@ -757,17 +782,70 @@ def _type_query_at(
     return nxt, ok
 
 
+def _focus_new_tab(
+    current: dict[str, Any],
+    *,
+    goal: str,
+    click: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+    already_opened: bool = False,
+) -> dict[str, Any]:
+    """Ctrl+T once, then click/look until New Tab is focused. Never spray tabs.
+
+    keys(ctrl+t) often does not change the focused tab in this Chromium —
+    look_again still sees the leftover host. Click the new tab and look
+    until the title is New Tab / Untitled, not the leftover host.
+    """
+    if not already_opened:
+        keys(combo="ctrl+t")
+        _pause_after_web_act()
+        nxt = look_again() or current
+        nxt["_opened_new_tab"] = True
+        if look_is_focused_new_tab(nxt):
+            return nxt
+        current = nxt
+    current["_opened_new_tab"] = True
+    for xy in NEW_TAB_FOCUS_CLICKS:
+        if look_is_focused_new_tab(current):
+            return current
+        if not look_is_leftover_for_ask(current, goal) and not look_is_http_error(
+            current
+        ):
+            return current
+        click(x=xy[0], y=xy[1])
+        _pause_after_web_act()
+        nxt = look_again() or current
+        nxt["_opened_new_tab"] = True
+        current = nxt
+    return current
+
+
 def _type_new_tab_or_omnibox(
     query: str,
     current: dict[str, Any],
     *,
+    goal: str,
     click: Callable[..., dict[str, Any]],
     type_text: Callable[..., dict[str, Any]],
     keys: Callable[..., dict[str, Any]],
     look_again: Callable[[], dict[str, Any]],
+    already_opened: bool = False,
 ) -> tuple[dict[str, Any], bool]:
-    """Leftover tab: Ctrl+T, then omnibox-type THIS ask. Never the old field."""
-    keys(combo="ctrl+t")
+    """Leftover tab: one Ctrl+T, focus New Tab, then omnibox-type THIS ask."""
+    current = _focus_new_tab(
+        current,
+        goal=goal,
+        click=click,
+        keys=keys,
+        look_again=look_again,
+        already_opened=already_opened,
+    )
+    if look_is_leftover_for_ask(current, goal) and not look_is_focused_new_tab(
+        current
+    ):
+        # Do not type into leftover 403 / shop. Ctrl+T without focus is a fail.
+        return current, False
     return _type_query_at(
         OMNIBOX_CLICK,
         query,
@@ -795,9 +873,9 @@ def continue_web_search(
 
     Product path after overlays. look_speed=off does not skip this.
     Sleep seconds between looks (not 0.4s) until a loaded page or ``deadline``.
-    A blank / Untitled / loading look is not done — look again. A leftover
-    tab from a previous job is not done — Ctrl+T or omnibox-type THIS ask,
-    then look again. After a few still-blank looks, type the query into the
+    A blank / Untitled / loading look is not done — look again.     A leftover
+    tab from a previous job is not done — Ctrl+T once, focus New Tab, then
+    omnibox-type THIS ask, then look again. After a few still-blank looks, type the query into the
     Chromium omnibox. Never return without type when a query is needed. A
     homepage that never says "search box" still types. Footer looks Home
     first — never (640, 320) on copyright.
@@ -810,6 +888,7 @@ def continue_web_search(
     if not (query or "").strip():
         return current
     typed_query = bool(current.get("_typed_query"))
+    opened_new_tab = bool(current.get("_opened_new_tab"))
     blank_looks = 0
     if deadline is not None:
         limit = 64
@@ -819,6 +898,8 @@ def continue_web_search(
     def _mark(item: dict[str, Any]) -> dict[str, Any]:
         if typed_query:
             item["_typed_query"] = query
+        if opened_new_tab:
+            item["_opened_new_tab"] = True
         return item
 
     for i in range(limit):
@@ -829,11 +910,14 @@ def continue_web_search(
             current, typed_query = _type_new_tab_or_omnibox(
                 query,
                 current,
+                goal=goal,
                 click=click,
                 type_text=type_text,
                 keys=keys,
                 look_again=look_again,
+                already_opened=opened_new_tab,
             )
+            opened_new_tab = True
             continue
         if look_has_hotel_results(current) or not needs_web_query(
             goal, current, query
@@ -904,6 +988,10 @@ def continue_web_search(
         current = look_again() or current
 
     if not typed_query:
+        if look_is_leftover_for_ask(current, goal) and not look_is_focused_new_tab(
+            current
+        ):
+            return _mark(current)
         current, typed_query = _type_query_at(
             OMNIBOX_CLICK,
             query,

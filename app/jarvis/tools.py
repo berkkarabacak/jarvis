@@ -1256,10 +1256,26 @@ def _focus_app(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
 def annotate_see_screen(looked: dict[str, Any], goal: str) -> dict[str, Any]:
     """After an operate job look: next is click/type/keys, not a spoken catalog."""
     out = dict(looked or {})
+    acted = [
+        str(name)
+        for name in (out.get("_tools_used") or [])
+        if str(name).strip()
+    ]
+    if acted:
+        out["tools_used"] = acted
     try:
+        from app.jarvis.overlay import look_is_http_error, look_is_leftover_for_ask
         from app.jarvis.virtual_pc import after_see_must_act
 
-        if after_see_must_act(goal):
+        leftover = look_is_leftover_for_ask(out, goal) or look_is_http_error(out)
+        if leftover:
+            out["speak_now"] = False
+            out["next_must"] = ["click", "type", "keys"]
+            out["hint"] = (
+                "Leftover tab. Focus the New Tab, type this ask in the omnibox. "
+                "Do not speak the leftover title or 403."
+            )
+        elif after_see_must_act(goal):
             out["next_must"] = ["click", "type", "keys"]
             out["speak_now"] = False
             out["hint"] = (
@@ -1410,6 +1426,8 @@ def _continue_web_job_after_see(
     except Exception:
         return looked
 
+    acted: list[str] = []
+
     def look_again() -> dict[str, Any]:
         retry = dict(args)
         retry["fresh"] = True
@@ -1417,6 +1435,21 @@ def _continue_web_job_after_see(
         retry["_overlay_tries"] = 0
         retry.pop("_restore_tried", None)
         return _see_screen(ctx, retry) or looked
+
+    def click_now(*, x, y, **_k):
+        if "click" not in acted:
+            acted.append("click")
+        return click(x=x, y=y)
+
+    def type_now(*, text="", **_k):
+        if "type" not in acted:
+            acted.append("type")
+        return type_text(text=text)
+
+    def keys_now(*, combo="", **_k):
+        if "keys" not in acted:
+            acted.append("keys")
+        return keys(combo=combo)
 
     current = looked
     deadline = None
@@ -1430,14 +1463,16 @@ def _continue_web_job_after_see(
     out = continue_web_search(
         current,
         goal=goal,
-        click=click,
-        type_text=type_text,
-        keys=keys,
+        click=click_now,
+        type_text=type_now,
+        keys=keys_now,
         look_again=look_again,
         deadline=deadline,
     )
     if isinstance(out, dict) and out.get("_typed_query"):
         out["_web_typed"] = True
+    if isinstance(out, dict) and acted:
+        out["_tools_used"] = acted
     return out
 
 
