@@ -28,6 +28,7 @@ from app.jarvis.overlay import (
     continue_web_search,
     look_has_blocking_overlay,
     look_has_hotel_results,
+    look_is_captcha,
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
@@ -1513,12 +1514,16 @@ async def _simple_talk_answer(asked: str) -> dict[str, Any]:
 
 
 def _reply_leaks_leftover(text: str, asked: str) -> bool:
-    """True when speech is a leftover title / 403 / vision caption, not THIS ask."""
+    """True when speech is a leftover title / 403 / captcha / vision caption."""
     raw = (text or "").strip()
     if not raw:
         return False
     fake = {"ok": True, "title": raw[:200], "vision_description": raw}
-    return look_is_http_error(fake) or look_is_leftover_for_ask(fake, asked)
+    return (
+        look_is_http_error(fake)
+        or look_is_captcha(fake)
+        or look_is_leftover_for_ask(fake, asked)
+    )
 
 
 def _sanitize_computer_agent_reply(
@@ -1759,7 +1764,7 @@ def spoken_job_line(text: str) -> str:
     if not raw:
         raw = re.sub(r"\s+", " ", (text or "").strip())
     fake = {"ok": True, "title": raw[:200], "vision_description": raw}
-    if look_is_http_error(fake):
+    if look_is_http_error(fake) or look_is_captcha(fake):
         return "I looked."
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", raw) if p.strip()]
     kept = [
@@ -2164,6 +2169,7 @@ def _web_job_caption_forbidden(text: str) -> bool:
         or _ICON_CATALOG_RE.search(raw)
         or _LOOK_AT_SCREEN_RE.search(raw)
         or _BLANK_PAGE_RE.search(raw)
+        or look_is_captcha({"vision_description": raw, "title": raw[:200]})
     )
 
 
@@ -2188,13 +2194,18 @@ def _speak_web_job(
         and not _web_job_caption_forbidden(spoken)
     )
     typed = bool(looked.get("_typed_query")) or "type" in tools
-    leftover = look_is_leftover_for_ask(looked, asked) or look_is_leftover_surface(
-        looked
+    leftover = (
+        look_is_leftover_for_ask(looked, asked)
+        or look_is_leftover_surface(looked)
+        or look_is_captcha(looked)
     )
     shows_ask = query_visible_on_look(looked, query) or look_has_hotel_results(
         looked
     )
-    if leftover and not shows_ask:
+    if look_is_captcha(looked):
+        # Never speak I'm not a robot / unusual traffic / IP as the answer.
+        reply = _WEB_STUCK
+    elif leftover and not shows_ask:
         # Never speak leftover / 403 / extensions as success. After type,
         # speak only from a look that shows THIS ask's query or results.
         reply = _WEB_STUCK
