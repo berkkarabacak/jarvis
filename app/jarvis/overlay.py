@@ -235,6 +235,27 @@ _HTTP_ERROR_RE = re.compile(
     r")",
     re.I,
 )
+# chrome://extensions / settings and leftover desktop apps. Never type THIS
+# ask here. chrome://newtab is a blank tab, not leftover.
+_CHROME_INTERNAL_RE = re.compile(r"chrome://(?!new-?tab)", re.I)
+_LEFTOVER_SURFACE_RE = re.compile(
+    r"("
+    r"\bublock(?:\s+origin)?\b|"
+    r"(?:^|[\s\"“”'])extensions(?:\s*[-–—]|\s*$)|"
+    r"\b(?:chromium|chrome|google chrome)\s+settings\b|"
+    r"\bsettings\s+[-–—]\s+(?:chromium|google chrome|chrome)\b|"
+    r"\bthunar\b|"
+    r"\b(?:xfce4-)?terminal\b|"
+    r"\bgnome-terminal\b|"
+    r"\bfile manager\b"
+    r")",
+    re.I,
+)
+# Browser chrome / wallpaper titles are still opening, not leftover.
+_BROWSER_CHROME_TITLE_RE = re.compile(
+    r"^(chrome|google chrome|chromium|desktop|xfce|untitled)\b",
+    re.I,
+)
 # Look-side topic from the leftover title / host, not the ask wording.
 _LOOK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
@@ -521,6 +542,8 @@ def look_is_loading_or_blank(looked: dict[str, Any] | None) -> bool:
     item = looked or {}
     if item.get("page_ready") is False:
         return True
+    if look_is_leftover_surface(item):
+        return False
     blob = look_blob(item)
     title = str(item.get("title") or "")
     desc = str(item.get("vision_description") or "").strip()
@@ -555,13 +578,53 @@ def look_is_http_error(looked: dict[str, Any] | None) -> bool:
     return bool(_HTTP_ERROR_RE.search(look_blob(looked)))
 
 
+def look_is_leftover_surface(looked: dict[str, Any] | None) -> bool:
+    """chrome://extensions, settings, Thunar, Terminal — never type THIS ask.
+
+    Internal Chromium pages and leftover desktop apps are not a search field.
+    chrome://newtab / Untitled / New Tab are still opening, not leftover.
+    Title-only for Terminal / Thunar so page text like 'airport terminal'
+    is not leftover.
+    """
+    item = looked or {}
+    title = str(item.get("title") or "").strip()
+    url = str(item.get("url") or "")
+    desc = str(item.get("vision_description") or "")
+    if (
+        _CHROME_INTERNAL_RE.search(url)
+        or _CHROME_INTERNAL_RE.search(title)
+        or _CHROME_INTERNAL_RE.search(desc)
+    ):
+        return True
+    if title and _LEFTOVER_SURFACE_RE.search(title):
+        return True
+    return bool(re.search(r"\bublock(?:\s+origin)?\b", desc, re.I))
+
+
+def _look_is_search_engine(looked: dict[str, Any] | None) -> bool:
+    """Google / DuckDuckGo / Bing — a place to type THIS ask, not leftover."""
+    item = looked or {}
+    url = str(item.get("url") or "")
+    try:
+        from app.jarvis.serp import is_search_engine_url, look_is_serp
+
+        if url and is_search_engine_url(url):
+            return True
+        return bool(look_is_serp(item))
+    except Exception:
+        return bool(
+            re.search(r"\b(google|duckduckgo|bing)(?:\s+search)?\b", look_blob(item), re.I)
+        )
+
+
 def look_is_focused_new_tab(looked: dict[str, Any] | None) -> bool:
     """True when the focused window title is New Tab / Untitled / about:blank.
 
     Vision of leftover shop tabs plus a New Tab on the right is not enough —
     the focused title must leave the leftover host. HTTP 403 is never a new tab.
+    chrome://extensions / settings / Thunar are never a new tab.
     """
-    if look_is_http_error(looked):
+    if look_is_http_error(looked) or look_is_leftover_surface(looked):
         return False
     title = str((looked or {}).get("title") or "").strip()
     if not title:
@@ -595,13 +658,13 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     """True when this look is a previous job's tab, not THIS ask.
 
     A leftover shop title vs a weather ask (or weather vs shop, hotel vs
-    calculator) is not done. HTTP 403 leftovers are not done. Untitled /
-    blank / wallpaper are not leftover — they are still opening. A
-    Booking.com homepage for a hotel ask is the same job, not leftover.
-    look_speed=off does not change this.
+    calculator) is not done. HTTP 403 leftovers are not done. chrome://
+    extensions / settings, Thunar, Terminal, and any leftover title
+    unrelated to THIS ask are not done. Untitled / blank / wallpaper are
+    not leftover — they are still opening. A Booking.com homepage for a
+    hotel ask is the same job, not leftover. look_speed=off does not
+    change this.
     """
-    if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
-        return False
     query = web_search_query(asked)
     if query_visible_on_look(looked, query):
         return False
@@ -611,9 +674,37 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
         return False
     if look_is_http_error(looked):
         return True
+    if look_is_leftover_surface(looked):
+        return True
+    if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
+        return False
+    if look_is_focused_new_tab(looked):
+        return False
     look_t = look_topic(looked)
     ask_t = ask_topic(asked)
+    if look_t and ask_t and look_t == ask_t:
+        return False
     if look_t and ask_t and look_t != ask_t:
+        return True
+    return _look_title_unrelated_to_ask(looked, asked, look_t, ask_t, query)
+
+
+def _look_title_unrelated_to_ask(
+    looked: dict[str, Any] | None,
+    asked: str,
+    look_t: str,
+    ask_t: str,
+    query: str,
+) -> bool:
+    """Loaded window whose title is not THIS ask — leftover. New tab / SERP no."""
+    if look_t and ask_t and look_t == ask_t:
+        return False
+    if _look_is_search_engine(looked):
+        return False
+    title = str((looked or {}).get("title") or "").strip()
+    if not title or _BROWSER_CHROME_TITLE_RE.search(title):
+        return False
+    if ask_t or distinctive_query_tokens(query):
         return True
     return False
 
@@ -637,6 +728,8 @@ def look_is_web_page(looked: dict[str, Any] | None) -> bool:
     if look_is_empty_desktop(looked) or look_is_footer(looked):
         return False
     if look_is_loading_or_blank(looked):
+        return False
+    if look_is_leftover_surface(looked):
         return False
     item = looked or {}
     url = str(item.get("url") or "")
@@ -720,6 +813,8 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     if look_is_footer(looked) or look_is_empty_desktop(looked):
         return None
     if look_is_loading_or_blank(looked):
+        return None
+    if look_is_leftover_surface(looked):
         return None
     if _SEARCH_FIELD_RE.search(blob) or look_is_web_page(looked):
         return SEARCH_BOX_CLICK
