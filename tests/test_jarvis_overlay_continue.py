@@ -22,6 +22,7 @@ from app.jarvis.overlay import (
     look_is_footer,
     look_is_http_error,
     look_is_leftover_for_ask,
+    look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
     look_is_web_page,
@@ -1372,6 +1373,45 @@ NEW_TAB_CHROME = {
     "vision_description": "A Chromium New Tab. The omnibox is empty.",
 }
 
+LEFTOVER_EXTENSIONS = {
+    "ok": True,
+    "title": "Extensions - Chromium",
+    "url": "chrome://extensions",
+    "vision_description": (
+        "Chromium focused on chrome://extensions (uBlock Origin Lite). "
+        "Omnibox chrome://extensions. bol.com 403 not focused. "
+        "New Tab not focused. No weather query."
+    ),
+}
+
+LEFTOVER_SETTINGS = {
+    "ok": True,
+    "title": "Settings - Chromium",
+    "url": "chrome://settings",
+    "vision_description": "Chromium Settings. Search settings. No weather query.",
+}
+
+LEFTOVER_THUNAR = {
+    "ok": True,
+    "title": "Thunar",
+    "url": "",
+    "vision_description": "Thunar file manager is open. Home folder.",
+}
+
+LEFTOVER_TERMINAL = {
+    "ok": True,
+    "title": "Terminal",
+    "url": "",
+    "vision_description": "xfce4-terminal is focused. A shell prompt.",
+}
+
+LEFTOVER_UNRELATED = {
+    "ok": True,
+    "title": "Python (programming language) - Wikipedia",
+    "url": "https://en.wikipedia.org/wiki/Python_(programming_language)",
+    "vision_description": "Wikipedia article about the Python programming language.",
+}
+
 LEFTOVER_403_CAPTION = (
     'The focused window is titled "www.bol.com - Chromium." '
     'The page displays an error message stating, "Access Denied" HTTP 403.'
@@ -1393,6 +1433,26 @@ def test_leftover_title_is_not_a_ready_page_for_this_ask():
     assert look_is_focused_new_tab(LEFTOVER_SHOP) is False
     assert look_is_focused_new_tab(NEW_TAB_CHROME) is True
     assert look_is_focused_new_tab(UNTITLED_CHROME) is True
+    assert look_is_leftover_surface(LEFTOVER_EXTENSIONS) is True
+    assert look_is_leftover_for_ask(LEFTOVER_EXTENSIONS, WEATHER) is True
+    assert look_is_leftover_for_ask(LEFTOVER_EXTENSIONS, LIVE_WEATHER) is True
+    assert look_is_page_ready(LEFTOVER_EXTENSIONS, WEATHER) is False
+    assert look_is_focused_new_tab(LEFTOVER_EXTENSIONS) is False
+    assert look_is_web_page(LEFTOVER_EXTENSIONS) is False
+    assert search_box_point(LEFTOVER_EXTENSIONS) is None
+    assert needs_web_query(WEATHER, LEFTOVER_EXTENSIONS, web_search_query(WEATHER)) is True
+    assert look_is_leftover_surface(NEW_TAB_CHROME) is False
+    for leftover in (
+        LEFTOVER_SETTINGS,
+        LEFTOVER_THUNAR,
+        LEFTOVER_TERMINAL,
+        LEFTOVER_UNRELATED,
+    ):
+        assert look_is_leftover_for_ask(leftover, WEATHER) is True, leftover["title"]
+        assert look_is_focused_new_tab(leftover) is False, leftover["title"]
+    for leftover in (LEFTOVER_SETTINGS, LEFTOVER_THUNAR, LEFTOVER_TERMINAL):
+        assert look_is_leftover_surface(leftover) is True, leftover["title"]
+        assert search_box_point(leftover) is None, leftover["title"]
     still_shop = dict(LEFTOVER_SHOP)
     still_shop["vision_description"] = (
         "www.bol.com HTTP 403. Two New Tab tabs sit on the right of the strip."
@@ -1541,6 +1601,7 @@ def test_speak_web_job_never_speaks_leftover_caption():
     assert "bol.com" not in low
     assert "visible desktop screenshot" not in low
     assert "403" not in low
+    assert "i typed the search" not in low
 
 
 def test_speak_looked_without_asked_never_leaks_leftover_403():
@@ -1741,3 +1802,196 @@ async def test_voice_ask_leftover_last_look_skips_run_app(monkeypatch, tmp_path)
     assert "bol.com" not in low
     assert "403" not in low
     reset_last_look()
+
+
+def test_continue_web_search_leftover_extensions_types_weather_in_new_tab():
+    """Leftover Extensions + weather: Ctrl+T, focus New Tab, omnibox-type THIS ask."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    acts: list[str] = []
+    looks = [
+        dict(LEFTOVER_EXTENSIONS),
+        dict(LEFTOVER_EXTENSIONS),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        acts.append("click")
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        acts.append("type")
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        acts.append("keys")
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        acts.append("look")
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=LIVE_WEATHER,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert typed, "leftover Extensions must omnibox-type THIS weather query"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    assert "enter" in keys
+    assert out.get("_typed_query")
+    assert "look" in acts
+    assert acts.index("type") < max(idx for idx, name in enumerate(acts) if name == "look"), (
+        "after type must look again before speak"
+    )
+    blob = str(out.get("vision_description") or "").lower()
+    title = str(out.get("title") or "").lower()
+    assert "amsterdam" in blob or "weather" in blob or "degrees" in blob
+    assert "extensions" not in title
+    assert "ublock" not in blob or "weather" in blob
+    assert look_is_leftover_for_ask(out, LIVE_WEATHER) is False
+
+
+def test_speak_web_job_extensions_typed_is_not_success():
+    """Speaking 'I typed the search' with Extensions still focused is a fail."""
+    from app.jarvis.voice_ask import _speak_looked, _speak_web_job
+
+    typed = dict(LEFTOVER_EXTENSIONS)
+    typed["_typed_query"] = "today's weather in Amsterdam"
+    tools = ["see_screen", "click", "type", "keys"]
+    body = _speak_web_job(LIVE_WEATHER, typed, tools, opened=False)
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "ublock" not in low
+    assert "extensions" not in low
+    assert "chrome://extensions" not in low
+    via = _speak_looked(typed, tools, opened=False, asked=LIVE_WEATHER)
+    assert "i typed the search" not in via["reply"].lower()
+    assert "ublock" not in via["reply"].lower()
+    shown = dict(WEATHER_AFTER_TYPE)
+    shown["_typed_query"] = "today's weather in Amsterdam"
+    after = _speak_web_job(LIVE_WEATHER, shown, tools, opened=False)
+    after_low = after["reply"].lower()
+    assert "amsterdam" in after_low or "weather" in after_low or "degrees" in after_low
+    assert "extensions" not in after_low
+
+
+def test_see_again_leftover_extensions_focuses_new_tab_before_type(monkeypatch):
+    """see_screen leftover Extensions: one Ctrl+T, click New Tab, then omnibox type."""
+    from app.jarvis.tools import ToolContext, _see_again_after_overlays
+    from app.jarvis.workspace import Workspace, default_workspace
+
+    looks = [
+        dict(LEFTOVER_EXTENSIONS),
+        dict(LEFTOVER_EXTENSIONS),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    n = {"i": 0}
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+
+    def fake_see(ctx, args):
+        n["i"] += 1
+        return dict(looks[min(n["i"], len(looks) - 1)])
+
+    def fake_click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def fake_type(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def fake_keys(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True, "combo": combo}
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.desktop.click", fake_click)
+    monkeypatch.setattr("app.jarvis.desktop.type_text", fake_type)
+    monkeypatch.setattr("app.jarvis.desktop.keys", fake_keys)
+
+    ctx = ToolContext(Workspace(default_workspace()), None)
+    out = _see_again_after_overlays(ctx, {"goal": LIVE_WEATHER}, dict(LEFTOVER_EXTENSIONS))
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    assert out.get("_typed_query")
+    assert "click" in (out.get("_tools_used") or [])
+    assert "type" in (out.get("_tools_used") or [])
+    assert "keys" in (out.get("_tools_used") or [])
+    blob = str(out.get("vision_description") or "").lower()
+    assert "ublock" not in blob or "weather" in blob
+    assert "extensions" not in str(out.get("title") or "").lower()
+
+
+def test_annotate_see_screen_leftover_extensions_does_not_speak():
+    from app.jarvis.tools import annotate_see_screen
+
+    looked = annotate_see_screen(dict(LEFTOVER_EXTENSIONS), LIVE_WEATHER)
+    assert looked.get("speak_now") is False
+    assert looked.get("next_must") == ["click", "type", "keys"]
+    hint = str(looked.get("hint") or "").lower()
+    assert "leftover" in hint or "new tab" in hint or "omnibox" in hint
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_extensions_focuses_new_tab_then_types(
+    monkeypatch, tmp_path
+):
+    """Live leftover Extensions: New Tab + omnibox weather. Never 'I typed the search'."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_EXTENSIONS),
+        dict(LEFTOVER_EXTENSIONS),
+        dict(NEW_TAB_CHROME),
+        dict(WEATHER_AFTER_TYPE),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert typed, "must type THIS weather query after New Tab is focused"
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    assert "ublock" not in low
+    assert "extensions" not in low
+    assert "chrome://extensions" not in low
+    assert "bol.com" not in low

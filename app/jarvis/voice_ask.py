@@ -33,6 +33,7 @@ from app.jarvis.overlay import (
     look_is_footer,
     look_is_http_error,
     look_is_leftover_for_ask,
+    look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
     needs_web_query,
@@ -2187,21 +2188,28 @@ def _speak_web_job(
         and not _web_job_caption_forbidden(spoken)
     )
     typed = bool(looked.get("_typed_query")) or "type" in tools
-    leftover = look_is_leftover_for_ask(looked, asked)
-    if leftover:
-        # Never speak a previous job's caption / 403 / leftover shop title.
-        reply = "I typed the search." if typed else _WEB_STUCK
+    leftover = look_is_leftover_for_ask(looked, asked) or look_is_leftover_surface(
+        looked
+    )
+    shows_ask = query_visible_on_look(looked, query) or look_has_hotel_results(
+        looked
+    )
+    if leftover and not shows_ask:
+        # Never speak leftover / 403 / extensions as success. After type,
+        # speak only from a look that shows THIS ask's query or results.
+        reply = _WEB_STUCK
     elif look_is_pay_control(blob) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
     elif look_has_hotel_results(looked) and usable:
         reply = spoken
     elif query_visible_on_look(looked, query) and usable:
         reply = spoken
-    elif typed and usable:
+    elif typed and usable and not leftover:
         reply = spoken
     elif look_is_loading_or_blank(looked) or _page_not_ready(looked):
-        # Never "still opening / could not finish" — type happens first.
-        reply = "I typed the search." if typed else _WEB_STUCK
+        # Untitled / blank after type: "I typed the search." Leftover
+        # Extensions still focused is not this — that is leftover above.
+        reply = "I typed the search." if typed and not leftover else _WEB_STUCK
     elif look_is_empty_desktop(looked) or _is_desktop_talk(desc):
         reply = "I opened the page but I am stuck on the desktop. I did not finish the search."
     elif look_is_footer(looked) or _is_footer_talk(desc):
@@ -2209,10 +2217,10 @@ def _speak_web_job(
     elif look_is_empty_destination(looked) or needs_web_query(asked, looked, query):
         reply = (
             spoken
-            if typed and usable
+            if typed and usable and not leftover
             else (
                 "I typed the search."
-                if typed
+                if typed and not leftover
                 else "The search field is still empty. I could not finish the search."
             )
         )
