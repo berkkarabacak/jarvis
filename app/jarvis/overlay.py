@@ -4,7 +4,9 @@ Talk computer jobs die on the first Restore pages? bubble, cookie wall,
 Genius sign-in modal, or Chromium --no-sandbox infobar. After every look,
 click a dismiss control (X, No thanks, Cancel, Reject, Not now) and look
 again. Never Sign in, never Restore pages unless they asked to sign in,
-never buy / pay / checkout.
+never buy / pay / checkout. A sorry / captcha / I'm-not-a-robot look is
+not the answer — new tab, type THIS ask on DuckDuckGo, Bing, or a weather
+site. Never click I'm not a robot.
 
 Uses look / click / type only. Not Playwright. Not Selenium.
 """
@@ -16,6 +18,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
+from urllib.parse import quote_plus
 
 from app.jarvis.serp import look_blob
 
@@ -156,7 +159,11 @@ _NEVER_CLICK_RE = re.compile(
     r"\bpay\b|"
     r"\bcheckout\b|"
     r"book now|"
-    r"add to cart"
+    r"add to cart|"
+    r"i['’]?m not a robot|"
+    r"not a robot|"
+    r"\bcaptcha\b|"
+    r"\brecaptcha\b"
     r")",
     re.I,
 )
@@ -216,9 +223,44 @@ _HOTEL_RESULT_RE = re.compile(
 )
 # "hotel" on the Booking.com homepage is marketing, not a typed query.
 _GENERIC_QUERY_WORD_RE = re.compile(
-    r"^(?:hotels?|search|chrome|booking|find|stays?|rooms?|flights?|"
+    r"^(?:hotels?|search|chrome|chromium|booking|find|stays?|rooms?|flights?|"
     r"homes?|apartments?|city|cities|destination|query|central|"
-    r"using|use|please|the|and|for|in|a|an|to)$",
+    r"using|use|please|the|and|for|in|a|an|to|open|look|click|type|"
+    r"person|like|see_screen|keys)$",
+    re.I,
+)
+# "Look, click and type like a person" / Open Chrome — coaching, not the ask.
+_COACHING_PHRASE_RE = re.compile(
+    r"("
+    r"look\s*,?\s*click\s+(?:and\s+)?type(?:\s+like\s+a\s+person)?|"
+    r"click\s+and\s+type(?:\s+like\s+a\s+person)?|"
+    r"type\s+like\s+a\s+person|"
+    r"like\s+a\s+person|"
+    r"open\s+(?:google\s+)?(?:chrome|chromium)|"
+    r"see[_ ]screen|"
+    r"\btools_used\b"
+    r")",
+    re.I,
+)
+_COACHING_LEFTOVER_RE = re.compile(
+    r"\b(?:google\s+)?(?:chrome|chromium)\b",
+    re.I,
+)
+# Google /sorry, I'm not a robot, unusual traffic — any find/search job.
+_CAPTCHA_RE = re.compile(
+    r"("
+    r"google\.com/sorry|"
+    r"/sorry/index|"
+    r"/sorry\?|"
+    r"i['’]?m not a robot|"
+    r"not a robot|"
+    r"unusual traffic|"
+    r"detected unusual traffic|"
+    r"verify (?:that )?you are (?:a )?human|"
+    r"are you a robot|"
+    r"\bcaptcha\b|"
+    r"\brecaptcha\b"
+    r")",
     re.I,
 )
 # Painted host in a title / URL. Chromium chrome is not a site.
@@ -395,6 +437,9 @@ def overlay_kind(
     goal: str = "",
 ) -> OverlayKind | None:
     """Highest-priority blocking overlay on this look, or None."""
+    if look_is_captcha(looked):
+        # Never treat I'm not a robot as a cookie / sign-in dismiss.
+        return None
     item = looked or {}
     blob = look_blob(item)
     if _title_is_restore(item) or _RESTORE_RE.search(blob):
@@ -452,6 +497,8 @@ def overlay_dismiss_plan(
     kind: OverlayKind | None = None,
 ) -> OverlayPlan | None:
     """Click X / No thanks / Cancel / Reject. Never Sign in / Restore / Pay."""
+    if look_is_captcha(looked):
+        return None
     found = kind or overlay_kind(looked, goal=goal)
     if found is None:
         return None
@@ -542,7 +589,7 @@ def look_is_loading_or_blank(looked: dict[str, Any] | None) -> bool:
     item = looked or {}
     if item.get("page_ready") is False:
         return True
-    if look_is_leftover_surface(item):
+    if look_is_leftover_surface(item) or look_is_captcha(item):
         return False
     blob = look_blob(item)
     title = str(item.get("title") or "")
@@ -576,6 +623,20 @@ def look_host_label(looked: dict[str, Any] | None) -> str:
 def look_is_http_error(looked: dict[str, Any] | None) -> bool:
     """403 / unreachable leftover — not a page we type a shop query into."""
     return bool(_HTTP_ERROR_RE.search(look_blob(looked)))
+
+
+def look_is_captcha(looked: dict[str, Any] | None) -> bool:
+    """Sorry / captcha / I'm not a robot / unusual traffic — not THIS ask.
+
+    google.com/sorry, a robot checkbox, or unusual-traffic copy is not a
+    weather / hotel / shop result. Never click I'm not a robot. Never
+    speak that page as the answer. Any find / search / use-Chrome job.
+    """
+    item = looked or {}
+    url = str(item.get("url") or "")
+    if re.search(r"google\.com/sorry|/sorry/index|/sorry\?", url, re.I):
+        return True
+    return bool(_CAPTCHA_RE.search(look_blob(item)))
 
 
 def look_is_leftover_surface(looked: dict[str, Any] | None) -> bool:
@@ -624,7 +685,11 @@ def look_is_focused_new_tab(looked: dict[str, Any] | None) -> bool:
     the focused title must leave the leftover host. HTTP 403 is never a new tab.
     chrome://extensions / settings / Thunar are never a new tab.
     """
-    if look_is_http_error(looked) or look_is_leftover_surface(looked):
+    if (
+        look_is_http_error(looked)
+        or look_is_leftover_surface(looked)
+        or look_is_captcha(looked)
+    ):
         return False
     title = str((looked or {}).get("title") or "").strip()
     if not title:
@@ -660,12 +725,14 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     A leftover shop title vs a weather ask (or weather vs shop, hotel vs
     calculator) is not done. HTTP 403 leftovers are not done. chrome://
     extensions / settings, Thunar, Terminal, and any leftover title
-    unrelated to THIS ask are not done. Untitled / blank / wallpaper are
-    not leftover — they are still opening. A Booking.com homepage for a
-    hotel ask is the same job, not leftover. look_speed=off does not
-    change this.
+    unrelated to THIS ask are not done. A sorry / captcha / I'm-not-a-robot
+    look is not done. Untitled / blank / wallpaper are not leftover — they
+    are still opening. A Booking.com homepage for a hotel ask is the same
+    job, not leftover. look_speed=off does not change this.
     """
     query = web_search_query(asked)
+    if look_is_captcha(looked):
+        return True
     if query_visible_on_look(looked, query):
         return False
     host = look_host_label(looked)
@@ -729,7 +796,7 @@ def look_is_web_page(looked: dict[str, Any] | None) -> bool:
         return False
     if look_is_loading_or_blank(looked):
         return False
-    if look_is_leftover_surface(looked):
+    if look_is_leftover_surface(looked) or look_is_captcha(looked):
         return False
     item = looked or {}
     url = str(item.get("url") or "")
@@ -756,6 +823,9 @@ def distinctive_query_tokens(query: str) -> list[str]:
 
 
 def query_visible_on_look(looked: dict[str, Any] | None, query: str) -> bool:
+    if look_is_captcha(looked):
+        # Query tokens in a /sorry continue= URL are not results.
+        return False
     tokens = distinctive_query_tokens(query)
     if not tokens:
         return False
@@ -771,10 +841,11 @@ def needs_web_query(
     A homepage that only mentions a generic word from the ask is not done.
     A blank / loading look is not done.
     A leftover tab from a previous job is not done.
+    A sorry / captcha look is not done — even if the URL repeats the query.
     """
     if not (query or "").strip():
         return False
-    if look_is_leftover_for_ask(looked, asked):
+    if look_is_captcha(looked) or look_is_leftover_for_ask(looked, asked):
         return True
     if look_has_hotel_results(looked):
         return False
@@ -797,7 +868,10 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     on a scrolled page that pixel is copyright / legal links.
     A Booking.com homepage that never says "search box" still has a field —
     use SEARCH_BOX_CLICK after Home, never on the footer or wallpaper.
+    Never the I'm-not-a-robot checkbox.
     """
+    if look_is_captcha(looked):
+        return None
     blob = look_blob(looked)
     named = _search_field_xy(blob)
     if named:
@@ -970,10 +1044,12 @@ def continue_web_search(
     Sleep seconds between looks (not 0.4s) until a loaded page or ``deadline``.
     A blank / Untitled / loading look is not done — look again.     A leftover
     tab from a previous job is not done — Ctrl+T once, focus New Tab, then
-    omnibox-type THIS ask, then look again. After a few still-blank looks, type the query into the
-    Chromium omnibox. Never return without type when a query is needed. A
-    homepage that never says "search box" still types. Footer looks Home
-    first — never (640, 320) on copyright.
+    omnibox-type THIS ask, then look again. A sorry / captcha look after
+    type is not success — new tab, type THIS ask on DuckDuckGo, Bing, or
+    a weather site. Never click I'm not a robot. After a few still-blank
+    looks, type the query into the Chromium omnibox. Never return without
+    type when a query is needed. A homepage that never says "search box"
+    still types. Footer looks Home first — never (640, 320) on copyright.
     """
     query = web_search_query(goal)
     current = dict(looked or {})
@@ -984,6 +1060,7 @@ def continue_web_search(
         return current
     typed_query = bool(current.get("_typed_query"))
     opened_new_tab = bool(current.get("_opened_new_tab"))
+    captcha_retried = bool(current.get("_captcha_retried"))
     blank_looks = 0
     if deadline is not None:
         limit = 64
@@ -995,12 +1072,30 @@ def continue_web_search(
             item["_typed_query"] = query
         if opened_new_tab:
             item["_opened_new_tab"] = True
+        if captcha_retried:
+            item["_captcha_retried"] = True
         return item
 
     for i in range(limit):
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
+        if look_is_captcha(current):
+            if captcha_retried:
+                return _mark(current)
+            current, typed_query = _type_new_tab_or_omnibox(
+                alt_web_search_typed(query, goal),
+                current,
+                goal=goal,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+                already_opened=False,
+            )
+            captcha_retried = True
+            opened_new_tab = True
+            continue
         if look_is_leftover_for_ask(current, goal) and not typed_query:
             current, typed_query = _type_new_tab_or_omnibox(
                 query,
@@ -1122,9 +1217,25 @@ def dismiss_blocking_overlays(
     return current
 
 
+def alt_web_search_typed(query: str, asked: str = "") -> str:
+    """Omnibox text after captcha: DuckDuckGo / Bing / weather, never Google."""
+    q = (query or "").strip() or web_search_query(asked)
+    encoded = quote_plus(q)
+    if ask_topic(asked) == "weather" or re.search(
+        r"\b(weather|forecast)\b", q, re.I
+    ):
+        return f"https://duckduckgo.com/?q={encoded}"
+    return f"https://www.bing.com/search?q={encoded}"
+
+
 def web_search_query(asked: str) -> str:
-    """Words to type after overlays: 'hotel in central Rome', not the URL."""
+    """User query tokens only: 'weather in Amsterdam', never coaching.
+
+    'Look, click and type like a person' / Open Chrome are coaching, not
+    the search. Any find / search / use-Chrome job.
+    """
     raw = (asked or "").strip()
+    raw = _COACHING_PHRASE_RE.sub(" ", raw)
     raw = re.sub(
         r"\b(please|can you|could you|on (?:the|your) (?:screen|computer)|"
         r"using chrome|use chrome|in chrome|with chrome)\b",
@@ -1132,6 +1243,7 @@ def web_search_query(asked: str) -> str:
         raw,
         flags=re.I,
     )
+    raw = _COACHING_LEFTOVER_RE.sub(" ", raw)
     raw = re.sub(
         r"https?://[^\s]+|[a-z0-9.-]+\.(?:com|nl|de|org|net|io|co|uk|edu|app)\b",
         " ",
@@ -1147,4 +1259,11 @@ def web_search_query(asked: str) -> str:
     )
     raw = re.sub(r"\s+", " ", raw).strip(" .,!?")
     raw = re.sub(r"^(?:a|an|the)\s+", "", raw, flags=re.I)
-    return raw or (asked or "").strip()
+    if raw:
+        return raw
+    # Never fall back to the coaching sentence / Open Chrome.
+    if _COACHING_PHRASE_RE.search(asked or "") or _COACHING_LEFTOVER_RE.search(
+        asked or ""
+    ):
+        return ""
+    return (asked or "").strip()

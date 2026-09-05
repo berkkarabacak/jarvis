@@ -1264,11 +1264,22 @@ def annotate_see_screen(looked: dict[str, Any], goal: str) -> dict[str, Any]:
     if acted:
         out["tools_used"] = acted
     try:
-        from app.jarvis.overlay import look_is_http_error, look_is_leftover_for_ask
+        from app.jarvis.overlay import (
+            look_is_captcha,
+            look_is_http_error,
+            look_is_leftover_for_ask,
+        )
         from app.jarvis.virtual_pc import after_see_must_act
 
         leftover = look_is_leftover_for_ask(out, goal) or look_is_http_error(out)
-        if leftover:
+        if look_is_captcha(out):
+            out["speak_now"] = False
+            out["next_must"] = ["click", "type", "keys"]
+            out["hint"] = (
+                "Captcha / unusual traffic. New tab, type this ask on "
+                "DuckDuckGo or Bing. Never click I'm not a robot."
+            )
+        elif leftover:
             out["speak_now"] = False
             out["next_must"] = ["click", "type", "keys"]
             out["hint"] = (

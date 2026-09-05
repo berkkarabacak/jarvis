@@ -14,9 +14,11 @@ from app.jarvis.overlay import (
     SEARCH_BOX_CLICK,
     SIGNIN_DISMISS_CLICK,
     WEB_LOOK_PAUSE_S,
+    alt_web_search_typed,
     continue_web_search,
     dismiss_blocking_overlays,
     look_has_blocking_overlay,
+    look_is_captcha,
     look_is_empty_desktop,
     look_is_focused_new_tab,
     look_is_footer,
@@ -29,6 +31,7 @@ from app.jarvis.overlay import (
     needs_web_query,
     overlay_dismiss_plan,
     overlay_kind,
+    query_visible_on_look,
     search_box_point,
     web_search_query,
 )
@@ -121,12 +124,48 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
     assert ask_deadline_s("what's on the screen") == 30.0
 
 
+def _typed_is_user_query(text: str) -> bool:
+    low = (text or "").lower()
+    return (
+        "like a person" not in low
+        and "open chrome" not in low
+        and "look, click" not in low
+        and "see_screen" not in low
+    )
+
+
 def test_web_search_query_strips_url_and_find():
     assert "Rome" in web_search_query(ROME) or "rome" in web_search_query(ROME).lower()
     assert "booking" not in web_search_query(
         "find a hotel in central Rome on booking.com"
     ).lower()
     assert "grinder" in web_search_query("go to bol.com and find a coffee grinder")
+
+
+def test_web_search_query_strips_coaching_keeps_ask_tokens():
+    """Never type 'Look, click and type like a person' / Open Chrome."""
+    q = web_search_query(LIVE_WEATHER)
+    low = q.lower()
+    assert "weather" in low
+    assert "amsterdam" in low
+    assert _typed_is_user_query(q)
+    assert "chrome" not in low
+    assert "click" not in low
+    assert "person" not in low
+    hotel = web_search_query(
+        "Open Chrome. Look, click and type like a person. find a hotel in central Rome."
+    )
+    h = hotel.lower()
+    assert "rome" in h
+    assert "hotel" in h
+    assert _typed_is_user_query(hotel)
+    assert "chrome" not in h
+    shop = web_search_query(
+        "Open Chrome. Look, click and type like a person. go to bol.com and find a coffee grinder"
+    )
+    s = shop.lower()
+    assert "grinder" in s
+    assert _typed_is_user_query(shop)
 
 
 def test_overlay_kinds_from_live_failure():
@@ -1851,6 +1890,7 @@ def test_continue_web_search_leftover_extensions_types_weather_in_new_tab():
     assert OMNIBOX_CLICK in clicks
     assert typed, "leftover Extensions must omnibox-type THIS weather query"
     assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
     assert SEARCH_BOX_CLICK not in clicks
     assert "enter" in keys
     assert out.get("_typed_query")
@@ -1987,6 +2027,7 @@ async def test_voice_ask_leftover_extensions_focuses_new_tab_then_types(
     assert OMNIBOX_CLICK in clicks
     assert typed, "must type THIS weather query after New Tab is focused"
     assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
     assert SEARCH_BOX_CLICK not in clicks
     low = body["reply"].lower()
     assert "i typed the search" not in low
@@ -1995,3 +2036,231 @@ async def test_voice_ask_leftover_extensions_focuses_new_tab_then_types(
     assert "extensions" not in low
     assert "chrome://extensions" not in low
     assert "bol.com" not in low
+
+
+GOOGLE_SORRY = {
+    "ok": True,
+    "title": (
+        "https://www.google.com/search?q=Look+click+and+type+like+a+person+"
+        "weather+Amsterdam"
+    ),
+    "url": (
+        "https://www.google.com/sorry/index?continue="
+        "https://www.google.com/search%3Fq%3DLook%2Bclick%2Btype%2Bweather"
+    ),
+    "vision_description": (
+        "Google sorry page. I'm not a robot checkbox. Unusual traffic from "
+        "your computer network. IP 146.148.38.150. No weather result."
+    ),
+}
+
+GOOGLE_SORRY_HOTEL = {
+    "ok": True,
+    "title": "https://www.google.com/search?q=hotel+in+central+Rome",
+    "url": (
+        "https://www.google.com/sorry/index?continue="
+        "https://www.google.com/search%3Fq%3Dhotel%2BRome"
+    ),
+    "vision_description": (
+        "I'm not a robot. Unusual traffic from your computer network. "
+        "No hotel results."
+    ),
+}
+
+DDG_WEATHER = {
+    "ok": True,
+    "title": "today's weather in Amsterdam at DuckDuckGo",
+    "url": "https://duckduckgo.com/?q=today%27s+weather+in+Amsterdam",
+    "vision_description": (
+        "DuckDuckGo results. Amsterdam weather. 12 degrees. Clear skies."
+    ),
+}
+
+BING_HOTEL = {
+    "ok": True,
+    "title": "hotel in central Rome - Search",
+    "url": "https://www.bing.com/search?q=hotel+in+central+Rome",
+    "vision_description": (
+        "Bing results. Hotels in central Rome. Eden. From 180 EUR."
+    ),
+}
+
+LIVE_HOTEL = (
+    "Open Chrome. Look, click and type like a person. "
+    "find a hotel in central Rome."
+)
+
+
+def test_sorry_captcha_look_is_not_this_ask():
+    """google.com/sorry / I'm not a robot is leftover, not a result page."""
+    assert look_is_captcha(GOOGLE_SORRY) is True
+    assert look_is_captcha(GOOGLE_SORRY_HOTEL) is True
+    assert look_is_leftover_for_ask(GOOGLE_SORRY, LIVE_WEATHER) is True
+    assert look_is_leftover_for_ask(GOOGLE_SORRY_HOTEL, LIVE_HOTEL) is True
+    assert look_is_page_ready(GOOGLE_SORRY, LIVE_WEATHER) is False
+    assert look_is_page_ready(GOOGLE_SORRY_HOTEL, ROME) is False
+    assert needs_web_query(
+        LIVE_WEATHER, GOOGLE_SORRY, web_search_query(LIVE_WEATHER)
+    ) is True
+    assert needs_web_query(ROME, GOOGLE_SORRY_HOTEL, web_search_query(ROME)) is True
+    assert query_visible_on_look(GOOGLE_SORRY, web_search_query(LIVE_WEATHER)) is False
+    assert search_box_point(GOOGLE_SORRY) is None
+    assert overlay_dismiss_plan(GOOGLE_SORRY, goal=LIVE_WEATHER) is None
+    assert overlay_kind(GOOGLE_SORRY, goal=LIVE_WEATHER) is None
+    assert look_is_focused_new_tab(GOOGLE_SORRY) is False
+    assert look_is_web_page(GOOGLE_SORRY) is False
+    assert look_is_captcha(WEATHER_AFTER_TYPE) is False
+    assert look_is_captcha(LEFTOVER_EXTENSIONS) is False
+    alt = alt_web_search_typed(web_search_query(LIVE_WEATHER), LIVE_WEATHER)
+    assert "weather" in alt.lower() or "amsterdam" in alt.lower()
+    assert any(h in alt.lower() for h in ("duckduckgo.com", "bing.com", "weather."))
+    assert "google.com/search" not in alt.lower()
+    assert _typed_is_user_query(alt)
+
+
+def test_continue_web_search_sorry_after_type_opens_alt_search():
+    """Sorry look after type is not success — new tab + ddg/bing/weather query."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    start = dict(GOOGLE_SORRY)
+    start["_typed_query"] = web_search_query(LIVE_WEATHER)
+    out = _run_continue(
+        [start, dict(GOOGLE_SORRY), dict(NEW_TAB_CHROME), dict(DDG_WEATHER)],
+        LIVE_WEATHER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert typed, "captcha after type must type THIS ask on another search site"
+    assert any(
+        h in t.lower()
+        for t in typed
+        for h in ("duckduckgo.com", "bing.com", "weather.com", "accuweather")
+    ), typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
+    assert keys.count("ctrl+t") == 1
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
+    assert "enter" in keys
+    blob = str(out.get("vision_description") or "").lower()
+    assert "amsterdam" in blob or "weather" in blob or "degrees" in blob
+    assert "i'm not a robot" not in blob
+    assert "unusual traffic" not in blob
+    assert look_is_captcha(out) is False
+
+
+def test_continue_web_search_sorry_hotel_uses_alt_search():
+    """Captcha recovery is generic — hotel ask goes to ddg/bing, not Google."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    start = dict(GOOGLE_SORRY_HOTEL)
+    start["_typed_query"] = web_search_query(LIVE_HOTEL)
+    out = _run_continue(
+        [start, dict(GOOGLE_SORRY_HOTEL), dict(NEW_TAB_CHROME), dict(BING_HOTEL)],
+        LIVE_HOTEL,
+        clicks,
+        typed,
+        keys,
+    )
+    assert typed
+    assert any(
+        h in t.lower()
+        for t in typed
+        for h in ("duckduckgo.com", "bing.com", "weather.com")
+    ), typed
+    assert any("rome" in t.lower() or "hotel" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    blob = str(out.get("vision_description") or "").lower()
+    assert "rome" in blob or "hotel" in blob or "eden" in blob
+    assert "i'm not a robot" not in blob
+
+
+def test_speak_web_job_never_speaks_captcha():
+    """Do not speak I'm not a robot / unusual traffic / IP as the answer."""
+    from app.jarvis.voice_ask import _speak_looked, _speak_web_job
+
+    typed = dict(GOOGLE_SORRY)
+    typed["_typed_query"] = web_search_query(LIVE_WEATHER)
+    tools = ["see_screen", "click", "type", "keys"]
+    body = _speak_web_job(LIVE_WEATHER, typed, tools, opened=False)
+    low = body["reply"].lower()
+    assert "i'm not a robot" not in low
+    assert "not a robot" not in low
+    assert "unusual traffic" not in low
+    assert "146.148" not in low
+    assert "captcha" not in low
+    assert "i typed the search" not in low
+    via = _speak_looked(typed, tools, opened=False, asked=LIVE_WEATHER)
+    via_low = via["reply"].lower()
+    assert "i'm not a robot" not in via_low
+    assert "unusual traffic" not in via_low
+    assert "146.148" not in via_low
+    shown = dict(DDG_WEATHER)
+    shown["_typed_query"] = web_search_query(LIVE_WEATHER)
+    after = _speak_web_job(LIVE_WEATHER, shown, tools, opened=False)
+    after_low = after["reply"].lower()
+    assert "amsterdam" in after_low or "weather" in after_low or "degrees" in after_low
+    assert "robot" not in after_low
+
+
+def test_annotate_see_screen_captcha_does_not_speak():
+    from app.jarvis.tools import annotate_see_screen
+
+    looked = annotate_see_screen(dict(GOOGLE_SORRY), LIVE_WEATHER)
+    assert looked.get("speak_now") is False
+    assert looked.get("next_must") == ["click", "type", "keys"]
+    hint = str(looked.get("hint") or "").lower()
+    assert "captcha" in hint or "duckduckgo" in hint or "bing" in hint or "new tab" in hint
+    assert "robot" in hint or "duckduckgo" in hint or "bing" in hint
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_sorry_after_type_look_speed_off(monkeypatch, tmp_path):
+    """look_speed=off still new-tabs to ddg/bing after a sorry look. Hello stays fast."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import ask_abort_ms, run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+    assert ask_abort_ms("hello") == 12_000
+    reset_last_look()
+    remember_last_look(dict(GOOGLE_SORRY))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(GOOGLE_SORRY),
+        dict(GOOGLE_SORRY),
+        dict(NEW_TAB_CHROME),
+        dict(DDG_WEATHER),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert typed
+    assert any(
+        h in t.lower()
+        for t in typed
+        for h in ("duckduckgo.com", "bing.com", "weather.com", "accuweather")
+    ), typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
+    assert SEARCH_BOX_CLICK not in clicks
+    low = body["reply"].lower()
+    assert "i'm not a robot" not in low
+    assert "unusual traffic" not in low
+    assert "146.148" not in low
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    reset_last_look()
