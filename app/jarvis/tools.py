@@ -1276,7 +1276,7 @@ def annotate_see_screen(looked: dict[str, Any], goal: str) -> dict[str, Any]:
             out["speak_now"] = False
             out["next_must"] = ["click", "type", "keys"]
             out["hint"] = (
-                "Captcha / unusual traffic. New tab, type this ask on "
+                "Captcha / unusual traffic. Focus New Tab, type this ask on "
                 "DuckDuckGo or Bing. Never click I'm not a robot."
             )
         elif leftover:

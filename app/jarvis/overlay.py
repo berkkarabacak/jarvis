@@ -5,8 +5,9 @@ Genius sign-in modal, or Chromium --no-sandbox infobar. After every look,
 click a dismiss control (X, No thanks, Cancel, Reject, Not now) and look
 again. Never Sign in, never Restore pages unless they asked to sign in,
 never buy / pay / checkout. A sorry / captcha / I'm-not-a-robot look is
-not the answer — new tab, type THIS ask on DuckDuckGo, Bing, or a weather
-site. Never click I'm not a robot.
+not the answer — Ctrl+T once, click until New Tab is focused, then type
+THIS ask on DuckDuckGo, Bing, or a weather site. Never type into the
+sorry tab. Never click I'm not a robot.
 
 Uses look / click / type only. Not Playwright. Not Selenium.
 """
@@ -46,6 +47,9 @@ NEW_TAB_FOCUS_CLICKS = ((560, 16), (720, 16), (880, 16))
 WEB_LOOK_PAUSE_S = 2.0
 # After this many Untitled/blank looks, type the query in the omnibox.
 BLANK_LOOKS_BEFORE_OMNIBOX = 3
+# First captcha / New Tab focus miss: keep clicking at least this long.
+# look_speed=off does not skip. Tests skip the wall clock.
+CAPTCHA_FOCUS_MIN_S = 30.0
 # jarvis-computer Xvfb is 1280x720. y≥560 is the footer band.
 _FOOTER_Y = 560
 
@@ -684,6 +688,7 @@ def look_is_focused_new_tab(looked: dict[str, Any] | None) -> bool:
     Vision of leftover shop tabs plus a New Tab on the right is not enough —
     the focused title must leave the leftover host. HTTP 403 is never a new tab.
     chrome://extensions / settings / Thunar are never a new tab.
+    A sorry / captcha look is never a new tab.
     """
     if (
         look_is_http_error(looked)
@@ -702,6 +707,17 @@ def look_is_focused_new_tab(looked: dict[str, Any] | None) -> bool:
     except Exception:
         pass
     return bool(re.search(r"^(new tab|untitled|about:blank)\b", title, re.I))
+
+
+def look_has_unfocused_new_tab(looked: dict[str, Any] | None) -> bool:
+    """True when a blank New Tab / Untitled sits unused and is not focused.
+
+    leftover sorry / Extensions plus a New Tab on the strip is this — click
+    that tab, do not Ctrl+T again, do not type into the focused leftover.
+    """
+    if look_is_focused_new_tab(looked):
+        return False
+    return bool(re.search(r"\b(?:new tab|untitled)\b", look_blob(looked), re.I))
 
 
 def _topic_from(blob: str, table: tuple[tuple[str, re.Pattern[str]], ...]) -> str:
@@ -975,11 +991,17 @@ def _focus_new_tab(
             return nxt
         current = nxt
     current["_opened_new_tab"] = True
+    opened = bool(already_opened or current.get("_opened_new_tab"))
     for xy in NEW_TAB_FOCUS_CLICKS:
         if look_is_focused_new_tab(current):
             return current
-        if not look_is_leftover_for_ask(current, goal) and not look_is_http_error(
-            current
+        stuck_on_wrong = (
+            look_is_leftover_for_ask(current, goal)
+            or look_is_http_error(current)
+            or look_is_captcha(current)
+        )
+        if not stuck_on_wrong and not (
+            opened and look_is_loading_or_blank(current)
         ):
             return current
         click(x=xy[0], y=xy[1])
@@ -1000,8 +1022,13 @@ def _type_new_tab_or_omnibox(
     keys: Callable[..., dict[str, Any]],
     look_again: Callable[[], dict[str, Any]],
     already_opened: bool = False,
+    require_new_tab: bool = False,
 ) -> tuple[dict[str, Any], bool]:
-    """Leftover tab: one Ctrl+T, focus New Tab, then omnibox-type THIS ask."""
+    """Leftover tab: one Ctrl+T, focus New Tab, then omnibox-type THIS ask.
+
+    require_new_tab (captcha / sorry): never type until the title is New Tab
+    / Untitled. Typing into the leftover sorry omnibox is a fail.
+    """
     current = _focus_new_tab(
         current,
         goal=goal,
@@ -1010,10 +1037,13 @@ def _type_new_tab_or_omnibox(
         look_again=look_again,
         already_opened=already_opened,
     )
+    if require_new_tab and not look_is_focused_new_tab(current):
+        return current, False
     if look_is_leftover_for_ask(current, goal) and not look_is_focused_new_tab(
         current
     ):
-        # Do not type into leftover 403 / shop. Ctrl+T without focus is a fail.
+        # Do not type into leftover 403 / shop / sorry. Ctrl+T without focus
+        # is a fail.
         return current, False
     return _type_query_at(
         OMNIBOX_CLICK,
@@ -1045,11 +1075,14 @@ def continue_web_search(
     A blank / Untitled / loading look is not done — look again.     A leftover
     tab from a previous job is not done — Ctrl+T once, focus New Tab, then
     omnibox-type THIS ask, then look again. A sorry / captcha look after
-    type is not success — new tab, type THIS ask on DuckDuckGo, Bing, or
-    a weather site. Never click I'm not a robot. After a few still-blank
-    looks, type the query into the Chromium omnibox. Never return without
-    type when a query is needed. A homepage that never says "search box"
-    still types. Footer looks Home first — never (640, 320) on copyright.
+    type is not success — Ctrl+T once, click until New Tab is focused,
+    then type THIS ask on DuckDuckGo, Bing, or a weather site. Never type
+    into the leftover sorry tab. Never click I'm not a robot. A first
+    failed focus is not done — keep clicking; do not give up in under
+    ~30s. After a few still-blank looks, type the query into the Chromium
+    omnibox. Never return without type when a query is needed. A homepage
+    that never says "search box" still types. Footer looks Home first —
+    never (640, 320) on copyright.
     """
     query = web_search_query(goal)
     current = dict(looked or {})
@@ -1061,6 +1094,7 @@ def continue_web_search(
     typed_query = bool(current.get("_typed_query"))
     opened_new_tab = bool(current.get("_opened_new_tab"))
     captcha_retried = bool(current.get("_captcha_retried"))
+    captcha_focus_started: float | None = None
     blank_looks = 0
     if deadline is not None:
         limit = 64
@@ -1081,9 +1115,18 @@ def continue_web_search(
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
         if look_is_captcha(current):
+            if captcha_focus_started is None:
+                captcha_focus_started = time.monotonic()
             if captcha_retried:
-                return _mark(current)
-            current, typed_query = _type_new_tab_or_omnibox(
+                # Alt URL was typed on a focused New Tab; still sorry — wait,
+                # do not speak stuck while a blank New Tab sits unused.
+                if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
+                    return _mark(current)
+                _pause_for_page_load()
+                current = _mark(look_again() or current)
+                continue
+            already = opened_new_tab or look_has_unfocused_new_tab(current)
+            current, alt_typed = _type_new_tab_or_omnibox(
                 alt_web_search_typed(query, goal),
                 current,
                 goal=goal,
@@ -1091,10 +1134,25 @@ def continue_web_search(
                 type_text=type_text,
                 keys=keys,
                 look_again=look_again,
-                already_opened=False,
+                already_opened=already,
+                require_new_tab=True,
             )
-            captcha_retried = True
             opened_new_tab = True
+            if alt_typed:
+                typed_query = True
+                captcha_retried = True
+                continue
+            # First failed focus: click again. Do not type into sorry.
+            # Do not give up in under ~30s. look_speed=off does not skip.
+            waited = time.monotonic() - captcha_focus_started
+            min_s = 0.0 if _in_pytest() else CAPTCHA_FOCUS_MIN_S
+            if (
+                not _in_pytest()
+                and _deadline_passed(deadline)
+                and waited >= min_s
+            ):
+                return _mark(current)
+            _pause_for_page_load()
             continue
         if look_is_leftover_for_ask(current, goal) and not typed_query:
             current, typed_query = _type_new_tab_or_omnibox(
