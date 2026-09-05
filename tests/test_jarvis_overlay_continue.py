@@ -14,6 +14,7 @@ from app.jarvis.overlay import (
     SEARCH_BOX_CLICK,
     SIGNIN_DISMISS_CLICK,
     WEB_LOOK_PAUSE_S,
+    CAPTCHA_FOCUS_MIN_S,
     alt_web_search_typed,
     continue_web_search,
     dismiss_blocking_overlays,
@@ -21,6 +22,7 @@ from app.jarvis.overlay import (
     look_is_captcha,
     look_is_empty_desktop,
     look_is_focused_new_tab,
+    look_has_unfocused_new_tab,
     look_is_footer,
     look_is_http_error,
     look_is_leftover_for_ask,
@@ -2054,6 +2056,16 @@ GOOGLE_SORRY = {
     ),
 }
 
+GOOGLE_SORRY_UNUSED_TAB = {
+    "ok": True,
+    "title": GOOGLE_SORRY["title"],
+    "url": GOOGLE_SORRY["url"],
+    "vision_description": (
+        GOOGLE_SORRY["vision_description"]
+        + " A blank New Tab is not focused. Extensions tab still there."
+    ),
+}
+
 GOOGLE_SORRY_HOTEL = {
     "ok": True,
     "title": "https://www.google.com/search?q=hotel+in+central+Rome",
@@ -2108,9 +2120,15 @@ def test_sorry_captcha_look_is_not_this_ask():
     assert overlay_dismiss_plan(GOOGLE_SORRY, goal=LIVE_WEATHER) is None
     assert overlay_kind(GOOGLE_SORRY, goal=LIVE_WEATHER) is None
     assert look_is_focused_new_tab(GOOGLE_SORRY) is False
+    assert look_has_unfocused_new_tab(GOOGLE_SORRY) is False
+    assert look_has_unfocused_new_tab(GOOGLE_SORRY_UNUSED_TAB) is True
+    assert look_is_focused_new_tab(GOOGLE_SORRY_UNUSED_TAB) is False
+    assert look_is_captcha(GOOGLE_SORRY_UNUSED_TAB) is True
+    assert look_has_unfocused_new_tab(NEW_TAB_CHROME) is False
     assert look_is_web_page(GOOGLE_SORRY) is False
     assert look_is_captcha(WEATHER_AFTER_TYPE) is False
     assert look_is_captcha(LEFTOVER_EXTENSIONS) is False
+    assert CAPTCHA_FOCUS_MIN_S >= 30.0
     alt = alt_web_search_typed(web_search_query(LIVE_WEATHER), LIVE_WEATHER)
     assert "weather" in alt.lower() or "amsterdam" in alt.lower()
     assert any(h in alt.lower() for h in ("duckduckgo.com", "bing.com", "weather."))
@@ -2259,6 +2277,178 @@ async def test_voice_ask_sorry_after_type_look_speed_off(monkeypatch, tmp_path):
     assert all(_typed_is_user_query(t) for t in typed)
     assert SEARCH_BOX_CLICK not in clicks
     low = body["reply"].lower()
+    assert "i'm not a robot" not in low
+    assert "unusual traffic" not in low
+    assert "146.148" not in low
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+    reset_last_look()
+
+
+def _assert_alt_weather_typed(typed: list[str]) -> None:
+    assert typed, "must omnibox-type a clean alt search URL after New Tab is focused"
+    assert any(
+        h in t.lower()
+        for t in typed
+        for h in ("duckduckgo.com", "bing.com", "weather.com", "accuweather")
+    ), typed
+    assert any("weather" in t.lower() or "amsterdam" in t.lower() for t in typed)
+    assert all(_typed_is_user_query(t) for t in typed)
+    assert all("google.com/search" not in t.lower() for t in typed)
+    assert all("look" not in t.lower() for t in typed)
+    assert all("click" not in t.lower() for t in typed)
+    assert all("open chrome" not in t.lower() for t in typed)
+
+
+def test_continue_web_search_sorry_unused_new_tab_focuses_then_types():
+    """Leftover sorry + blank New Tab: focus New Tab, type ddg, never stuck."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    start = dict(GOOGLE_SORRY_UNUSED_TAB)
+    start["_opened_new_tab"] = True
+    out = _run_continue(
+        [
+            start,
+            dict(GOOGLE_SORRY_UNUSED_TAB),
+            dict(GOOGLE_SORRY_UNUSED_TAB),
+            dict(GOOGLE_SORRY_UNUSED_TAB),
+            dict(NEW_TAB_CHROME),
+            dict(DDG_WEATHER),
+        ],
+        LIVE_WEATHER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert "ctrl+t" not in {k.lower() for k in keys}, (
+        "New Tab already unused — click it, do not Ctrl+T again"
+    )
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks), (
+        "must click until New Tab is focused, same path as leftover Extensions"
+    )
+    assert OMNIBOX_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
+    _assert_alt_weather_typed(typed)
+    blob = str(out.get("vision_description") or "").lower()
+    assert "amsterdam" in blob or "weather" in blob or "degrees" in blob
+    assert "i'm not a robot" not in blob
+    assert look_is_captcha(out) is False
+    from app.jarvis.voice_ask import _speak_web_job
+
+    spoken = _speak_web_job(
+        LIVE_WEATHER,
+        out,
+        ["see_screen", "click", "type", "keys"],
+        opened=False,
+    )
+    low = spoken["reply"].lower()
+    assert "could not finish" not in low
+    assert "i'm not a robot" not in low
+    assert "amsterdam" in low or "weather" in low or "degrees" in low
+
+
+def test_continue_web_search_sorry_first_focus_fail_retries_then_types():
+    """First New Tab focus miss is not done — click again, then type ddg."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    out = _run_continue(
+        [
+            dict(GOOGLE_SORRY),
+            dict(GOOGLE_SORRY),
+            dict(GOOGLE_SORRY),
+            dict(GOOGLE_SORRY),
+            dict(GOOGLE_SORRY),
+            dict(NEW_TAB_CHROME),
+            dict(DDG_WEATHER),
+        ],
+        LIVE_WEATHER,
+        clicks,
+        typed,
+        keys,
+    )
+    assert keys.count("ctrl+t") == 1, "Ctrl+T once — then click the unused New Tab"
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    _assert_alt_weather_typed(typed)
+    assert look_is_captcha(out) is False
+    from app.jarvis.voice_ask import _speak_web_job
+
+    spoken = _speak_web_job(
+        LIVE_WEATHER,
+        out,
+        ["see_screen", "click", "type", "keys"],
+        opened=False,
+    )
+    assert "could not finish" not in spoken["reply"].lower()
+
+
+def test_speak_web_job_unused_new_tab_is_not_success():
+    """Speaking stuck while a blank New Tab sits unused is a fail — after type."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    unused = dict(GOOGLE_SORRY_UNUSED_TAB)
+    unused["_opened_new_tab"] = True
+    unused["_typed_query"] = web_search_query(LIVE_WEATHER)
+    body = _speak_web_job(
+        LIVE_WEATHER,
+        unused,
+        ["see_screen", "keys", "click", "type"],
+        opened=False,
+    )
+    low = body["reply"].lower()
+    assert "i'm not a robot" not in low
+    assert "unusual traffic" not in low
+    assert "146.148" not in low
+    assert "i typed the search" not in low
+    shown = dict(DDG_WEATHER)
+    shown["_typed_query"] = web_search_query(LIVE_WEATHER)
+    after = _speak_web_job(
+        LIVE_WEATHER, shown, ["see_screen", "click", "type", "keys"], opened=False
+    )
+    after_low = after["reply"].lower()
+    assert "amsterdam" in after_low or "weather" in after_low or "degrees" in after_low
+    assert "could not finish" not in after_low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_sorry_unused_new_tab_look_speed_off(monkeypatch, tmp_path):
+    """look_speed=off still focuses unused New Tab, types ddg. Hello stays fast."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import ask_abort_ms, run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+    assert ask_abort_ms("hello") == 12_000
+    reset_last_look()
+    remember_last_look(dict(GOOGLE_SORRY_UNUSED_TAB))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(GOOGLE_SORRY_UNUSED_TAB),
+        dict(GOOGLE_SORRY_UNUSED_TAB),
+        dict(GOOGLE_SORRY_UNUSED_TAB),
+        dict(GOOGLE_SORRY_UNUSED_TAB),
+        dict(NEW_TAB_CHROME),
+        dict(DDG_WEATHER),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_WEATHER)
+    assert "run_app" not in body["tools_used"]
+    assert "click" in body["tools_used"]
+    assert "type" in body["tools_used"]
+    assert "keys" in body["tools_used"]
+    assert any(xy in NEW_TAB_FOCUS_CLICKS for xy in clicks)
+    assert OMNIBOX_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
+    _assert_alt_weather_typed(typed)
+    low = body["reply"].lower()
+    assert "could not finish" not in low
     assert "i'm not a robot" not in low
     assert "unusual traffic" not in low
     assert "146.148" not in low
