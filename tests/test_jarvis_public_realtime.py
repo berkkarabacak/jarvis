@@ -315,6 +315,10 @@ def test_mint_409_falls_back_to_browser_speech_and_ask():
     assert "OPENAI_API_KEY" not in connect
     assert "required" not in connect.lower()
     assert "startListen()" in start_browser
+    assert "stopTracks()" in start_browser
+    assert start_browser.index("stopTracks()") < start_browser.index("startListen()")
+    assert "stopTracks()" in connect
+    assert connect.index("stopTracks()") < connect.index("showNote(true)")
     assert "/api/jarvis/ask" in page
     assert "/api/jarvis/speak" in page
     assert "rec.continuous = true" in page
@@ -373,6 +377,7 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     let mintRealtime = true;
     let listening = false;
     function prefetchSession() { events.push("prefetchSession"); }
+    function requestMicNow() { events.push("requestMicNow"); }
     function startListen() { listening = true; events.push("startListen"); }
     function paintMic() { events.push("paintMic"); }
     function startBrowserTalk() { mintRealtime = false; events.push("startBrowserTalk"); }
@@ -384,23 +389,26 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     }
     async function startTalk() {
       prefetchSession();
+      requestMicNow();
       const upgrade = mintRealtime;
       if (upgrade) void connectRealtime();
-      startListen();
+      if (!upgrade) startListen();
       paintMic();
     }
     const p = startTalk();
-    if (!listening) process.exit(2);
+    if (listening) process.exit(2);
     if (events[0] !== "prefetchSession") process.exit(3);
     if (events.includes("mint:done")) process.exit(4);
     if (events.includes("startBrowserTalk")) process.exit(5);
     if (!events.includes("connectRealtime")) process.exit(6);
+    if (!events.includes("requestMicNow")) process.exit(11);
+    if (events.includes("startListen")) process.exit(12);
     if (events.includes("speakFirstHello")) process.exit(10);
     Promise.resolve(p).then(() => {
       if (events.includes("mint:done")) process.exit(7);
-      if (!listening) process.exit(8);
+      if (listening) process.exit(8);
       if (mintRealtime !== true) process.exit(9);
-      process.stdout.write(JSON.stringify({ events: events, mintRealtime: mintRealtime }));
+      process.stdout.write(JSON.stringify({ events: events, mintRealtime: mintRealtime, listening: listening }));
     });
     """
     result = subprocess.run(
@@ -412,12 +420,14 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert result.returncode == 0, result.stdout + result.stderr
     runtime = json.loads(result.stdout)
     assert runtime["events"][0] == "prefetchSession"
-    assert runtime["events"].index("prefetchSession") < runtime["events"].index("connectRealtime")
-    assert runtime["events"].index("connectRealtime") < runtime["events"].index("startListen")
+    assert runtime["events"].index("prefetchSession") < runtime["events"].index("requestMicNow")
+    assert runtime["events"].index("requestMicNow") < runtime["events"].index("connectRealtime")
     assert runtime["events"].index("connectRealtime") < runtime["events"].index("fetch:session")
+    assert "startListen" not in runtime["events"]
     assert "mint:done" not in runtime["events"]
     assert "startBrowserTalk" not in runtime["events"]
     assert "speakFirstHello" not in runtime["events"]
+    assert runtime["listening"] is False
     assert runtime["mintRealtime"] is True
 
 
@@ -693,7 +703,12 @@ def test_first_orb_tap_requests_mic_before_session_is_live():
     assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
     assert "await " not in start_talk
     assert "getUserMedia" in request_mic
+    assert "if (!micRequest)" in request_mic
+    assert "t.stop()" in request_mic
     assert "/api/jarvis/realtime/session" not in request_mic
+    listen = _fn(page, "startListen")
+    assert listen.index("listening = true") < listen.rindex("paintMic();")
+    assert "stopTracks()" in _fn(page, "startBrowserTalk")
     assert "st.state === \"prompt\"" in allowed
     assert "return false" in allowed
     assert "muteMe" not in _fn(page, "ask")
