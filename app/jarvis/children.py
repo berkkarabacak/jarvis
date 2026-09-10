@@ -17,6 +17,11 @@ Short-lived Jarvis loops the parent can spawn for one user job. Locked rules:
 This is not a second agent runtime. Children reuse ``JarvisLocalAgent`` and
 ``ToolGateway``. Prime RPC, inbound Slack/GitHub, and infinite swarms are
 out of scope (ORCH-342 owns the two-artifact bench task).
+
+PR1 (issue #26): when ``JARVIS_AGENTS_API`` is on and an OpenAI key is
+present, research/coding-ish children may run on the Agents API harness
+instead. Tool contracts, taint, gateway, and journal stay the same.
+Default remains the local OpenRouter loop.
 """
 
 from __future__ import annotations
@@ -1046,6 +1051,11 @@ class ChildRecord:
     depth: int = 1
     parent_child_id: str | None = None
     desktop_backend: str = ""
+    backend: str = "local"  # local | agents (PR1 JARVIS_AGENTS_API)
+    agents_session_id: str | None = None
+    agents_subagent_ids: list[str] = field(default_factory=list)
+    agents_idle: bool = False
+    agents_inbox_sent: int = 0
     thread: threading.Thread | None = field(default=None, repr=False)
     done: threading.Event = field(default_factory=threading.Event, repr=False)
     stop: threading.Event = field(default_factory=threading.Event, repr=False)
@@ -1138,12 +1148,18 @@ class JobState:
 class ChildSupervisor:
     """Per-process registry: pay-to-spawn cap, role-gated tree, audit, journal."""
 
-    def __init__(self, runner: ChildRunner | None = None) -> None:
+    def __init__(
+        self,
+        runner: ChildRunner | None = None,
+        *,
+        agents_client: Any = None,
+    ) -> None:
         self._lock = threading.RLock()
         self._jobs: dict[str, JobState] = {}
         self._open_jobs: dict[str, str] = {}
         self._by_id: dict[str, ChildRecord] = {}
         self.runner: ChildRunner = runner or default_child_runner
+        self.agents_client = agents_client
         self.audit_events: list[dict[str, Any]] = []
         self.solo_override: float | None = None
         self.split_override: float | None = None
@@ -1581,6 +1597,12 @@ class ChildSupervisor:
                     goal=job.goal or goal_text,
                     inherit=current_desktop_backend(),
                 )
+            from app.jarvis.agents_child import (
+                CHILD_BACKEND_AGENTS,
+                CHILD_BACKEND_LOCAL,
+                should_use_agents_child_runner,
+            )
+
             child = ChildRecord(
                 child_id=f"c_{uuid.uuid4().hex[:8]}",
                 parent_job_id=job_id,
@@ -1596,6 +1618,11 @@ class ChildSupervisor:
                 depth=child_depth,
                 parent_child_id=parent_child_id,
                 desktop_backend=job.desktop_backend,
+                backend=(
+                    CHILD_BACKEND_AGENTS
+                    if should_use_agents_child_runner(goal_text)
+                    else CHILD_BACKEND_LOCAL
+                ),
             )
             job.children.append(child)
             known = estimate_child_expected_usd(usd, model=choice.model)
@@ -1649,6 +1676,13 @@ class ChildSupervisor:
             child.stop_reason = reason
         if child.finished_at is None:
             child.finished_at = time.monotonic()
+        if child.agents_session_id:
+            try:
+                from app.jarvis.agents_child import cancel_agents_child
+
+                cancel_agents_child(child, supervisor=self)
+            except Exception:
+                log.debug("agents cancel skipped", exc_info=True)
         thread = child.thread
         if (
             thread is not None
@@ -1744,6 +1778,13 @@ class ChildSupervisor:
         if child.status in TERMINAL_STATUSES:
             return err(CHILD_NOT_RUNNING)
         child.inbox.append(body)
+        if child.agents_session_id:
+            try:
+                from app.jarvis.agents_child import deliver_agents_message
+
+                deliver_agents_message(child, body, supervisor=self)
+            except Exception:
+                log.debug("agents message left in inbox", exc_info=True)
         self.audit("message", child, text=body)
         return {"ok": True, "id": child_id, "delivered": True}
 
@@ -1808,19 +1849,37 @@ def get_supervisor() -> ChildSupervisor:
         return _supervisor
 
 
-def reset_supervisor_for_tests(runner: ChildRunner | None = None) -> ChildSupervisor:
+def reset_supervisor_for_tests(
+    runner: ChildRunner | None = None,
+    *,
+    agents_client: Any = None,
+) -> ChildSupervisor:
     global _supervisor
     with _supervisor_lock:
-        _supervisor = ChildSupervisor(runner=runner)
+        _supervisor = ChildSupervisor(runner=runner, agents_client=agents_client)
         return _supervisor
 
 
 def default_child_runner(record: ChildRecord, supervisor: ChildSupervisor) -> None:
+    """Dispatch to Agents API when flagged; otherwise the local OpenRouter loop."""
+    from app.jarvis.agents_child import (
+        agents_child_runner,
+        should_use_agents_child_runner,
+    )
+
+    if should_use_agents_child_runner(record.goal):
+        agents_child_runner(record, supervisor)
+        return
+    local_child_runner(record, supervisor)
+
+
+def local_child_runner(record: ChildRecord, supervisor: ChildSupervisor) -> None:
     """Short-lived JarvisLocalAgent loop with seconds/$ caps. No spawn tools.
 
     Cheap failure escalates once via the router; spend still counts against
     the same budgets (ORCH-338).
     """
+    record.backend = "local"
     key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
     if not key:
         record.status = "failed"

@@ -14,8 +14,15 @@ force a fork-join in one call and hide mid-flight `message_child`, so the parent
 loop stays in control with spawn / message / wait.
 
 Related: `docs/jarvis.md`, `docs/jarvis-permissions.md`, `docs/jarvis-index.md`,
-`docs/jarvis-company.md`, `app/jarvis/taint.py`, `app/jarvis/model_router.py`,
-`app/jarvis/daily_journal.py`.
+`docs/jarvis-company.md`, `docs/jarvis-agents-api.md`, `app/jarvis/taint.py`,
+`app/jarvis/model_router.py`, `app/jarvis/daily_journal.py`.
+
+**Agents API (PR1, issue #26):** `JARVIS_AGENTS_API` (default **off**) may
+swap the child **harness** to OpenAI Agents API for research/coding-ish
+goals when an OpenAI key is present. Tool names, taint (`taint_source:
+"child"`), gateway confirm, and journal stay as in this file. Desktop /
+function-tool children stay on `JarvisLocalAgent`. See
+[jarvis-agents-api.md](jarvis-agents-api.md). Not a public Talk default.
 
 ## Locked rules
 
@@ -205,6 +212,8 @@ A child is a short-lived `JarvisLocalAgent` loop (`app/jarvis/agent.py`) with
 the same L0–L2 (and confirm-gated L3) tools as the parent. Workers omit the
 child-API tools. Managers keep `spawn_child` / `message_child` / `wait_child`
 while `remaining_depth > 0`. Prime and parent-memory writes stay omitted.
+When `JARVIS_AGENTS_API` is on (default off), a research/coding child may
+instead run on the Agents API harness; see [jarvis-agents-api.md](jarvis-agents-api.md).
 
 - Tool list: parent `TOOL_SPECS` plus discovered `mcp.*`. Workers **omit**
   `spawn_child` / `message_child` / `wait_child`. Managers keep those three
