@@ -27,14 +27,24 @@ DEFAULT_TTL_SEC = 15 * 60
 DEFAULT_TIMEOUT_SEC = 3.0
 DEFAULT_TOP_N = 20
 
+# Cost-efficient V4.1 Flash — verified live on OpenRouter 2026-09-10
+# (id deepseek/deepseek-v4.1-flash, canonical deepseek/deepseek-v4.1-flash-20260910).
+# Not on the 2026-08-21 weekly token board; always merged into the helper
+# catalog so Settings and the cheap/fast ladder can pick it ahead of older
+# V4 Flash rows. Do not treat rank 0 as that week's usage #1.
+PREFERRED_FLASH_ID = "deepseek/deepseek-v4.1-flash"
+PREFERRED_FLASH_NAME = "DeepSeek V4.1 Flash"
+
 # OpenRouter "This Week" most-used, resolved against GET /api/v1/models on
 # 2026-08-21. Token order from the public weekly board. Do not invent slugs
 # (e.g. Flash 0423 is deepseek/deepseek-v4-flash).
 # deepseek/deepseek-v4-pro and deepseek/deepseek-v4-pro-0813 are different
 # live ids — not aliases. GLM 5.3 is not on OpenRouter — do not add z-ai/glm-5.3.
 # If a later live fetch returns fewer than 20 catalog ids, pad from these
-# known rows only.
+# known rows only. V4.1 Flash is prepended (rank 0) and kept even when the
+# live weekly board is already full.
 SNAPSHOT_LEADERS: tuple[tuple[str, int, float, float, str], ...] = (
+    (PREFERRED_FLASH_ID, 0, 0.00000015, 0.0000006, PREFERRED_FLASH_NAME),
     ("deepseek/deepseek-v4-flash-0731", 1, 0.00000008, 0.00000018, "DeepSeek V4 Flash 0731"),
     ("tencent/hy3", 2, 0.000000132, 0.000000528, "Hy3"),
     ("xiaomi/mimo-v2.5", 3, 0.00000014, 0.00000028, "MiMo-V2.5"),
@@ -205,35 +215,54 @@ def plain_helper_name(name: str, model_id: str) -> str:
     return mid.split("/")[-1] if mid else ""
 
 
+def catalog_cap() -> int:
+    """Settings / pad size: weekly top-N plus always-on catalog extras."""
+    return max(DEFAULT_TOP_N, len(SNAPSHOT_LEADERS))
+
+
 def pad_with_snapshot(
     models: tuple[LeaderModel, ...] | list[LeaderModel],
     *,
-    top_n: int = DEFAULT_TOP_N,
+    top_n: int | None = None,
 ) -> tuple[LeaderModel, ...]:
-    """Keep live rows, then known SNAPSHOT_LEADERS only. Never invent slugs."""
+    """Keep live rows, then known SNAPSHOT_LEADERS only. Never invent slugs.
+
+    Preferred Flash is seeded first so a full weekly board cannot drop it.
+    """
+    cap = catalog_cap() if top_n is None else top_n
     out: list[LeaderModel] = []
     seen: set[str] = set()
-    for m in models:
+
+    def _take(m: LeaderModel, *, rank: int | None = None) -> bool:
         if not m.model or m.model in seen or is_realtime_voice_model(m.model):
-            continue
-        seen.add(m.model)
-        out.append(m)
-        if len(out) >= top_n:
-            return tuple(out)
-    for m in snapshot_leaders():
-        if m.model in seen or is_realtime_voice_model(m.model):
-            continue
+            return False
+        if len(out) >= cap and m.model != PREFERRED_FLASH_ID:
+            return False
         seen.add(m.model)
         out.append(
             LeaderModel(
                 model=m.model,
-                rank=len(out) + 1,
+                rank=m.rank if rank is None else rank,
                 prompt_price=m.prompt_price,
                 completion_price=m.completion_price,
                 name=m.name,
             )
         )
-        if len(out) >= top_n:
+        return True
+
+    for preferred in snapshot_leaders():
+        if preferred.model == PREFERRED_FLASH_ID:
+            _take(preferred)
+            break
+    for m in models:
+        if not m.model or m.model in seen or is_realtime_voice_model(m.model):
+            continue
+        if len(out) >= cap:
+            break
+        seen.add(m.model)
+        out.append(m)
+    for m in snapshot_leaders():
+        if _take(m, rank=len(out) + 1) and len(out) >= cap:
             break
     return tuple(out)
 
@@ -243,7 +272,7 @@ def helper_models_public(result: LeadersResult | None = None) -> list[dict[str, 
     board = result if result is not None else load_leaders()
     models = pad_with_snapshot(board.models)
     out: list[dict[str, Any]] = []
-    for m in models[:DEFAULT_TOP_N]:
+    for m in models[: catalog_cap()]:
         if is_realtime_voice_model(m.model):
             continue
         out.append(
@@ -303,7 +332,14 @@ def cheap_catalog_ids(
     free = [m for m in models if m.is_free]
     paid = [m for m in models if not m.is_free]
     free.sort(key=lambda m: (m.model,))
-    paid.sort(key=lambda m: (m.unit_price, m.rank, m.model))
+    paid.sort(
+        key=lambda m: (
+            0 if m.model == PREFERRED_FLASH_ID else 1,
+            m.unit_price,
+            m.rank,
+            m.model,
+        )
+    )
     if allow_free:
         ordered = ([free[0]] if free else []) + paid + free[1:]
     else:
@@ -493,6 +529,28 @@ def parse_weekly_rankings(
     return tuple(out), as_of
 
 
+def _ensure_preferred_helpers(
+    models: tuple[LeaderModel, ...] | list[LeaderModel],
+    catalog: dict[str, dict[str, Any]],
+) -> tuple[LeaderModel, ...]:
+    """Keep weekly rows; add preferred helpers that are live in /models."""
+    out = list(models)
+    seen = {m.model for m in out}
+    snap = {m.model: m for m in snapshot_leaders()}
+    for mid in (PREFERRED_FLASH_ID,):
+        if mid in seen or mid not in catalog:
+            continue
+        item = catalog[mid]
+        if not _supports_tools(item):
+            continue
+        out.insert(
+            0,
+            _leader_from_catalog(mid, 0, item, fallback=snap.get(mid)),
+        )
+        seen.add(mid)
+    return tuple(out)
+
+
 def fetch_live_leaders(
     *,
     getter: JsonGetter | None = None,
@@ -526,6 +584,7 @@ def fetch_live_leaders(
     models, as_of = parse_weekly_rankings(rank_payload, catalog, top_n=top_n)
     if not models:
         raise RuntimeError("OpenRouter weekly rankings mapped to no catalog ids")
+    models = _ensure_preferred_helpers(models, catalog)
     return LeadersResult(
         models=models,
         source="live",

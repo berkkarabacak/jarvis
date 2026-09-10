@@ -371,6 +371,8 @@ def test_model_suggestions_are_current_catalog_ids(jarvis_env):
 
     view = settings_store.public_view()
     suggestions = view["model_suggestions"]
+    assert "deepseek/deepseek-v4.1-flash" in suggestions
+    assert suggestions[0] == "deepseek/deepseek-v4.1-flash"
     assert "deepseek/deepseek-v4-pro-0813" in suggestions
     assert "z-ai/glm-5.2" in suggestions
     assert "z-ai/glm-5.3" not in suggestions

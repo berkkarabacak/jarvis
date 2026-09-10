@@ -41,11 +41,12 @@ STATE_FILENAME = "jarvis_model_route.json"
 BENCH_LATEST = Path("benchmarks") / "jarvis-tetris-latest.json"
 
 # Tool-capable ladder (cheapest -> stronger). openrouter/auto omitted (weak tools).
-# Verified OpenRouter /models ids only — not gpt-4.1. Cheap first, then
-# paid high-IQ catalog models used when the live board is unavailable.
-_CHEAP_FALLBACK = "deepseek/deepseek-v4-flash-0731"
+# Verified OpenRouter /models ids only — not gpt-4.1. V4.1 Flash is the
+# everyday cheap/fast helper; older V4 Flash stays on the ladder.
+_CHEAP_FALLBACK = "deepseek/deepseek-v4.1-flash"
 _DEFAULT_LADDER: tuple[str, ...] = (
     _CHEAP_FALLBACK,
+    "deepseek/deepseek-v4-flash-0731",
     "z-ai/glm-5.2",
     "deepseek/deepseek-v4-pro-0813",
 )

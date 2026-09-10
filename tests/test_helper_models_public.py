@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.jarvis.openrouter_leaders import SNAPSHOT_MODEL_IDS, helper_models_public
+from app.jarvis.openrouter_leaders import (
+    PREFERRED_FLASH_ID,
+    PREFERRED_FLASH_NAME,
+    SNAPSHOT_MODEL_IDS,
+    catalog_cap,
+    helper_models_public,
+)
 
 PAGE = Path(__file__).resolve().parents[1] / "deploy" / "jarvis-public" / "index.html"
 SECRET = "test-secret-at-least-32-chars-long!!"
@@ -148,7 +154,7 @@ async def test_public_host_can_save_helper_without_api_key(public_client, jarvis
     assert body["ok"] is True
     assert body["model"] == helper
     assert body["model_lock"] is True
-    assert 1 <= len(body["helper_models"]) <= 20
+    assert 1 <= len(body["helper_models"]) <= catalog_cap()
     ids = [row["id"] for row in body["helper_models"]]
     assert helper in ids
     assert all("gpt-realtime" not in mid for mid in ids)
@@ -162,8 +168,9 @@ async def test_public_host_can_save_helper_without_api_key(public_client, jarvis
     assert health.status_code == 200
     sheet = health.json()
     assert sheet["model"] == helper
-    assert 1 <= len(sheet["helper_models"]) <= 20
+    assert 1 <= len(sheet["helper_models"]) <= catalog_cap()
     assert all(row["id"] in SNAPSHOT_MODEL_IDS for row in sheet["helper_models"])
+    assert PREFERRED_FLASH_ID in [row["id"] for row in sheet["helper_models"]]
     assert all("gpt-realtime" not in row["id"] for row in sheet["helper_models"])
     _assert_no_secrets(health.text)
 
@@ -192,11 +199,14 @@ async def test_loopback_can_still_change_budget(loopback_client, jarvis_env):
 def test_helper_models_payload_has_plain_names(jarvis_env, monkeypatch):
     monkeypatch.setenv("JARVIS_LEADERBOARD_LIVE", "0")
     rows = helper_models_public()
-    assert 1 <= len(rows) <= 20
+    assert 1 <= len(rows) <= catalog_cap()
     by_id = {row["id"]: row for row in rows}
     flash = by_id["deepseek/deepseek-v4-flash-0731"]
     assert flash["name"] == "DeepSeek V4 Flash 0731"
     assert flash["id"] != flash["name"]
+    v41 = by_id[PREFERRED_FLASH_ID]
+    assert v41["name"] == PREFERRED_FLASH_NAME
+    assert v41["id"] != v41["name"]
     blob = json.dumps(rows)
     assert "gpt-realtime" not in blob
     assert "sk-" not in blob

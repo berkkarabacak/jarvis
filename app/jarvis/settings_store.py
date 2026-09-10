@@ -145,6 +145,7 @@ SECRET_ENV_NAMES: tuple[str, ...] = (
 )
 
 _DEFAULT_MODEL_SUGGESTIONS: tuple[str, ...] = (
+    "deepseek/deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash-0731",
     "deepseek/deepseek-v4-pro-0813",
     "z-ai/glm-5.2",
@@ -470,7 +471,7 @@ def _env_model() -> str:
     return (
         os.environ.get("JARVIS_MODEL")
         or os.environ.get("DEFAULT_MODEL")
-        or "deepseek/deepseek-v4-flash-0731"
+        or "deepseek/deepseek-v4.1-flash"
     ).strip()
 
 
