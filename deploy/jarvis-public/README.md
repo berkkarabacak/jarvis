@@ -4,7 +4,10 @@ Source for https://aicontrolroom.nl/ (alias: https://berkkarabacak.com/jarvis/)
 
 Family page: **Jarvis**, a chat list, a box to type, a Talk control, and a small **Download**.
 
-The page is served by the Jarvis app (FastAPI) at `/`. It calls `/api/jarvis/ask` and `/api/jarvis/speak`. It is not a dead file in `/var/www/jarvis`. Old `/jarvis/` bookmarks 301 to `/`.
+The page is served by the Jarvis app (FastAPI) at `/`. Talk uses GPT-Live-1
+(`POST /api/jarvis/live/session`) when the host has an OpenAI key, else
+`/api/jarvis/ask` and `/api/jarvis/speak`. It is not a dead file in `/var/www/jarvis`.
+Old `/jarvis/` bookmarks 301 to `/`. This note does not mean a deploy happened.
 
 Download stays `/download/Jarvis-Setup.exe` (`/jarvis/download/` 301s there). No API key. No zip or Advanced link. No Play Store. No iOS.
 

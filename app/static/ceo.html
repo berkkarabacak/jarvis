@@ -1744,9 +1744,10 @@
 
   <script>
     /* Jarvis voice: OpenRouter-only is enough to talk (Web Speech + /ask +
-       neural /speak). OpenAI Realtime is an optional upgrade when health
-       says listen_mode=openai_realtime. Never mint a session just because
-       the Realtime flag is on. Never Windows SAPI. ==GRoK==
+       neural /speak). OpenAI GPT-Live-1 is the default upgrade when health
+       says listen_mode=openai_live. Emergency Realtime stays behind
+       JARVIS_VOICE=realtime (listen_mode=openai_realtime). Never mint just
+       because a flag is on. Never Windows SAPI. ==GRoK==
        UI: landscape wallpaper + empty white center circle only. */
 
     const BASE_R = 140, MAX_R = 230, W = 14, ZETA = 0.85, H = 1 / 60;
@@ -1766,7 +1767,9 @@
     let avatarReplyBuf = "";
     let listenMode = "unknown";
     let canListen = false;
+    let mintLive = false;
     let mintRealtime = false;
+    let liveSessionReady = false;
     let browserRec = null;
     let browserListenOn = false;
     let outputMuted = false;
@@ -1784,17 +1787,31 @@
         h.can_speak === true ||
         speakMode === "openrouter_tts" ||
         speakMode === "openai_tts" ||
+        speakMode === "openai_live" ||
         speakMode === "openai_realtime";
       const useBrowser =
         nextListen === "browser_speech" || speakMode === "openrouter_tts";
+      const useLive =
+        !useBrowser && (nextListen === "openai_live" || h.live === true);
       const useRealtime =
-        !useBrowser && h.realtime === true && nextListen === "openai_realtime";
+        !useBrowser && !useLive && h.realtime === true && nextListen === "openai_realtime";
+      if (useLive) {
+        return {
+          path: "openai_live",
+          listenMode: "openai_live",
+          canListen: true,
+          canSpeak: true,
+          mintLive: true,
+          mintRealtime: false,
+        };
+      }
       if (useRealtime) {
         return {
           path: "openai_realtime",
           listenMode: "openai_realtime",
           canListen: true,
           canSpeak: true,
+          mintLive: false,
           mintRealtime: true,
         };
       }
@@ -1804,6 +1821,7 @@
           listenMode: "browser_speech",
           canListen: true,
           canSpeak: !!speak,
+          mintLive: false,
           mintRealtime: false,
         };
       }
@@ -1812,6 +1830,7 @@
         listenMode: "none",
         canListen: false,
         canSpeak: false,
+        mintLive: false,
         mintRealtime: false,
       };
     }
@@ -1820,8 +1839,17 @@
       const path = talkPathFromHealth(health);
       canListen = path.canListen;
       listenMode = path.listenMode;
+      mintLive = path.mintLive === true;
       mintRealtime = path.mintRealtime === true;
       return path;
+    }
+
+    function mintVoice() {
+      return mintLive || mintRealtime;
+    }
+
+    function isOpenAIVoice() {
+      return listenMode === "openai_live" || listenMode === "openai_realtime";
     }
 
     function apiBase() {
@@ -1844,7 +1872,7 @@
         return;
       }
       clearRealtimeTaint(clean);
-      if (listenMode !== "openai_realtime") {
+      if (!isOpenAIVoice()) {
         void askViaOpenRouter(clean);
         return;
       }
@@ -1875,9 +1903,10 @@
       } catch (_) {
         canListen = false;
         listenMode = "none";
+        mintLive = false;
         mintRealtime = false;
       }
-      return { canListen: canListen, listenMode: listenMode, mintRealtime: mintRealtime };
+      return { canListen: canListen, listenMode: listenMode, mintLive: mintLive, mintRealtime: mintRealtime };
     }
 
     function speechCtor() {
@@ -2026,7 +2055,7 @@
         if (reply) {
           reportAvatarTalk({ status: "idle", reply: reply });
           // Realtime WebRTC already speaks. Never fall back to OS/SAPI TTS.
-          if (listenMode !== "openai_realtime") void speakNeural(reply);
+          if (!isOpenAIVoice()) void speakNeural(reply);
         } else {
           reportAvatarTalk({ status: "listening" });
         }
@@ -2041,7 +2070,8 @@
         event.type === "response.audio_transcript.delta" ||
         event.type === "response.output_audio_transcript.delta" ||
         event.type === "response.text.delta" ||
-        event.type === "response.output_text.delta"
+        event.type === "response.output_text.delta" ||
+        event.type === "session.output_transcript.delta"
       ) {
         return { kind: "delta", text: String(event.delta || event.transcript || "") };
       }
@@ -2049,7 +2079,8 @@
         event.type === "response.audio_transcript.done" ||
         event.type === "response.output_audio_transcript.done" ||
         event.type === "response.text.done" ||
-        event.type === "response.output_text.done"
+        event.type === "response.output_text.done" ||
+        event.type === "session.output_transcript.done"
       ) {
         return { kind: "done", text: String(event.transcript || event.text || "") };
       }
@@ -2276,6 +2307,7 @@
 
     function teardown() {
       live = false;
+      liveSessionReady = false;
       try { dc && dc.close(); } catch (_) {}
       try { pc && pc.close(); } catch (_) {}
       dc = null; pc = null;
@@ -2301,6 +2333,9 @@
       // User Stop: no auto-retry; tear down mic + WebRTC fully.
       fatal = true;
       pending = false;
+      if (listenMode === "openai_live" && dc && dc.readyState === "open") {
+        try { dc.send(JSON.stringify({ type: "session.close" })); } catch (_) {}
+      }
       stopBrowserListen();
       stopTracks();
       teardown();
@@ -2437,6 +2472,18 @@
 
     function sendToolResult(callId, output) {
       if (!dc || dc.readyState !== "open") return;
+      if (listenMode === "openai_live") {
+        dc.send(JSON.stringify({
+          type: "response.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: String(output).slice(0, 12000),
+          },
+        }));
+        dc.send(JSON.stringify({ type: "response.create" }));
+        return;
+      }
       dc.send(JSON.stringify({
         type: "conversation.item.create",
         item: {
@@ -2459,13 +2506,40 @@
       }
     }
 
+    function unwrapLiveEvent(event) {
+      if (event && event.type === "response.event" && event.event && typeof event.event === "object") {
+        const inner = event.event;
+        inner._delegation_id = event.delegation_id;
+        return inner;
+      }
+      return event;
+    }
+
     async function handleRealtimeEvent(event) {
+      event = unwrapLiveEvent(event);
+      if (event && event.type === "session.started") {
+        liveSessionReady = true;
+        live = true;
+        setRt("live");
+        if (pendingAvatarAsk) {
+          const queued = pendingAvatarAsk;
+          pendingAvatarAsk = null;
+          sendUserTextFromAvatar(queued);
+        }
+        return;
+      }
+      if (event && event.type === "session.closed") {
+        liveSessionReady = false;
+        return;
+      }
       // ORCH-297: completed user speech = fresh trusted intent (clear taint).
       // ORCH-319: the same transcript is the only channel that may settle a
       // pending confirmation — never a model tool call.
       const isUserSpeech =
         event.type === "conversation.item.input_audio_transcription.completed" ||
         event.type === "conversation.item.input_audio_transcription.done" ||
+        event.type === "session.input_transcript.completed" ||
+        event.type === "session.input_transcript.done" ||
         (event.type === "conversation.item.added" &&
           event.item &&
           event.item.role === "user" &&
@@ -2479,7 +2553,9 @@
       }
       if (
         event.type === "conversation.item.input_audio_transcription.completed" ||
-        event.type === "conversation.item.input_audio_transcription.done"
+        event.type === "conversation.item.input_audio_transcription.done" ||
+        event.type === "session.input_transcript.completed" ||
+        event.type === "session.input_transcript.done"
       ) {
         const said = event.transcript || "";
         let conf;
@@ -2571,15 +2647,173 @@
 
     function startOpenRouterTalk() {
       listenMode = "browser_speech";
+      mintLive = false;
       mintRealtime = false;
       canListen = true;
       startBrowserListen();
     }
 
+    function sessionLocaleBody() {
+      const voicePref = (window.IrisSettings && window.IrisSettings.get && window.IrisSettings.get().voice) || null;
+      var loc = "";
+      var tz = "";
+      try { loc = String(navigator.language || "").trim(); } catch (e) {}
+      try { tz = String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").trim(); } catch (e) {}
+      var out = { locale: loc, timezone: tz };
+      if (voicePref) out.voice = voicePref;
+      return out;
+    }
+
+    function waitForIce(connection) {
+      if (connection.iceGatheringState === "complete") return Promise.resolve();
+      return new Promise(function (resolve, reject) {
+        const timeout = setTimeout(function () {
+          connection.removeEventListener("icegatheringstatechange", onState);
+          reject(new Error("ice"));
+        }, 10000);
+        function onState() {
+          if (connection.iceGatheringState !== "complete") return;
+          clearTimeout(timeout);
+          connection.removeEventListener("icegatheringstatechange", onState);
+          resolve();
+        }
+        connection.addEventListener("icegatheringstatechange", onState);
+        onState();
+      });
+    }
+
+    function attachPeerHandlers(token) {
+      pc.ontrack = (e) => {
+        const [stream] = e.streams;
+        sink.srcObject = stream;
+        applyOutputMute(outputMuted);
+        sink.play().catch(() => {});
+        try { outSource && outSource.disconnect(); } catch (_) {}
+        outSource = audioCtx.createMediaStreamSource(stream);
+        outSource.connect(outAnalyser);
+      };
+      pc.addTrack(micStream.getAudioTracks()[0], micStream);
+
+      dc = pc.createDataChannel("oai-events");
+      window.__jarvisDC = dc;
+      dc.onopen = () => {
+        if (mintRealtime && token && !token.applied && token.session) {
+          dc.send(JSON.stringify({ type: "session.update", session: token.session }));
+        }
+        if (mintLive) {
+          // HTTP started the Live session. Wait for session.started.
+          attempt = 0;
+          return;
+        }
+        if (pendingAvatarAsk) {
+          const queued = pendingAvatarAsk;
+          pendingAvatarAsk = null;
+          sendUserTextFromAvatar(queued);
+        } else if (!greeted) {
+          greeted = true;
+          dc.send(JSON.stringify({ type: "response.create" }));
+        }
+        attempt = 0;
+        live = true;
+        setRt("live");
+      };
+      dc.onmessage = (e) => {
+        let event;
+        try { event = JSON.parse(e.data); } catch (_) { return; }
+        if (event.type === "error") {
+          console.error("[voice]", event.error);
+          return;
+        }
+        void handleRealtimeEvent(event);
+      };
+      pc.onconnectionstatechange = () => {
+        if (fatal || !pc) return;
+        if (["failed", "disconnected"].includes(pc.connectionState)) {
+          live = false;
+          setRt("connecting");
+          retry("pc:" + pc.connectionState);
+        }
+      };
+    }
+
+    async function connectLive() {
+      pc = new RTCPeerConnection();
+      attachPeerHandlers(null);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitForIce(pc);
+      const sdp = pc.localDescription && pc.localDescription.sdp;
+      if (!sdp) throw new Error("sdp");
+      const body = sessionLocaleBody();
+      body.sdp = sdp;
+      const res = await fetch(apiBase() + "/api/jarvis/live/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !(result.transport && result.transport.sdp)) {
+        const fallback =
+          canListen ||
+          result.fallback === "browser_speech" ||
+          result.listen_mode === "browser_speech" ||
+          result.can_listen === true ||
+          result.openrouter === true ||
+          result.speak_mode === "openrouter_tts";
+        if (fallback) {
+          startOpenRouterTalk();
+          return;
+        }
+        throw new Error("live-session");
+      }
+      await pc.setRemoteDescription({ type: "answer", sdp: result.transport.sdp });
+    }
+
+    async function connectRealtime() {
+      const res = await fetch(apiBase() + "/api/jarvis/realtime/session", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sessionLocaleBody()),
+      });
+      const token = await res.json().catch(() => ({}));
+      if (!res.ok || !token.value) {
+        await refreshListenHealth();
+        const fallback =
+          canListen ||
+          token.fallback === "browser_speech" ||
+          token.listen_mode === "browser_speech" ||
+          token.can_listen === true ||
+          token.openrouter === true ||
+          token.speak_mode === "openrouter_tts";
+        if (fallback) {
+          startOpenRouterTalk();
+          return;
+        }
+        fatal = true;
+        setRt("error");
+        return;
+      }
+      pc = new RTCPeerConnection();
+      attachPeerHandlers(token);
+      await pc.setLocalDescription(await pc.createOffer());
+      const sdpRes = await fetch("https://api.openai.com/v1/realtime/calls", {
+        method: "POST",
+        body: pc.localDescription.sdp,
+        headers: {
+          Authorization: "Bearer " + token.value,
+          "Content-Type": "application/sdp",
+        },
+      });
+      if (!sdpRes.ok) throw new Error("sdp " + sdpRes.status);
+      await pc.setRemoteDescription({ type: "answer", sdp: await sdpRes.text() });
+    }
+
     async function connect() {
       if (fatal) return;
       if (listenMode === "unknown") await refreshListenHealth();
-      if (!mintRealtime) {
+      if (!mintVoice()) {
         if (canListen) {
           startBrowserListen();
           return;
@@ -2611,118 +2845,18 @@
           return;
         }
         setRt("error");
-        // Wait for click on circle to retry mic permission
         return;
       }
 
-      let token;
       try {
-        const voicePref = (window.IrisSettings && window.IrisSettings.get && window.IrisSettings.get().voice) || null;
-        const res = await fetch(apiBase() + "/api/jarvis/realtime/session", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify((function () {
-            var loc = "";
-            var tz = "";
-            try { loc = String(navigator.language || "").trim(); } catch (e) {}
-            try { tz = String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").trim(); } catch (e) {}
-            var out = { locale: loc, timezone: tz };
-            if (voicePref) out.voice = voicePref;
-            return out;
-          })()),
-        });
-        token = await res.json().catch(() => ({}));
-        if (!res.ok || !token.value) {
-          // Optional upgrade failed. OpenRouter-only talk must continue.
-          await refreshListenHealth();
-          const fallback =
-            canListen ||
-            token.fallback === "browser_speech" ||
-            token.listen_mode === "browser_speech" ||
-            token.can_listen === true ||
-            token.openrouter === true ||
-            token.speak_mode === "openrouter_tts";
-          if (fallback) {
-            startOpenRouterTalk();
-            return;
-          }
-          fatal = true;
-          setRt("error");
-          return;
-        }
+        if (mintLive) await connectLive();
+        else await connectRealtime();
       } catch (err) {
         await refreshListenHealth();
         if (canListen) {
           startOpenRouterTalk();
           return;
         }
-        console.error("[jarvis-token]", err);
-        setRt("error");
-        return;
-      }
-
-      pc = new RTCPeerConnection();
-      pc.ontrack = (e) => {
-        const [stream] = e.streams;
-        sink.srcObject = stream;
-        applyOutputMute(outputMuted);
-        sink.play().catch(() => {});
-        try { outSource && outSource.disconnect(); } catch (_) {}
-        outSource = audioCtx.createMediaStreamSource(stream);
-        outSource.connect(outAnalyser);
-      };
-      pc.addTrack(micStream.getAudioTracks()[0], micStream);
-
-      dc = pc.createDataChannel("oai-events");
-      window.__jarvisDC = dc;
-      dc.onopen = () => {
-        if (!token.applied && token.session) {
-          dc.send(JSON.stringify({ type: "session.update", session: token.session }));
-        }
-        if (pendingAvatarAsk) {
-          const queued = pendingAvatarAsk;
-          pendingAvatarAsk = null;
-          sendUserTextFromAvatar(queued);
-        } else if (!greeted) {
-          greeted = true;
-          dc.send(JSON.stringify({ type: "response.create" }));
-        }
-        attempt = 0;
-        live = true;
-        setRt("live");
-      };
-      dc.onmessage = (e) => {
-        let event;
-        try { event = JSON.parse(e.data); } catch (_) { return; }
-        if (event.type === "error") {
-          console.error("[realtime]", event.error);
-          return;
-        }
-        void handleRealtimeEvent(event);
-      };
-      pc.onconnectionstatechange = () => {
-        if (fatal || !pc) return;
-        if (["failed", "disconnected"].includes(pc.connectionState)) {
-          live = false;
-          setRt("connecting");
-          retry("pc:" + pc.connectionState);
-        }
-      };
-
-      try {
-        await pc.setLocalDescription(await pc.createOffer());
-        const res = await fetch("https://api.openai.com/v1/realtime/calls", {
-          method: "POST",
-          body: pc.localDescription.sdp,
-          headers: {
-            Authorization: "Bearer " + token.value,
-            "Content-Type": "application/sdp",
-          },
-        });
-        if (!res.ok) throw new Error("sdp " + res.status + " " + (await res.text()).slice(0, 200));
-        await pc.setRemoteDescription({ type: "answer", sdp: await res.text() });
-      } catch (err) {
         console.error("[connect]", err);
         retry("sdp");
       }
@@ -2731,7 +2865,7 @@
     async function focusVoice(origin) {
       fatal = false;
       if (listenMode === "unknown") await refreshListenHealth();
-      if (!mintRealtime) {
+      if (!mintVoice()) {
         if (!canListen) {
           setRt("error");
           return;
@@ -2816,7 +2950,7 @@
     // Realtime: best-effort immediate start. OpenRouter-only: stay ready
     // and listen after one click — never report the unavailable/deaf status.
     void refreshListenHealth().then(function () {
-      if (mintRealtime) void connect();
+      if (mintVoice()) void connect();
     });
   </script>
 </body>

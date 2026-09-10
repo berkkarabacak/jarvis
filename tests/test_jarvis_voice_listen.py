@@ -118,10 +118,12 @@ async def test_health_realtime_when_openai_present(voice_env, monkeypatch):
     get_settings.cache_clear()
     body = r.json()
     assert body["realtime"] is True
+    assert body["live"] is True
+    assert body["voice_path"] == "live"
     assert body["can_listen"] is True
-    assert body["listen_mode"] == "openai_realtime"
+    assert body["listen_mode"] == "openai_live"
     assert body["can_speak"] is True
-    assert body["speak_mode"] == "openai_realtime"
+    assert body["speak_mode"] == "openai_live"
     assert body["neural_tts"] is True
 
 
@@ -402,7 +404,7 @@ async def test_settings_reject_invented_scottish_slug(client):
 
 def test_ceo_realtime_replies_do_not_call_http_tts():
     ceo = (ROOT / "app" / "static" / "ceo.html").read_text(encoding="utf-8")
-    assert "if (listenMode !== \"openai_realtime\") void speakNeural(reply)" in ceo
+    assert "if (!isOpenAIVoice()) void speakNeural(reply)" in ceo
     assert "if (outputMuted) return false" in ceo
     assert "SpeechRecognition" in ceo
 
@@ -456,6 +458,7 @@ async def test_session_with_openai_still_mints(voice_env, monkeypatch):
     from app.main import create_app
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-optional-upgrade")
+    monkeypatch.setenv("JARVIS_VOICE", "realtime")
     captured: dict = {}
 
     class _FakeRes:

@@ -203,23 +203,37 @@ function talkPathFromHealth(health) {
     speakMode === "openrouter_tts" ||
     speakMode === "hosted_tts" ||
     speakMode === "openai_tts" ||
+    speakMode === "openai_live" ||
     speakMode === "openai_realtime";
   // Health wins. browser_speech / openrouter_tts / hosted_tts must talk
-  // without minting a Realtime session. realtime=true alone is not enough
+  // without minting a Live/Realtime session. realtime=true alone is not enough
   // — that used to mean "flag on" and sent Mom's Talk button to a missing
   // OpenAI key.
   const useBrowser =
     listenMode === "browser_speech" ||
     speakMode === "openrouter_tts" ||
     speakMode === "hosted_tts";
+  const mintLive =
+    !useBrowser && (listenMode === "openai_live" || h.live === true);
   const mintRealtime =
-    !useBrowser && h.realtime === true && listenMode === "openai_realtime";
+    !useBrowser && !mintLive && h.realtime === true && listenMode === "openai_realtime";
+  if (mintLive) {
+    return {
+      path: "openai_live",
+      listenMode: "openai_live",
+      canListen: true,
+      canSpeak: true,
+      mintLive: true,
+      mintRealtime: false,
+    };
+  }
   if (mintRealtime) {
     return {
       path: "openai_realtime",
       listenMode: "openai_realtime",
       canListen: true,
       canSpeak: true,
+      mintLive: false,
       mintRealtime: true,
     };
   }
@@ -229,6 +243,7 @@ function talkPathFromHealth(health) {
       listenMode: "browser_speech",
       canListen: true,
       canSpeak: !!canSpeak,
+      mintLive: false,
       mintRealtime: false,
     };
   }
@@ -237,12 +252,14 @@ function talkPathFromHealth(health) {
     listenMode: "none",
     canListen: false,
     canSpeak: false,
+    mintLive: false,
     mintRealtime: false,
   };
 }
 
 function connectActionFromHealth(health) {
   const path = talkPathFromHealth(health);
+  if (path.mintLive) return "mint_live_session";
   if (path.mintRealtime) return "mint_realtime_session";
   if (path.canListen) return "start_browser_listen";
   return "unavailable";

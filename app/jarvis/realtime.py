@@ -411,23 +411,35 @@ def realtime_flag_enabled() -> bool:
     return flag not in {"0", "false", "no", "off"}
 
 
-def realtime_available() -> bool:
-    """True only when OpenAI Realtime can actually mint a session."""
+def webrtc_voice_available() -> bool:
+    """True when an OpenAI WebRTC voice path (Live or emergency Realtime) can run."""
     return realtime_flag_enabled() and bool(openai_api_key())
 
 
+def realtime_available() -> bool:
+    """True when OpenAI voice WebRTC can run (GPT-Live default or Realtime fallback)."""
+    return webrtc_voice_available()
+
+
+def live_available() -> bool:
+    from app.jarvis.live import live_available as _live_available
+
+    return _live_available()
+
+
 def can_listen() -> bool:
-    """Voice listen works with an operator/hosted key; OpenAI Realtime is optional."""
+    """Voice listen works with an operator/hosted key; OpenAI voice is optional."""
     from app.jarvis.talk_auth import talk_ready
 
-    return realtime_available() or talk_ready()
+    return webrtc_voice_available() or talk_ready()
 
 
 def listen_mode() -> str:
     from app.jarvis.talk_auth import talk_ready
+    from app.jarvis.live import voice_path
 
-    if realtime_available():
-        return "openai_realtime"
+    if webrtc_voice_available():
+        return "openai_live" if voice_path() == "live" else "openai_realtime"
     if talk_ready():
         return "browser_speech"
     return "none"

@@ -131,7 +131,7 @@ def test_public_page_source_is_chat_and_talk():
     assert 'id="hello-tr"' not in page
     assert "speakFirstHello" not in page
     assert "/api/jarvis/health" in page
-    assert "/api/jarvis/realtime/session" in page
+    assert "/api/jarvis/live/session" in page
     assert "function startTalk" in page
     assert "function startBrowserTalk" in page
     assert "RTCPeerConnection" in page
@@ -646,13 +646,13 @@ def test_public_page_auto_starts_talk_and_first_click_anywhere():
     assert "startListen()" in start_talk
     assert "requestMicNow()" in start_talk
     assert "prefetchSession()" in start_talk
-    assert "void connectRealtime()" in start_talk
+    assert "void connectLive()" in start_talk
     assert "speakFirstHello" not in start_talk
     assert "/jarvis/hello/" not in start_talk
     assert "/api/jarvis/health" not in start_talk
     assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
-    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
-    assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectLive")
+    assert start_talk.index("connectLive") < start_talk.index("startListen()")
     assert 'rec.lang = "es-ES"' not in page
     assert "es-ES" not in page
     _assert_no_secret_values(page)
@@ -713,7 +713,7 @@ async def test_app_serves_public_chat_page(client):
     assert 'id="hello-en"' not in html
     assert 'id="hello-tr"' not in html
     assert "speakFirstHello" not in html
-    assert "/api/jarvis/realtime/session" in html
+    assert "/api/jarvis/live/session" in html
     assert ">Jarvis</h1>" not in html
     assert "API key" not in html
     assert "OpenRouter" not in html
@@ -765,21 +765,21 @@ def test_public_first_open_defers_catalog_screen_and_fonts():
     page = PAGE.read_text(encoding="utf-8")
     start_talk = page.split("async function startTalk()", 1)[1].split("function askAbortMs", 1)[0]
     assert "startListen()" in start_talk
-    assert "const upgrade = mintRealtime" in start_talk
+    assert "const upgrade = mintLive || mintRealtime" in start_talk
     assert "prefetchSession()" in start_talk
     assert "requestMicNow()" in start_talk
-    assert "if (upgrade) void connectRealtime()" in start_talk
+    assert "if (mintLive) void connectLive()" in start_talk
     assert "speakFirstHello" not in start_talk
     assert "await " not in start_talk
-    assert "/api/jarvis/realtime/session" not in start_talk
+    assert "/api/jarvis/live/session" not in start_talk
     assert "/api/jarvis/health" not in start_talk
     assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
-    assert start_talk.index("requestMicNow()") < start_talk.index("const upgrade = mintRealtime")
-    assert start_talk.index("const upgrade = mintRealtime") < start_talk.index("connectRealtime")
-    assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("const upgrade = mintLive || mintRealtime")
+    assert start_talk.index("const upgrade = mintLive || mintRealtime") < start_talk.index("connectLive")
+    assert start_talk.index("connectLive") < start_talk.index("startListen()")
     assert "startBrowserTalk()" not in start_talk
     assert "let canListen = true" in page
-    assert "let mintRealtime = true" in page
+    assert "let mintLive = true" in page
     assert 'data-state="on"' in page
     assert "?lite=1" in page
     assert "void health(true)" in page

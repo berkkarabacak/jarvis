@@ -10,15 +10,18 @@ Public Talk: https://aicontrolroom.nl/ (alias: https://berkkarabacak.com/jarvis/
 ## Git
 
 - Repo: github.com/berkkarabacak/jarvis
-- Work on `dev`. The site pulls `dev` live.
+- Work on `main` while there is no `dev` branch. Do not claim a deploy.
 - Do not clone unless Berk asks.
-- PR squash-merge to `dev`.
 
 ## Voice
 
-- OpenAI Realtime (`gpt-realtime`) when the host has `OPENAI_API_KEY`.
+- Public Talk uses OpenAI **GPT-Live-1** when the host has `OPENAI_API_KEY`.
+- Browser sends an SDP offer to `POST /api/jarvis/live/session`. The server
+  creates the Live session (Responses delegation) and returns the SDP answer.
+  The long-lived key never goes to the browser.
+- Emergency fallback only: `JARVIS_VOICE=realtime` keeps the old Realtime mint.
 - Listen is always-on. **Mute me** is the only stop.
-- First hello must be live Realtime audio (PR 181). Not a TTS/robot clip.
+- First hello is live GPT-Live audio. Not a TTS/robot clip.
 - Helpers: Kimi, then Ox / OpenRouter.
 - Never put keys in HTML or chat.
 

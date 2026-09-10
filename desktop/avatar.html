@@ -283,10 +283,13 @@
         listenMode === "browser_speech" ||
         speakMode === "openrouter_tts" ||
         speakMode === "hosted_tts";
+      const mintLive =
+        !useBrowser && (listenMode === "openai_live" || h.live === true);
       const mintRealtime =
-        !useBrowser && h.realtime === true && listenMode === "openai_realtime";
+        !useBrowser && !mintLive && h.realtime === true && listenMode === "openai_realtime";
       return {
-        canListen: mintRealtime || hear || useBrowser,
+        canListen: mintLive || mintRealtime || hear || useBrowser,
+        mintLive: mintLive,
         mintRealtime: mintRealtime,
       };
     }
@@ -300,7 +303,7 @@
       } catch (_) {}
       const path = talkPathFromHealth(health);
       canListen = path.canListen === true;
-      if (path.mintRealtime) return;
+      if (path.mintLive || path.mintRealtime) return;
       if (canListen === false) {
         renderTalk({ status: "unavailable" });
         return;

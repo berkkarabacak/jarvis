@@ -75,7 +75,7 @@ async def test_ceo_page_uses_cookie_session_without_client_credentials(client):
     html = r.text
 
     assert 'credentials: "same-origin"' in html
-    assert "/api/jarvis/realtime/session" in html
+    assert "/api/jarvis/live/session" in html
     assert "/api/jarvis/tools/run" in html
     assert "/api/jarvis/tools/confirm" in html
     assert "authKey" not in html
@@ -119,7 +119,7 @@ async def test_ceo_page_voice_surface_contract(client):
     assert "getUserMedia" in html
     assert "AudioContext" in html
     assert "RTCPeerConnection" in html
-    assert "/api/jarvis/realtime/session" in html
+    assert "/api/jarvis/live/session" in html
     assert "/api/jarvis/ask" in html
     assert "SpeechRecognition" in html
     assert "askViaOpenRouter" in html

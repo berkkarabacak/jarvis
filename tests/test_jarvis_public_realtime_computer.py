@@ -373,7 +373,7 @@ def test_voice_stays_openai_realtime_when_key_exists(monkeypatch):
 
     assert openai_api_key()
     assert realtime_available() is True
-    assert listen_mode() == "openai_realtime"
+    assert listen_mode() == "openai_live"
     assert realtime_model() == "gpt-realtime"
 
 

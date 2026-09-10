@@ -271,8 +271,21 @@ assert.strictEqual(
   "listen_mode=browser_speech / speak_mode=openrouter_tts beat a stale realtime flag"
 );
 
+const liveReady = {
+  realtime: true,
+  live: true,
+  can_listen: true,
+  listen_mode: "openai_live",
+  can_speak: true,
+  speak_mode: "openai_live",
+};
+assert.strictEqual(connectActionFromHealth(liveReady), "mint_live_session");
+assert.strictEqual(talkPathFromHealth(liveReady).mintLive, true);
+assert.strictEqual(talkPathFromHealth(liveReady).mintRealtime, false);
+
 const realtimeReady = {
   realtime: true,
+  live: false,
   can_listen: true,
   listen_mode: "openai_realtime",
   can_speak: true,
