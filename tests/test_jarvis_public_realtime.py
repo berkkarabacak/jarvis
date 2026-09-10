@@ -43,27 +43,27 @@ def test_public_talk_uses_hosted_webrtc_when_health_says_realtime():
     page = _page()
     ceo = CEO.read_text(encoding="utf-8")
     assert "function talkPathFromHealth" in page
-    assert 'listenMode === "openai_realtime"' in page
-    assert "mintRealtime: true" in page
-    assert "/api/jarvis/realtime/session" in page
+    assert 'listenMode === "openai_live"' in page
+    assert "mintLive: true" in page
+    assert "/api/jarvis/live/session" in page
     assert "RTCPeerConnection" in page
-    assert "https://api.openai.com/v1/realtime/calls" in page
-    assert 'Content-Type": "application/sdp"' in page
     assert 'createDataChannel("oai-events")' in page
     assert "function startTalk" in page
-    assert "const upgrade = mintRealtime" in _fn(page, "startTalk")
+    assert "const upgrade = mintLive || mintRealtime" in _fn(page, "startTalk")
     assert "prefetchSession()" in _fn(page, "startTalk")
-    assert "if (upgrade) void connectRealtime()" in _fn(page, "startTalk")
+    assert "if (mintLive) void connectLive()" in _fn(page, "startTalk")
     assert "requestMicNow()" in _fn(page, "startTalk")
     assert "if (!upgrade) startListen()" in _fn(page, "startTalk")
     assert "speakFirstHello" not in _fn(page, "startTalk")
     assert "/jarvis/hello/" not in _fn(page, "startTalk")
     assert "/api/jarvis/health" not in _fn(page, "startTalk")
     assert "void startTalk()" in page
-    # Same WebRTC mint + SDP path as the desktop Talk page. Not a second protocol.
-    assert "/api/jarvis/realtime/session" in ceo
-    assert "https://api.openai.com/v1/realtime/calls" in ceo
+    assert "/api/jarvis/live/session" in ceo
+    assert "async function connectLive" in ceo
     assert 'createDataChannel("oai-events")' in ceo
+    # Emergency Realtime path stays in the page behind JARVIS_VOICE=realtime.
+    assert "/api/jarvis/realtime/session" in page
+    assert "https://api.openai.com/v1/realtime/calls" in page
 
 
 def test_public_duplex_keeps_mic_open_while_jarvis_speaks():
@@ -334,8 +334,8 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert "canListen = true" in start_talk
     assert "prefetchSession()" in start_talk
     assert "requestMicNow()" in start_talk
-    assert "const upgrade = mintRealtime" in start_talk
-    assert "if (upgrade) void connectRealtime()" in start_talk
+    assert "const upgrade = mintLive || mintRealtime" in start_talk
+    assert "if (mintLive) void connectLive()" in start_talk
     assert "if (!upgrade) startListen()" in start_talk
     assert "paintMic()" in start_talk
     assert "speakFirstHello" not in start_talk
@@ -343,17 +343,19 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert "/jarvis/hello/" not in start_talk
     assert "/api/jarvis/speak" not in start_talk
     assert "await " not in start_talk
+    assert "await connectLive" not in start_talk
     assert "await connectRealtime" not in start_talk
+    assert "/api/jarvis/live/session" not in start_talk
     assert "/api/jarvis/realtime/session" not in start_talk
     assert "/api/jarvis/health" not in start_talk
     assert start_talk.index("prefetchSession()") < start_talk.index("requestMicNow()")
-    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
-    assert start_talk.index("connectRealtime") < start_talk.index("startListen()")
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectLive")
+    assert start_talk.index("connectLive") < start_talk.index("startListen()")
     assert "startBrowserTalk()" not in start_talk
     assert "mintRealtime = false" in _fn(page, "startBrowserTalk")
-    assert "/api/jarvis/realtime/session" in connect
+    assert "/api/jarvis/live/session" in _fn(page, "connectLive")
     assert "getUserMedia" in connect
-    assert connect.index("/api/jarvis/realtime/session") < connect.index("getUserMedia")
+    assert "/api/jarvis/realtime/session" in connect
     assert "stopListen()" in _fn(page, "tryGoDuplex")
     assert "duplexLive = true" in _fn(page, "tryGoDuplex")
     go = _fn(page, "tryGoDuplex")
@@ -370,22 +372,25 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert page.index("prefetchSession()") < page.index("void bootTalk()")
     script = """
     const events = [];
-    let mintRealtime = true;
+    let mintLive = true;
+    let mintRealtime = false;
     let listening = false;
     function prefetchSession() { events.push("prefetchSession"); }
     function startListen() { listening = true; events.push("startListen"); }
     function paintMic() { events.push("paintMic"); }
-    function startBrowserTalk() { mintRealtime = false; events.push("startBrowserTalk"); }
-    async function connectRealtime() {
-      events.push("connectRealtime");
+    function startBrowserTalk() { mintLive = false; mintRealtime = false; events.push("startBrowserTalk"); }
+    async function connectLive() {
+      events.push("connectLive");
       events.push("fetch:session");
       await new Promise((r) => setTimeout(r, 80));
       events.push("mint:done");
     }
+    async function connectRealtime() { events.push("connectRealtime"); }
     async function startTalk() {
       prefetchSession();
-      const upgrade = mintRealtime;
-      if (upgrade) void connectRealtime();
+      const upgrade = mintLive || mintRealtime;
+      if (mintLive) void connectLive();
+      else if (mintRealtime) void connectRealtime();
       startListen();
       paintMic();
     }
@@ -394,13 +399,13 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     if (events[0] !== "prefetchSession") process.exit(3);
     if (events.includes("mint:done")) process.exit(4);
     if (events.includes("startBrowserTalk")) process.exit(5);
-    if (!events.includes("connectRealtime")) process.exit(6);
+    if (!events.includes("connectLive")) process.exit(6);
     if (events.includes("speakFirstHello")) process.exit(10);
     Promise.resolve(p).then(() => {
       if (events.includes("mint:done")) process.exit(7);
       if (!listening) process.exit(8);
-      if (mintRealtime !== true) process.exit(9);
-      process.stdout.write(JSON.stringify({ events: events, mintRealtime: mintRealtime }));
+      if (mintLive !== true) process.exit(9);
+      process.stdout.write(JSON.stringify({ events: events, mintLive: mintLive }));
     });
     """
     result = subprocess.run(
@@ -412,13 +417,13 @@ def test_start_talk_connects_realtime_immediately_after_prefetch():
     assert result.returncode == 0, result.stdout + result.stderr
     runtime = json.loads(result.stdout)
     assert runtime["events"][0] == "prefetchSession"
-    assert runtime["events"].index("prefetchSession") < runtime["events"].index("connectRealtime")
-    assert runtime["events"].index("connectRealtime") < runtime["events"].index("startListen")
-    assert runtime["events"].index("connectRealtime") < runtime["events"].index("fetch:session")
+    assert runtime["events"].index("prefetchSession") < runtime["events"].index("connectLive")
+    assert runtime["events"].index("connectLive") < runtime["events"].index("startListen")
+    assert runtime["events"].index("connectLive") < runtime["events"].index("fetch:session")
     assert "mint:done" not in runtime["events"]
     assert "startBrowserTalk" not in runtime["events"]
     assert "speakFirstHello" not in runtime["events"]
-    assert runtime["mintRealtime"] is True
+    assert runtime["mintLive"] is True
 
 
 def test_first_hello_is_realtime_after_duplex_not_cached_clip():
@@ -447,13 +452,14 @@ def test_first_hello_is_realtime_after_duplex_not_cached_clip():
     assert "/api/jarvis/speak" not in boot
     assert "/api/jarvis/speak" not in prefetch
     assert "speechSynthesis" not in page
+    assert "await connectLive" not in start_talk
     assert "await connectRealtime" not in start_talk
     assert "await connectRealtime" not in boot
     assert "prefetchSession()" in start_talk
-    assert "if (upgrade) void connectRealtime()" in start_talk
-    assert start_talk.index("prefetchSession()") < start_talk.index("connectRealtime")
-    assert "/api/jarvis/realtime/session" in head
-    assert 'method: "POST"' in head
+    assert "if (mintLive) void connectLive()" in start_talk
+    assert start_talk.index("prefetchSession()") < start_talk.index("connectLive")
+    assert "/api/jarvis/health?lite=1" in head
+    assert "/api/jarvis/live/session" in page
     assert "prefetchSession()" not in idle
     assert "loadPcScreen()" in idle
     assert "void health()" in idle
@@ -601,7 +607,7 @@ def test_first_hello_path_does_not_play_clip_or_speak_api():
     assert "playHelloSrc" not in page
     assert 'src="/jarvis/hello/en.mp3"' not in page
     assert "prefetchSession()" in start_talk
-    assert start_talk.index("prefetchSession()") <= start_talk.index("connectRealtime")
+    assert start_talk.index("prefetchSession()") <= start_talk.index("connectLive")
     assert "Greet in one short line in English only" in greet
     assert "Greet in one short line in the user's language" in greet
     script = """
@@ -690,7 +696,7 @@ def test_first_orb_tap_requests_mic_before_session_is_live():
     assert "void startTalk()" in click
     assert "onMuteMe()" in click
     assert "requestMicNow()" in start_talk
-    assert start_talk.index("requestMicNow()") < start_talk.index("connectRealtime")
+    assert start_talk.index("requestMicNow()") < start_talk.index("connectLive")
     assert "await " not in start_talk
     assert "getUserMedia" in request_mic
     assert "/api/jarvis/realtime/session" not in request_mic
@@ -941,6 +947,7 @@ async def test_mint_session_test_force_english_ignores_italy_locale(
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "")
     monkeypatch.setenv("JARVIS_ENABLED", "true")
     monkeypatch.setenv("JARVIS_REALTIME", "true")
+    monkeypatch.setenv("JARVIS_VOICE", "realtime")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-optional-upgrade")
     minted: list[dict] = []
 
@@ -1021,6 +1028,7 @@ async def test_mint_session_uses_page_locale_not_random_portuguese(
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "")
     monkeypatch.setenv("JARVIS_ENABLED", "true")
     monkeypatch.setenv("JARVIS_REALTIME", "true")
+    monkeypatch.setenv("JARVIS_VOICE", "realtime")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-optional-upgrade")
     minted: list[str] = []
 
@@ -1122,10 +1130,11 @@ async def test_public_health_reports_realtime_listen_mode(tmp_path, monkeypatch)
     body = r.json()
     assert r.status_code == 200
     assert body["realtime"] is True
-    assert body["listen_mode"] == "openai_realtime"
+    assert body["live"] is True
+    assert body["listen_mode"] == "openai_live"
     assert "OPENAI_API_KEY" not in r.text
     assert "sk-test-openai-optional-upgrade" not in r.text
     html = page.text
-    assert "/api/jarvis/realtime/session" in html
+    assert "/api/jarvis/live/session" in html
     assert "sk-" not in html
     assert "OPENAI_API_KEY" not in html

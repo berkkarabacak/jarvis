@@ -85,12 +85,17 @@ _MAX_INPUT = 2000
 def speak_mode() -> str:
     """How Jarvis can produce voice, if at all.
 
-    ``openai_realtime`` — WebRTC output only for replies.
-    ``openai_tts`` — HTTP OpenAI audio/speech (Realtime flag off, key present).
+    ``openai_live`` — GPT-Live-1 WebRTC output (default Talk path).
+    ``openai_realtime`` — emergency Realtime WebRTC when ``JARVIS_VOICE=realtime``.
+    ``openai_tts`` — HTTP OpenAI audio/speech (WebRTC voice off, key present).
     ``openrouter_tts`` — HTTP OpenRouter audio/speech.
     ``none`` — no neural path; stay silent.
     """
-    if realtime_available():
+    from app.jarvis.live import live_available, voice_path
+
+    if live_available():
+        return "openai_live"
+    if realtime_available() and voice_path() == "realtime":
         return "openai_realtime"
     if openai_api_key():
         return "openai_tts"

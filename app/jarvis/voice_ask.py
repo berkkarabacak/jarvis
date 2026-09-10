@@ -4177,13 +4177,18 @@ def listen_health(*, lite: bool = False) -> dict[str, Any]:
     ``lite=True`` is the first-open path: no ``helper_models`` catalog and no
     spend sheet. Settings still loads the full sheet when idle.
     """
+    from app.jarvis.live import live_available, live_model, voice_path
     from app.jarvis.realtime import can_listen, listen_mode, realtime_available
     from app.jarvis.tts import can_speak, neural_tts_available, speak_mode
     from app.jarvis.workspace import default_workspace
 
+    live = live_available()
     body = {
         "ok": True,
         "realtime": realtime_available(),
+        "live": live,
+        "voice_path": voice_path(),
+        "live_model": live_model() if live else "",
         "can_listen": can_listen(),
         "listen_mode": listen_mode(),
         "can_speak": can_speak(),

@@ -8,6 +8,11 @@ Alias: [https://berkkarabacak.com/jarvis/](https://berkkarabacak.com/jarvis/)
 
 Talk in the browser, or download Windows from that page.
 
+Public Talk uses OpenAI **GPT-Live-1** when `OPENAI_API_KEY` is set on the host
+(`POST /api/jarvis/live/session`). The browser never sees that key. Emergency
+only: `JARVIS_VOICE=realtime` restores the old Realtime path. This repo change
+does not deploy or restart the GCP VM.
+
 ## Run it here
 
 ```bash

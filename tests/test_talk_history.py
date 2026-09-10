@@ -304,6 +304,7 @@ async def test_mint_session_includes_recap_not_keys(talk_ws, monkeypatch):
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "")
     monkeypatch.setenv("JARVIS_ENABLED", "true")
     monkeypatch.setenv("JARVIS_REALTIME", "true")
+    monkeypatch.setenv("JARVIS_VOICE", "realtime")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-optional-upgrade")
     minted: list[dict] = []
 

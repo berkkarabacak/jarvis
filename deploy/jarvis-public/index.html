@@ -21,15 +21,10 @@
         // Flip to false (and app.jarvis.realtime.TEST_FORCE_ENGLISH) to restore
         // locale-again worldwide.
         var TEST_FORCE_ENGLISH = true;
-        window.__jarvisSessionPrefetch = fetch(base + "/api/jarvis/realtime/session", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            voice: voice,
-            locale: TEST_FORCE_ENGLISH ? "en" : String(navigator.language || "").trim(),
-            timezone: TEST_FORCE_ENGLISH ? "" : tz
-          })
+        // Live sessions need an SDP offer, so we cannot mint in <head>.
+        // Prefetch lite health so Talk knows GPT-Live-1 vs browser speech.
+        window.__jarvisSessionPrefetch = fetch(base + "/api/jarvis/health?lite=1", {
+          credentials: "same-origin"
         });
       } catch (e) {}
     })();
@@ -997,7 +992,8 @@
       let micStream = null;
       let micRequest = null;
       let duplexLive = false;
-      let mintRealtime = true;
+      let mintLive = true;
+      let mintRealtime = false;
       let canListen = true;
       let connecting = false;
       let greeted = false;
@@ -1291,8 +1287,11 @@
         const h = health && typeof health === "object" ? health : {};
         const listenMode = String(h.listen_mode || "");
         const speakMode = String(h.speak_mode || "");
-        const useDuplex =
-          h.realtime === true && listenMode === "openai_realtime";
+        const useLive =
+          listenMode === "openai_live" || h.live === true;
+        const useRealtime =
+          !useLive && h.realtime === true && listenMode === "openai_realtime";
+        const useDuplex = useLive || useRealtime;
         const hear =
           useDuplex ||
           h.can_listen === true ||
@@ -1302,13 +1301,25 @@
           h.can_speak === true ||
           speakMode === "hosted_tts" ||
           speakMode === "openai_tts" ||
+          speakMode === "openai_live" ||
           speakMode === "openai_realtime";
-        if (useDuplex) {
+        if (useLive) {
+          return {
+            path: "openai_live",
+            listenMode: "openai_live",
+            canListen: true,
+            canSpeak: true,
+            mintLive: true,
+            mintRealtime: false,
+          };
+        }
+        if (useRealtime) {
           return {
             path: "openai_realtime",
             listenMode: "openai_realtime",
             canListen: true,
             canSpeak: true,
+            mintLive: false,
             mintRealtime: true,
           };
         }
@@ -1318,6 +1329,7 @@
             listenMode: "browser_speech",
             canListen: true,
             canSpeak: !!speak,
+            mintLive: false,
             mintRealtime: false,
           };
         }
@@ -1326,6 +1338,7 @@
           listenMode: "none",
           canListen: false,
           canSpeak: false,
+          mintLive: false,
           mintRealtime: false,
         };
       }
@@ -1333,6 +1346,7 @@
       function applyTalkPath(health) {
         const path = talkPathFromHealth(health);
         canListen = path.canListen === true;
+        mintLive = path.mintLive === true;
         mintRealtime = path.mintRealtime === true;
         return path;
       }
@@ -2024,6 +2038,7 @@
       }
 
       function startBrowserTalk() {
+        mintLive = false;
         mintRealtime = false;
         duplexLive = false;
         connecting = false;
@@ -2128,6 +2143,9 @@
         if (!duplexLive || greetInFlight) {
           greeted = false;
           greetAttempts = 0;
+        }
+        if (mintLive && dc && dc.readyState === "open") {
+          try { dc.send(JSON.stringify({ type: "session.close" })); } catch (_) {}
         }
         duplexLive = false;
         connecting = false;
@@ -2292,18 +2310,20 @@
       function assistantTalkFromEvent(event) {
         if (!event || !event.type) return null;
         if (
-          event.type === "response.audio_transcript.delta" ||
-          event.type === "response.output_audio_transcript.delta" ||
-          event.type === "response.text.delta" ||
-          event.type === "response.output_text.delta"
+        event.type === "response.audio_transcript.delta" ||
+        event.type === "response.output_audio_transcript.delta" ||
+        event.type === "response.text.delta" ||
+        event.type === "response.output_text.delta" ||
+        event.type === "session.output_transcript.delta"
         ) {
           return { kind: "delta", text: String(event.delta || event.transcript || "") };
         }
         if (
-          event.type === "response.audio_transcript.done" ||
-          event.type === "response.output_audio_transcript.done" ||
-          event.type === "response.text.done" ||
-          event.type === "response.output_text.done"
+        event.type === "response.audio_transcript.done" ||
+        event.type === "response.output_audio_transcript.done" ||
+        event.type === "response.text.done" ||
+        event.type === "response.output_text.done" ||
+        event.type === "session.output_transcript.done"
         ) {
           return { kind: "done", text: String(event.transcript || event.text || "") };
         }
@@ -2527,14 +2547,25 @@
 
       function sendToolResult(callId, output) {
         if (!dc || dc.readyState !== "open") return;
-        dc.send(JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "function_call_output",
-            call_id: callId,
-            output: String(output).slice(0, 12000),
-          },
-        }));
+        if (mintLive) {
+          dc.send(JSON.stringify({
+            type: "response.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: String(output).slice(0, 12000),
+            },
+          }));
+        } else {
+          dc.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "function_call_output",
+              call_id: callId,
+              output: String(output).slice(0, 12000),
+            },
+          }));
+        }
         const limit = isChildLimitOutput(output);
         if (limit) speakHireWave();
         if (limit || looksLikeHireAsk(lastUserGoal)) {
@@ -2570,7 +2601,28 @@
         paintMic();
       }
 
+      function unwrapLiveEvent(event) {
+        if (event && event.type === "response.event" && event.event && typeof event.event === "object") {
+          const inner = event.event;
+          inner._delegation_id = event.delegation_id;
+          return inner;
+        }
+        return event;
+      }
+
       async function handleRealtimeEvent(event) {
+        event = unwrapLiveEvent(event);
+        if (event.type === "session.started") {
+          sessionReady = true;
+          tryGoDuplex();
+          return;
+        }
+        if (event.type === "session.closed") {
+          duplexLive = false;
+          connecting = false;
+          paintMic();
+          return;
+        }
         if (event.type === "error") {
           if (greetInFlight && greetAttempts < 2) {
             greetInFlight = false;
@@ -2588,6 +2640,8 @@
         const isUserSpeech =
           event.type === "conversation.item.input_audio_transcription.completed" ||
           event.type === "conversation.item.input_audio_transcription.done" ||
+          event.type === "session.input_transcript.completed" ||
+          event.type === "session.input_transcript.done" ||
           (event.type === "conversation.item.added" &&
             event.item &&
             event.item.role === "user" &&
@@ -2712,6 +2766,14 @@
       }
 
       function lookResponseEvent() {
+        if (typeof mintLive !== "undefined" && mintLive) {
+          return {
+            type: "session.commentary.append",
+            commentary: TEST_FORCE_ENGLISH
+              ? "They asked what you see on the screen. Delegate now so the backend can call see_screen. Speak one short English line from that fresh look. Do not guess. Do not say Hello. Do not stay silent. Do not mention disk."
+              : "They asked what you see on the screen. Delegate now so the backend can call see_screen. Speak one short line from that fresh look, in their language. Do not guess. Do not say Hello. Do not stay silent."
+          };
+        }
         return {
           type: "response.create",
           response: {
@@ -2721,6 +2783,15 @@
               : "They asked what you see on the screen. Call see_screen now. Then speak one short line of what is actually on that fresh look, in their language. Do not say Hello. Do not stay silent. Do not skip the look as chat.",
             tool_choice: { type: "function", name: "see_screen" }
           }
+        };
+      }
+
+      function liveGreetEvent() {
+        return {
+          type: "session.instructions.append",
+          instructions: TEST_FORCE_ENGLISH
+            ? "Greet in one short line in English only. Do not use Italian, Korean, Portuguese, or any other language. Do not invent a language. Do not delegate. Do not mention disk, storage, CPU, RAM, or a screen."
+            : "Greet in one short line in the user's language. Do not use another language for the greeting. Do not delegate. Do not mention disk, storage, CPU, RAM, or a screen."
         };
       }
 
@@ -2752,6 +2823,7 @@
       }
 
       function sendSessionTurnDetection(interrupt) {
+        if (mintLive) return;
         if (!dc || dc.readyState !== "open") return;
         dc.send(JSON.stringify({
           type: "session.update",
@@ -2770,9 +2842,18 @@
         if (greeted) return false;
         if (!duplexLive) return false;
         if (!dc || dc.readyState !== "open") return false;
+        if (mintLive && !sessionReady) return false;
         greeted = true;
         greetInFlight = true;
         greetAttempts += 1;
+        if (mintLive) {
+          dc.send(JSON.stringify(liveGreetEvent()));
+          dc.send(JSON.stringify({
+            type: "session.commentary.append",
+            commentary: "Speak that short hello now, then listen. Do not delegate."
+          }));
+          return true;
+        }
         dc.send(JSON.stringify(realtimeGreetEvent()));
         return true;
       }
@@ -2817,6 +2898,136 @@
           sendUserText(queued);
         } else {
           sendRealtimeGreet();
+        }
+      }
+
+      function waitForIce(connection) {
+        if (connection.iceGatheringState === "complete") return Promise.resolve();
+        return new Promise(function (resolve, reject) {
+          const timeout = setTimeout(function () {
+            connection.removeEventListener("icegatheringstatechange", onState);
+            reject(new Error("ice"));
+          }, 10000);
+          function onState() {
+            if (connection.iceGatheringState !== "complete") return;
+            clearTimeout(timeout);
+            connection.removeEventListener("icegatheringstatechange", onState);
+            resolve();
+          }
+          connection.addEventListener("icegatheringstatechange", onState);
+          onState();
+        });
+      }
+
+      function attachPublicPeer(onOpen) {
+        pc = new RTCPeerConnection();
+        pc.ontrack = function (e) {
+          const stream = (e.streams && e.streams[0]) || (e.track ? new MediaStream([e.track]) : null);
+          if (!stream) return;
+          sink.srcObject = stream;
+          applyTalkRate(sink);
+          applyHimMute();
+          sink.play().catch(function () {});
+          remoteAudio = hasRemoteAudioTrack(sink);
+          tryGoDuplex();
+        };
+        pc.addTrack(micStream.getAudioTracks()[0], micStream);
+        dc = pc.createDataChannel("oai-events");
+        dc.onopen = onOpen;
+        dc.onmessage = function (e) {
+          let event;
+          try { event = JSON.parse(e.data); } catch (_) { return; }
+          void handleRealtimeEvent(event);
+        };
+        dc.onclose = function () {
+          duplexLive = false;
+          connecting = false;
+          paintMic();
+        };
+        pc.onconnectionstatechange = function () {
+          if (!pc) return;
+          if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
+            duplexLive = false;
+            connecting = false;
+            if (canListen) startBrowserTalk();
+            else paintMic();
+          }
+        };
+      }
+
+      async function ensureMic() {
+        if (!micStream) {
+          const stream = await (micRequest || navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          }));
+          if (!stream) throw new Error("mic");
+          micStream = stream;
+        }
+        rememberMicGranted();
+        setMicEnabled(!muteMe);
+      }
+
+      async function connectLive() {
+        if (duplexLive || connecting) {
+          paintMic();
+          return;
+        }
+        connecting = true;
+        wantListen = true;
+        channelOpen = false;
+        remoteAudio = false;
+        sessionReady = false;
+        greetInFlight = false;
+        paintMic();
+        clearDuplexWait();
+        try {
+          await ensureMic();
+        } catch (_) {
+          connecting = false;
+          clearDuplexWait();
+          startBrowserTalk();
+          return;
+        }
+        try {
+          attachPublicPeer(function () {
+            channelOpen = true;
+            tryGoDuplex();
+          });
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          await waitForIce(pc);
+          const sdp = pc.localDescription && pc.localDescription.sdp;
+          if (!sdp) throw new Error("sdp");
+          const body = sessionBody();
+          body.sdp = sdp;
+          const res = await fetch(apiBase() + "/api/jarvis/live/session", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const result = await res.json().catch(function () { return {}; });
+          if (!res.ok || !(result.transport && result.transport.sdp)) {
+            connecting = false;
+            clearDuplexWait();
+            const fallback =
+              canListen ||
+              result.fallback === "browser_speech" ||
+              result.listen_mode === "browser_speech" ||
+              result.can_listen === true;
+            if (fallback) {
+              startBrowserTalk();
+              return;
+            }
+            showNote(true);
+            return;
+          }
+          await pc.setRemoteDescription({ type: "answer", sdp: result.transport.sdp });
+          armDuplexWait();
+        } catch (_) {
+          connecting = false;
+          teardownDuplex();
+          if (canListen) startBrowserTalk();
         }
       }
 
@@ -3064,8 +3275,9 @@
         }
         prefetchSession();
         requestMicNow();
-        const upgrade = mintRealtime;
-        if (upgrade) void connectRealtime();
+        const upgrade = mintLive || mintRealtime;
+        if (mintLive) void connectLive();
+        else if (mintRealtime) void connectRealtime();
         if (!upgrade) startListen();
         paintMic();
       }

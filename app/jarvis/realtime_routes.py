@@ -11,6 +11,15 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.jarvis.gateway import get_gateway, model_view
+from app.jarvis.live import (
+    LIVE_SESSIONS_URL,
+    build_live_create_payload,
+    live_available,
+    live_model,
+    parse_live_create_response,
+    validate_sdp_offer,
+    voice_path,
+)
 from app.jarvis.realtime import (
     TEST_FORCE_ENGLISH,
     build_minimal_session_config,
@@ -70,13 +79,32 @@ def _realtime_enabled() -> bool:
     return realtime_flag_enabled()
 
 
+def _session_locale_timezone(request: Request, body: dict[str, Any] | None) -> tuple[str, str]:
+    locale = ""
+    timezone = ""
+    if isinstance(body, dict):
+        locale = sanitize_talk_locale(str(body.get("locale") or ""))
+        timezone = sanitize_talk_timezone(str(body.get("timezone") or ""))
+    if not locale:
+        locale = locale_from_accept_language(request.headers.get("accept-language"))
+    # TEST: public Talk is not selling yet. Ignore phone locale / Accept-Language
+    # so Italy / Korea / Brazil do not get a first hello in another language.
+    # Flip TEST_FORCE_ENGLISH to False to restore locale-again worldwide.
+    if TEST_FORCE_ENGLISH:
+        locale = "en"
+        timezone = ""
+    return locale, timezone
+
+
 def _session_unavailable_response() -> JSONResponse:
-    """Realtime is an optional upgrade. Missing OpenAI must not block talk."""
+    """OpenAI voice is an optional upgrade. Missing key must not block talk."""
     health = listen_health(lite=True)
     can_listen = bool(health.get("can_listen"))
     payload: dict[str, Any] = {
         "ok": False,
         "realtime": False,
+        "live": False,
+        "voice_path": health.get("voice_path") or voice_path(),
         "can_listen": can_listen,
         "listen_mode": health.get("listen_mode") or "none",
         "can_speak": bool(health.get("can_speak")),
@@ -213,38 +241,136 @@ async def jarvis_speak(body: SpeakBody) -> Response:
     )
 
 
+@router.post("/live/session")
+async def create_live_session(request: Request) -> JSONResponse:
+    """Create a GPT-Live WebRTC session. Browser sends SDP; server returns answer.
+
+    The project OpenAI key stays on this server. Missing key must not block
+    OpenRouter talk (browser speech + /ask + neural TTS).
+    """
+    if not _realtime_enabled() or not live_available():
+        return _session_unavailable_response()
+    key = openai_api_key()
+    if not key:
+        return _session_unavailable_response()
+
+    body: dict[str, Any] = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:
+        body = {}
+    try:
+        sdp = validate_sdp_offer(str(body.get("sdp") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    voice_override = body.get("voice")
+    locale, timezone = _session_locale_timezone(request, body)
+    voice = resolve_realtime_voice(str(voice_override) if voice_override else None)
+    payload = build_live_create_payload(
+        sdp,
+        voice=voice,
+        locale=locale or None,
+        timezone=timezone or None,
+    )
+    applied = True
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        res = await client.post(
+            LIVE_SESSIONS_URL,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if res.status_code == 400:
+            log.warning("live rich session rejected: %s", res.text[:400])
+            applied = False
+            res = await client.post(
+                LIVE_SESSIONS_URL,
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                },
+                json=build_live_create_payload(sdp, voice=voice, minimal=True),
+            )
+        if res.status_code >= 400:
+            log.error("live session failed %s: %s", res.status_code, res.text[:400])
+            raise HTTPException(
+                status_code=502,
+                detail=f"OpenAI live session failed ({res.status_code})",
+            )
+        try:
+            data = res.json()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail="OpenAI live session returned no JSON"
+            ) from exc
+
+    try:
+        parsed = parse_live_create_response(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "live": True,
+            "applied": applied,
+            "session": {"id": parsed["session_id"]},
+            "transport": {
+                "type": parsed["transport_type"],
+                "sdp": parsed["sdp"],
+            },
+            "workspace": str(default_workspace()),
+            "voice": voice,
+            "model": live_model(),
+        },
+        status_code=201,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/realtime/session")
 async def mint_realtime_session(request: Request) -> JSONResponse:
-    """Mint an ephemeral OpenAI Realtime client secret with Jarvis tools baked in.
+    """Emergency Realtime mint. Default Talk uses ``POST /live/session``.
 
-    When the OpenAI key is missing, talk continues on OpenRouter
-    (browser speech + /ask + neural TTS). This endpoint must not tell
-    anyone that an OpenAI key is required to talk.
+    Kept for ``JARVIS_VOICE=realtime``. Missing OpenAI must not block talk.
     """
-    if not _realtime_enabled():
+    if not _realtime_enabled() or voice_path() == "live":
+        # Default Talk is Live. Emergency Realtime stays behind JARVIS_VOICE.
+        if voice_path() == "live" and openai_api_key() and _realtime_enabled():
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "realtime": False,
+                    "live": True,
+                    "voice_path": "live",
+                    "can_listen": True,
+                    "listen_mode": "openai_live",
+                    "fallback": "openai_live",
+                    "detail": "Use POST /api/jarvis/live/session",
+                },
+                status_code=409,
+                headers={"Cache-Control": "no-store"},
+            )
         return _session_unavailable_response()
     key = openai_api_key()
     if not key:
         return _session_unavailable_response()
 
     voice_override = None
-    locale = ""
-    timezone = ""
+    body: dict[str, Any] = {}
     try:
-        body = await request.json()
-        if isinstance(body, dict):
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
             voice_override = body.get("voice")
-            locale = sanitize_talk_locale(str(body.get("locale") or ""))
-            timezone = sanitize_talk_timezone(str(body.get("timezone") or ""))
     except Exception:
         voice_override = None
-    if not locale:
-        locale = locale_from_accept_language(request.headers.get("accept-language"))
-    # TEST: public Talk is not selling yet. Ignore phone locale / Accept-Language
-    # so Italy / Korea / Brazil do not get a first hello in another language.
-    # Flip TEST_FORCE_ENGLISH to False to restore locale-again worldwide.
-    if TEST_FORCE_ENGLISH:
-        locale = "en"
+    locale, timezone = _session_locale_timezone(request, body)
     voice = resolve_realtime_voice(str(voice_override) if voice_override else None)
 
     session = build_realtime_session_config(
