@@ -9,7 +9,10 @@ import pytest
 from app.jarvis.model_router import _DEFAULT_LADDER
 from app.jarvis.openrouter_leaders import (
     DEFAULT_TOP_N,
+    PREFERRED_FLASH_ID,
+    PREFERRED_FLASH_NAME,
     SNAPSHOT_MODEL_IDS,
+    catalog_cap,
     cheap_catalog_ids,
     cost_sorted_model_ids,
     fetch_live_leaders,
@@ -61,14 +64,21 @@ def _reset_cache():
 
 def test_snapshot_ids_are_real_openrouter_slugs():
     assert DEFAULT_TOP_N == 20
-    assert len(SNAPSHOT_MODEL_IDS) == 20
-    assert len(set(SNAPSHOT_MODEL_IDS)) == 20
-    assert SNAPSHOT_MODEL_IDS[0] == "deepseek/deepseek-v4-flash-0731"
+    assert catalog_cap() == 21
+    assert len(SNAPSHOT_MODEL_IDS) == 21
+    assert len(set(SNAPSHOT_MODEL_IDS)) == 21
+    assert SNAPSHOT_MODEL_IDS[0] == PREFERRED_FLASH_ID
+    assert SNAPSHOT_MODEL_IDS[1] == "deepseek/deepseek-v4-flash-0731"
     assert "tencent/hy3" in SNAPSHOT_MODEL_IDS
     assert "openai/gpt-5.6-luna" in SNAPSHOT_MODEL_IDS
     assert "deepseek/deepseek-v4-flash" in SNAPSHOT_MODEL_IDS
     assert "deepseek/deepseek-v4-pro-0813" in SNAPSHOT_MODEL_IDS
     assert "nvidia/nemotron-3-ultra-550b-a55b:free" in SNAPSHOT_MODEL_IDS
+    assert PREFERRED_FLASH_ID in SNAPSHOT_MODEL_IDS
+    by_id = {m.model: m for m in snapshot_leaders()}
+    assert by_id[PREFERRED_FLASH_ID].name == PREFERRED_FLASH_NAME
+    assert by_id[PREFERRED_FLASH_ID].is_speed_sku is True
+    assert by_id[PREFERRED_FLASH_ID].is_high_iq is False
     for mid in SNAPSHOT_MODEL_IDS:
         assert "/" in mid
         vendor, rest = mid.split("/", 1)
@@ -95,8 +105,14 @@ def test_snapshot_uses_current_v4_pro_ga_not_0423_or_glm_53():
 def test_default_ladder_and_suggestions_use_current_catalog_ids():
     assert "deepseek/deepseek-v4-pro-0813" in _DEFAULT_LADDER
     assert "z-ai/glm-5.2" in _DEFAULT_LADDER
+    assert PREFERRED_FLASH_ID in _DEFAULT_LADDER
     assert "deepseek/deepseek-v4-flash-0731" in _DEFAULT_LADDER
+    assert _DEFAULT_LADDER.index(PREFERRED_FLASH_ID) < _DEFAULT_LADDER.index(
+        "deepseek/deepseek-v4-flash-0731"
+    )
     assert all("gpt-4.1" not in mid for mid in _DEFAULT_LADDER)
+    assert PREFERRED_FLASH_ID in _DEFAULT_MODEL_SUGGESTIONS
+    assert _DEFAULT_MODEL_SUGGESTIONS[0] == PREFERRED_FLASH_ID
     assert "deepseek/deepseek-v4-pro-0813" in _DEFAULT_MODEL_SUGGESTIONS
     assert "z-ai/glm-5.2" in _DEFAULT_MODEL_SUGGESTIONS
     assert "z-ai/glm-5.3" not in _DEFAULT_MODEL_SUGGESTIONS
@@ -115,11 +131,13 @@ def test_production_code_has_no_invented_model_ids():
 def test_cost_sort_puts_one_free_then_cheap_paid():
     ordered = cost_sorted_model_ids(snapshot_leaders())
     assert ordered[0] == "nvidia/nemotron-3-ultra-550b-a55b:free"
-    assert ordered[1] == "deepseek/deepseek-v4-flash"
-    assert "poolside/laguna-s-2.1:free" in ordered
-    assert ordered.index("poolside/laguna-s-2.1:free") > ordered.index(
-        "deepseek/deepseek-v4-flash"
+    assert ordered[1] == PREFERRED_FLASH_ID
+    assert ordered.index(PREFERRED_FLASH_ID) < ordered.index("deepseek/deepseek-v4-flash")
+    assert ordered.index(PREFERRED_FLASH_ID) < ordered.index(
+        "deepseek/deepseek-v4-flash-0731"
     )
+    assert "poolside/laguna-s-2.1:free" in ordered
+    assert ordered.index("poolside/laguna-s-2.1:free") > ordered.index(PREFERRED_FLASH_ID)
 
 
 def test_smart_catalog_is_paid_high_iq_not_usage_rank():
@@ -142,7 +160,9 @@ def test_smart_catalog_is_paid_high_iq_not_usage_rank():
 
 def test_cheap_catalog_paid_skips_free_tip():
     paid = cheap_catalog_ids(snapshot_leaders(), allow_free=False)
-    assert paid[0] == "deepseek/deepseek-v4-flash"
+    assert paid[0] == PREFERRED_FLASH_ID
+    assert paid.index(PREFERRED_FLASH_ID) < paid.index("deepseek/deepseek-v4-flash")
+    assert paid.index(PREFERRED_FLASH_ID) < paid.index("deepseek/deepseek-v4-flash-0731")
     assert not paid[0].endswith(":free")
     assert "nvidia/nemotron-3-ultra-550b-a55b:free" in paid
     assert paid.index("nvidia/nemotron-3-ultra-550b-a55b:free") > 0
@@ -171,6 +191,20 @@ def test_resolve_ranked_slug_maps_canonical_and_skips_unknown():
     assert (
         resolve_ranked_slug("deepseek/deepseek-v4-flash-20260731", catalog)
         == "deepseek/deepseek-v4-flash-0731"
+    )
+    catalog_v41 = parse_models_catalog(
+        {
+            "data": [
+                {
+                    "id": PREFERRED_FLASH_ID,
+                    "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+                }
+            ]
+        }
+    )
+    assert (
+        resolve_ranked_slug("deepseek/deepseek-v4.1-flash-20260910", catalog_v41)
+        == PREFERRED_FLASH_ID
     )
     assert (
         resolve_ranked_slug("nvidia/nemotron-3-ultra-550b-a55b:free", catalog)
@@ -263,10 +297,50 @@ def test_fetch_live_leaders_uses_catalog_ids_only():
     assert result.ids == ("openai/gpt-5.6-luna",)
 
 
+def test_fetch_live_leaders_adds_preferred_flash_from_models_catalog():
+    def fake_get(url: str, headers: dict, timeout: float) -> dict:
+        if "rankings-daily" in url:
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-10",
+                        "model_permaslug": "openai/gpt-5.6-luna-20260709",
+                        "total_tokens": "5",
+                    }
+                ],
+                "meta": {"as_of": "2026-09-10T12:00:00Z"},
+            }
+        return {
+            "data": [
+                {
+                    "id": "openai/gpt-5.6-luna",
+                    "canonical_slug": "openai/gpt-5.6-luna-20260709",
+                    "name": "OpenAI: GPT-5.6 Luna",
+                    "pricing": {"prompt": "0.0000001", "completion": "0.0000006"},
+                    "supported_parameters": ["tools"],
+                },
+                {
+                    "id": PREFERRED_FLASH_ID,
+                    "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+                    "name": "DeepSeek: DeepSeek V4.1 Flash",
+                    "pricing": {"prompt": "0.00000015", "completion": "0.0000006"},
+                    "supported_parameters": ["tools"],
+                },
+            ]
+        }
+
+    result = fetch_live_leaders(getter=fake_get, api_key="sk-test")
+    assert result.source == "live"
+    assert PREFERRED_FLASH_ID in result.ids
+    assert result.ids[0] == PREFERRED_FLASH_ID
+    assert "openai/gpt-5.6-luna" in result.ids
+
+
 def test_helper_models_public_are_catalog_ids_without_realtime(monkeypatch):
     monkeypatch.setenv("JARVIS_LEADERBOARD_LIVE", "0")
     helpers = helper_models_public()
-    assert 1 <= len(helpers) <= 20
+    assert 1 <= len(helpers) <= catalog_cap()
+    assert PREFERRED_FLASH_ID in [row["id"] for row in helpers]
     ids = [row["id"] for row in helpers]
     assert len(ids) == len(set(ids))
     for row in helpers:
@@ -284,7 +358,19 @@ def test_helper_models_public_are_catalog_ids_without_realtime(monkeypatch):
 def test_pad_with_snapshot_uses_known_rows_only():
     one = snapshot_leaders()[:1]
     padded = pad_with_snapshot(one)
-    assert len(padded) == 20
-    assert padded[0].model == one[0].model
+    assert len(padded) == catalog_cap()
+    assert padded[0].model == PREFERRED_FLASH_ID
     assert {m.model for m in padded} <= set(SNAPSHOT_MODEL_IDS)
     assert "gpt-realtime" not in {m.model for m in padded}
+    assert PREFERRED_FLASH_ID in {m.model for m in padded}
+
+
+def test_pad_keeps_preferred_flash_when_weekly_board_is_full():
+    weekly = [m for m in snapshot_leaders() if m.model != PREFERRED_FLASH_ID]
+    assert len(weekly) == DEFAULT_TOP_N
+    padded = pad_with_snapshot(weekly)
+    ids = [m.model for m in padded]
+    assert PREFERRED_FLASH_ID in ids
+    assert ids[0] == PREFERRED_FLASH_ID
+    assert "deepseek/deepseek-v4-flash-0731" in ids
+    assert "deepseek/deepseek-v4-pro-0813" in ids

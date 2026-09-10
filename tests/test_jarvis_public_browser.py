@@ -841,7 +841,7 @@ def test_health_sheet_matches_public_view_ledger(tmp_path, monkeypatch):
     assert health.get("helper_name") == view.get("helper_name") == sheet.get("helper_name")
     if health.get("helper_name") is not None:
         assert health["helper_name"] in {"Quick", "Kimi", "Ox"}
-    assert 1 <= len(health["helper_models"]) <= 20
+    assert 1 <= len(health["helper_models"]) <= 21
     for row in health["helper_models"]:
         assert row["id"]
         assert row["name"]
@@ -906,7 +906,7 @@ async def test_talk_apis_exist_under_jarvis_prefix(client):
     assert "permission_profile" in body
     assert "talk_speed" in body
     assert "helper_models" in body
-    assert 1 <= len(body["helper_models"]) <= 20
+    assert 1 <= len(body["helper_models"]) <= 21
     assert all("gpt-realtime" not in str(row.get("id") or "") for row in body["helper_models"])
     lite = await client.get("/jarvis/api/jarvis/health?lite=1")
     assert lite.status_code == 200

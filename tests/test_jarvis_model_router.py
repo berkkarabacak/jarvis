@@ -487,6 +487,7 @@ def test_live_fetch_failure_falls_back_to_snapshot_and_scorecard(
     assert choice.pinned is False
     assert choice.model == "openai/gpt-4.1-mini"
     assert choice.metadata["leaderboard_source"] == "snapshot"
+    assert "deepseek/deepseek-v4.1-flash" in choice.metadata["ladder"]
     assert "deepseek/deepseek-v4-flash-0731" in choice.metadata["ladder"]
     assert "openai/gpt-4.1-mini" in choice.metadata["ladder"]
 
@@ -568,3 +569,77 @@ def test_live_board_used_when_fetch_works(
     assert hard.model == "openai/gpt-5.6-luna"
     assert hard.model != "deepseek/deepseek-v4-flash-0731"
     assert not hard.model.endswith(":free")
+
+
+def test_live_catalog_prefers_v41_flash_when_present(
+    ws: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("JARVIS_LEADERBOARD_LIVE", "1")
+    reset_leaders_cache_for_tests()
+
+    def fake_get(url: str, headers: dict, timeout: float) -> dict:
+        if "rankings-daily" in url:
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-10",
+                        "model_permaslug": "openai/gpt-5.6-luna-20260709",
+                        "total_tokens": "100",
+                    },
+                    {
+                        "date": "2026-09-10",
+                        "model_permaslug": "deepseek/deepseek-v4-flash-20260731",
+                        "total_tokens": "80",
+                    },
+                ],
+                "meta": {"as_of": "2026-09-10T00:00:00Z"},
+            }
+        if url.rstrip("/").endswith("/models"):
+            return {
+                "data": [
+                    {
+                        "id": "openai/gpt-5.6-luna",
+                        "canonical_slug": "openai/gpt-5.6-luna-20260709",
+                        "name": "OpenAI: GPT-5.6 Luna",
+                        "pricing": {"prompt": "0.0000001", "completion": "0.0000006"},
+                        "supported_parameters": ["tools"],
+                    },
+                    {
+                        "id": "deepseek/deepseek-v4-flash-0731",
+                        "canonical_slug": "deepseek/deepseek-v4-flash-20260731",
+                        "name": "DeepSeek: DeepSeek V4 Flash 0731",
+                        "pricing": {
+                            "prompt": "0.00000014",
+                            "completion": "0.00000028",
+                        },
+                        "supported_parameters": ["tools"],
+                    },
+                    {
+                        "id": "deepseek/deepseek-v4.1-flash",
+                        "canonical_slug": "deepseek/deepseek-v4.1-flash-20260910",
+                        "name": "DeepSeek: DeepSeek V4.1 Flash",
+                        "pricing": {
+                            "prompt": "0.00000015",
+                            "completion": "0.0000006",
+                        },
+                        "supported_parameters": ["tools"],
+                    },
+                ]
+            }
+        raise AssertionError(url)
+
+    monkeypatch.setattr("app.jarvis.openrouter_leaders._http_get_json", fake_get)
+    choice = route_model(
+        goal="Create a playable tetris as one HTML file with write_file",
+        workspace_root=ws,
+    )
+    assert choice.pinned is False
+    assert choice.metadata["leaderboard_source"] == "live"
+    assert choice.model == "deepseek/deepseek-v4.1-flash"
+    assert "deepseek/deepseek-v4-flash-0731" in choice.metadata["ladder"]
+    hard = route_model(
+        goal="Refactor the multi-file codebase architecture carefully",
+        workspace_root=ws,
+    )
+    assert hard.model == "openai/gpt-5.6-luna"
+    assert hard.model != "deepseek/deepseek-v4.1-flash"
