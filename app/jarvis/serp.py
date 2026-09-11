@@ -118,7 +118,13 @@ _COOKIE_OVERLAY_RE = re.compile(
     r"\bweigeren\b|"
     r"smaakmakers|"
     r"zelf\s*instellen|"
-    r"cookievoorkeuren"
+    r"cookievoorkeuren|"
+    r"cookies?\s*and\s*advertising|"
+    r"cookiesandadvertising|"
+    r"advertising\s*choices|"
+    r"alle\s*cookies|"
+    r"\bdecline\b|"
+    r"customis[ea]"
     r")",
     re.I,
 )

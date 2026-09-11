@@ -64,6 +64,7 @@ from app.jarvis.overlay import (
     needs_web_query,
     next_retailer_fallback_url,
     overlay_dismiss_plan,
+    OVERLAY_DISMISS_MAX,
     query_visible_on_look,
     search_box_point,
     shop_home_url,
@@ -615,6 +616,9 @@ _RETAILER_BLOCKED = (
 )
 _CART_UNFINISHED = (
     "I could not add two in-stock products to the basket."
+)
+_COOKIE_STUCK = (
+    "The cookie banner would not dismiss. I could not finish the search."
 )
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
@@ -2346,7 +2350,12 @@ def _speak_web_job(
     pending = hotel and look_is_hotel_search_pending(looked)
     acted = typed or any(name in tools for name in ("click", "type", "keys"))
     retailer_block = look_is_retailer_block(looked)
-    if retailer_block:
+    cookie_stuck = bool(looked.get("_cookie_stuck"))
+    if cookie_stuck:
+        # Two Coolblue + two Amazon cookie misses — honest stuck.
+        # Never hang until nginx 504 and never call this a shop block.
+        reply = _COOKIE_STUCK
+    elif retailer_block:
         # Abuse / IP-block / 403 — never "I typed the search." Overlay
         # (sandbox banner) on a dead shop is not typed-success.
         if looked.get("_retailer_blocked") or looked.get("_retailer_tried"):
@@ -2354,8 +2363,9 @@ def _speak_web_job(
         else:
             reply = _WEB_STUCK
     elif overlay:
-        # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
-        # A cart job on a shop homepage must not die as typed-search.
+        # Real Sign-in / cookie / Restore still up after the budget.
+        # Cookie-stuck is spoken above. A cart job on a shop homepage
+        # must not die as typed-search.
         if ask_wants_cart(asked):
             reply = _CART_UNFINISHED if acted else "I opened the page."
         else:
@@ -2618,6 +2628,7 @@ def _dismiss_overlays_if_needed(
 ) -> dict[str, Any]:
     """Dismiss Restore / sandbox / sign-in / cookies, then look. Never Sign in."""
     current = looked
+    cookie_dismisses = int(current.get("_cookie_dismisses") or 0)
     for _ in range(max(1, int(rounds))):
         if look_is_empty_desktop(current):
             _wait_after_act()
@@ -2626,8 +2637,14 @@ def _dismiss_overlays_if_needed(
                 current, goal=asked
             ):
                 return current
-        plan = overlay_dismiss_plan(current, goal=asked)
+        plan = overlay_dismiss_plan(
+            current, goal=asked, dismisses=cookie_dismisses
+        )
         if plan is None:
+            current["_cookie_dismisses"] = cookie_dismisses
+            return current
+        if plan.kind == "cookie" and cookie_dismisses >= OVERLAY_DISMISS_MAX:
+            current["_cookie_dismisses"] = cookie_dismisses
             return current
         if plan.click is not None:
             clicked = _click_now(plan.click[0], plan.click[1])
@@ -2638,8 +2655,12 @@ def _dismiss_overlays_if_needed(
         if plan.keys:
             _keys_now(plan.keys)
             _note_tool(tools, "keys")
+        if plan.kind == "cookie":
+            cookie_dismisses += 1
+            current["_cookie_dismisses"] = cookie_dismisses
         _wait_after_act()
         current = _look_opened_site(asked)
+        current["_cookie_dismisses"] = cookie_dismisses
     return current
 
 
@@ -3279,7 +3300,9 @@ def _continue_web_job(
     def look_again():
         again = _look_opened_site(asked)
         _note_tool(tools, "see_screen")
-        return _dismiss_overlays_if_needed(asked, again, tools)
+        # continue_web_search owns the cookie-click budget. Re-dismiss
+        # here burned 3 vision looks per loop and hung past nginx 504.
+        return again
 
     def scroll(*, dy=5, **_k):
         _note_tool(tools, "scroll")
@@ -3308,19 +3331,33 @@ def _continue_web_job(
         )
 
     out = _go(current)
+    if out.get("_cookie_stuck"):
+        return out
     out = _ensure_hotel_alt_after_bounce(asked, out, tools, deadline=deadline)
     out = _ensure_retailer_fallback_after_block(
         asked, out, tools, deadline=deadline
     )
+    if out.get("_cookie_stuck"):
+        return out
+    still_time = deadline is None or time.monotonic() < deadline
     if (
-        ask_wants_shop(asked)
+        still_time
+        and ask_wants_shop(asked)
         and out.get("_retailer_tried")
         and not look_is_retailer_block(out)
+        and not out.get("_cookie_stuck")
         and needs_web_query(asked, out, web_search_query(asked))
     ):
         # New shop loaded after a block — keep the same cart job.
         out = _go(out)
-    if ask_wants_cart(asked) and needs_cart_followthrough(asked, out):
+        if out.get("_cookie_stuck"):
+            return out
+    if (
+        still_time
+        and ask_wants_cart(asked)
+        and needs_cart_followthrough(asked, out)
+        and not out.get("_cookie_stuck")
+    ):
         # Cookie-cleared homepage / typed search is not done.
         out = _go(out)
     return out

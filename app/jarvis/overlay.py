@@ -46,16 +46,29 @@ BOOKING_DATES_CLICK = (560, 500)
 BOOKING_SEARCH_CLICK = (1148, 500)
 # Persistent hero / failed dismiss: stop clicking X and fill the form.
 OVERLAY_DISMISS_MAX = 2
-# Coolblue 2026-09-11 CMP on jarvis-computer 1280x720 (live SHA 7cd1c7c).
-# Centered white "COOKIES. Smaakmakers." card. Green Alles accepteren
-# sits bottom-right of the card, left of Zelf instellen. Weigeren is
-# absent on this layout; other CMP variants put Reject to the left.
-# Never click Zelf instellen (preferences). Escape does not close it.
-COOLBLUE_COOKIE_ACCEPT_CLICK = (888, 520)
-COOLBLUE_COOKIE_REJECT_CLICK = (720, 520)
+# Coolblue 2026-09-11 CMP on jarvis-computer 1280x720.
+# Centered white "COOKIES. Smaakmakers." card. The green Alles
+# accepteren pill is the bottom-right control on the card, left of
+# Zelf instellen — the prior test fixture names (900, 620). Weigeren
+# is to the left when present. y=520 hits the cookie-man, not a
+# button (live SHA d3885bd missed). Never Zelf instellen. Escape
+# does not close it. y≥560 is normally the footer band; CMP buttons
+# sit in that band and must still be clicked.
+COOLBLUE_COOKIE_ACCEPT_CLICK = (900, 620)
+COOLBLUE_COOKIE_REJECT_CLICK = (700, 620)
 COOLBLUE_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
     COOLBLUE_COOKIE_ACCEPT_CLICK,
     COOLBLUE_COOKIE_REJECT_CLICK,
+)
+# Amazon.nl "Cookies and Advertising Choices" on 1280x720 (live
+# 2026-09-11 SHA d3885bd). Accept / Decline / Customise (or Alle
+# cookies / Weigeren / Aanpassen) sit on the bottom row of the white
+# overlay, under the hero. Coolblue card pixels miss this banner.
+AMAZON_COOKIE_ACCEPT_CLICK = (200, 660)
+AMAZON_COOKIE_REJECT_CLICK = (380, 660)
+AMAZON_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
+    AMAZON_COOKIE_ACCEPT_CLICK,
+    AMAZON_COOKIE_REJECT_CLICK,
 )
 # Coolblue / amazon.nl / bol.com cart job on 1280×720 after cookies.
 # Header search — not mid-page categories. Product tiles on zoeken.
@@ -198,7 +211,13 @@ _COOKIE_RE = re.compile(
     r"\bweigeren\b|"
     r"\btoestaan\b|"
     r"smaakmakers|"
-    r"zelf\s*instellen"
+    r"zelf\s*instellen|"
+    r"cookies?\s*and\s*advertising|"
+    r"cookiesandadvertising|"
+    r"advertising\s*choices|"
+    r"alle\s*cookies|"
+    r"\bdecline\b|"
+    r"customis[ea]"
     r")",
     re.I,
 )
@@ -212,6 +231,22 @@ _COOLBLUE_COOKIE_RE = re.compile(
     r"\bweigeren\b|"
     r"cookievoorkeuren|"
     r"(?<![+\w])cookies?\s*[.:]"
+    r")",
+    re.I,
+)
+# Amazon.nl Cookies and Advertising Choices — mashed OCR included.
+_AMAZON_COOKIE_RE = re.compile(
+    r"("
+    r"cookies?\s*and\s*advertising|"
+    r"cookiesandadvertising|"
+    r"advertising\s*choices|"
+    r"alle\s*cookies|"
+    r"\bdecline\b|"
+    r"customis[ea]|"
+    r"cookievoorkeuren|"
+    r"alles\s*accepteren|"
+    r"accept(?:\s+all)?\s+cookies|"
+    r"reject(?:\s+all)?(?:\s+cookies)?"
     r")",
     re.I,
 )
@@ -1019,7 +1054,11 @@ def overlay_kind(
             else:
                 return "signin"
     cookie_blob = _COOKIE_ABSENT_RE.sub(" ", blob)
-    if _COOKIE_RE.search(cookie_blob) or look_is_coolblue_cookie_modal(item):
+    if (
+        _COOKIE_RE.search(cookie_blob)
+        or look_is_coolblue_cookie_modal(item)
+        or look_is_amazon_cookie_banner(item)
+    ):
         return "cookie"
     return None
 
@@ -1072,10 +1111,14 @@ def _cookie_fallback_click(
     """Hardcoded CMP button when vision names no (x,y).
 
     Coolblue's live card has no Weigeren and no coords — click Alles
-    accepteren first, then Weigeren on the next look. Never a random
-    product / cookie-man pixel. Never Escape-only.
+    accepteren at the card footer (900, 620), then Weigeren. Never the
+    cookie-man at y=520. Amazon.nl uses the bottom Accept / Decline
+    row, not Coolblue pixels. Never Escape-only.
     """
-    clicks = COOLBLUE_COOKIE_DISMISS_CLICKS
+    if look_is_amazon_host(looked):
+        clicks = AMAZON_COOKIE_DISMISS_CLICKS
+    else:
+        clicks = COOLBLUE_COOKIE_DISMISS_CLICKS
     idx = min(max(int(dismisses), 0), len(clicks) - 1)
     return clicks[idx]
 
@@ -1131,10 +1174,11 @@ def overlay_dismiss_plan(
             keys="escape",
             reason="Sign-in / Genius modal — click X / No thanks, never Sign in.",
         )
-    # Cookie: named Weigeren / Reject, then named Accept, then the
-    # Coolblue Alles accepteren pixel. A body-text "weigeren" without
-    # coords is not a reason to send Escape only — that hung live.
-    # Never _named_click_from_look (the cookie-man / a product).
+    # Cookie: named Weigeren / Reject / Decline, then named Accept,
+    # then the host CMP pixel (Coolblue card or Amazon banner). A
+    # body-text "weigeren" without coords is not Escape-only — that
+    # hung live. Never _named_click_from_look (the cookie-man / a
+    # product). Never Coolblue pixels on amazon.nl.
     click = named_dismiss or _cookie_accept_xy(blob)
     if click is None:
         click = _cookie_fallback_click(looked, dismisses=dismisses)
@@ -1142,7 +1186,7 @@ def overlay_dismiss_plan(
         kind="cookie",
         click=click,
         keys="escape" if _DISMISS_LABEL_RE.search(blob) else "enter",
-        reason="Cookie / consent — Reject or Alles accepteren, never Sign in.",
+        reason="Cookie / consent — Reject, Accept, or Alles accepteren, never Sign in.",
     )
 
 
@@ -1625,11 +1669,18 @@ def shop_cart_queries(asked: str) -> tuple[str, ...]:
     return CART_PRODUCT_QUERIES
 
 
+def look_is_cookie_wall(looked: dict[str, Any] | None) -> bool:
+    """True for a Coolblue / Amazon CMP that blocks the shop."""
+    return look_is_coolblue_cookie_modal(looked) or look_is_amazon_cookie_banner(
+        looked
+    )
+
+
 def look_is_shop_homepage(looked: dict[str, Any] | None) -> bool:
     """Coolblue / amazon / bol root — categories / newsletter, not a basket."""
     if not look_is_nl_retailer(looked):
         return False
-    if look_is_coolblue_cookie_modal(looked):
+    if look_is_cookie_wall(looked):
         return False
     url = str((looked or {}).get("url") or "")
     if _SHOP_BASKET_URL_RE.search(url) or _SHOP_PDP_URL_RE.search(url):
@@ -1681,7 +1732,7 @@ def look_is_unfinished_cart(looked: dict[str, Any] | None) -> bool:
         return False
     if look_is_retailer_block(looked) or look_is_captcha(looked):
         return False
-    if look_is_coolblue_cookie_modal(looked):
+    if look_is_cookie_wall(looked):
         return False
     return look_is_nl_retailer(looked)
 
@@ -1802,6 +1853,30 @@ def look_is_coolblue_host(looked: dict[str, Any] | None) -> bool:
         str(item.get(key) or "") for key in ("url", "title", "vision_description")
     )
     return bool(re.search(r"\b(?:www\.)?coolblue\.nl\b", blob, re.I))
+
+
+def look_is_amazon_host(looked: dict[str, Any] | None) -> bool:
+    """True when the focused tab is amazon.nl."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "") for key in ("url", "title", "vision_description")
+    )
+    if re.search(r"\b(?:www\.)?amazon\.nl\b", blob, re.I):
+        return True
+    return "amazon.nl" in look_host_label(item)
+
+
+def look_is_amazon_cookie_banner(looked: dict[str, Any] | None) -> bool:
+    """Amazon.nl Cookies and Advertising Choices — coords optional.
+
+    Live 2026-09-11: Accept / Decline / Customise (or Alle cookies)
+    on a full-width overlay. Escape does not close it. Coolblue
+    card pixels miss the buttons.
+    """
+    if not look_is_amazon_host(looked):
+        return False
+    blob = _COOKIE_ABSENT_RE.sub(" ", look_blob(looked))
+    return bool(_AMAZON_COOKIE_RE.search(blob))
 
 
 def look_is_coolblue_cookie_modal(looked: dict[str, Any] | None) -> bool:
@@ -2567,11 +2642,12 @@ def continue_web_search(
     A shop IP-block / abuse / access-denied look is not typed-success —
     immediately run_app coolblue.nl, then amazon.nl, and keep the same
     cart job.     A Coolblue cookie card that survives the first dismiss
-    clicks is the same — fall back to amazon.nl. Never burn the nginx
-    180s on Escape / Home. After cookies, a cart / basket job must
-    search real products, open a PDP, add two different items, and
-    open the basket. Never finalize typed-search on the shop homepage.
-    Speak stuck only after those fallbacks fail.
+    clicks is the same — fall back to amazon.nl. Amazon.nl cookie
+    choices that survive Accept / Decline clicks return honest stuck.
+    Never burn the nginx 180s on Escape / Home. After cookies, a
+    cart / basket job must search real products, open a PDP, add two
+    different items, and open the basket. Never finalize typed-search
+    on the shop homepage. Speak stuck only after those fallbacks fail.
     """
     query = web_search_query(goal)
     if ask_wants_hotel(goal):
@@ -2597,9 +2673,10 @@ def continue_web_search(
     hotel_alt_fallback = bool(current.get("_hotel_alt_fallback"))
     retailer_tried = list(current.get("_retailer_tried") or [])
     retailer_blocked = bool(current.get("_retailer_blocked"))
+    cookie_stuck = bool(current.get("_cookie_stuck"))
     captcha_focus_started: float | None = None
     blank_looks = 0
-    overlay_dismisses = 0
+    overlay_dismisses = int(current.get("_cookie_dismisses") or 0)
     memory_dismisses = 0
     hotel_reopens = int(current.get("_hotel_reopens") or 0)
     hotel_alt_looks = int(current.get("_hotel_alt_looks") or 0)
@@ -2642,6 +2719,10 @@ def continue_web_search(
             item["_retailer_tried"] = list(retailer_tried)
         if retailer_blocked:
             item["_retailer_blocked"] = True
+        if cookie_stuck:
+            item["_cookie_stuck"] = True
+        if overlay_dismisses:
+            item["_cookie_dismisses"] = overlay_dismisses
         for key in (
             "_cart_adds",
             "_cart_searches",
@@ -2655,6 +2736,7 @@ def continue_web_search(
 
     def _open_retailer_fallback(*, force: bool = False) -> bool:
         nonlocal current, retailer_tried, typed_query, overlay_dismisses
+        nonlocal cookie_stuck
         if not ask_wants_shop(goal):
             return False
         if not force and not look_is_retailer_block(current):
@@ -2678,6 +2760,9 @@ def continue_web_search(
         current["_cart_adds"] = 0
         current["_cart_searches"] = 0
         current["_cart_pdps"] = []
+        current["_cookie_dismisses"] = 0
+        current.pop("_cookie_stuck", None)
+        cookie_stuck = False
         return True
 
     for i in range(limit):
@@ -2705,18 +2790,18 @@ def continue_web_search(
             # Toast already clicked — do not loop No thanks forever.
             plan = None
             memory_toast = False
-        if (
-            plan is not None
-            and plan.kind == "cookie"
-            and overlay_dismisses >= OVERLAY_DISMISS_MAX
-            and ask_wants_cart(goal)
+        if plan is not None and plan.kind == "cookie" and (
+            overlay_dismisses >= OVERLAY_DISMISS_MAX or _deadline_passed(deadline)
         ):
-            # Cookie still up after Alles accepteren / Weigeren clicks.
-            # Do not Home-loop the modal until nginx 504 — open amazon.nl.
-            if _open_retailer_fallback(force=True):
-                continue
-            retailer_blocked = True
-            current["_retailer_blocked"] = True
+            # Cookie still up after Alles accepteren / Accept / Decline
+            # clicks, or the first-attempt budget is gone. Coolblue →
+            # amazon.nl. Amazon (or no fallback left) → honest stuck.
+            # Never Home-loop the CMP until nginx 504.
+            if ask_wants_cart(goal) and not look_is_amazon_host(current):
+                if _open_retailer_fallback(force=True):
+                    continue
+            cookie_stuck = True
+            current["_cookie_stuck"] = True
             return _mark(current)
         if (
             plan is not None
@@ -2731,6 +2816,8 @@ def continue_web_search(
                 memory_dismisses += 1
             else:
                 overlay_dismisses += 1
+                if plan.kind == "cookie":
+                    current["_cookie_dismisses"] = overlay_dismisses
             if plan.click is not None:
                 click(x=plan.click[0], y=plan.click[1])
             if plan.keys:

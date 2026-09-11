@@ -12,6 +12,9 @@ from app.jarvis.overlay import (
     BOOKING_DATES_CLICK,
     BOOKING_DEST_CLICK,
     BOOKING_SEARCH_CLICK,
+    AMAZON_COOKIE_ACCEPT_CLICK,
+    AMAZON_COOKIE_DISMISS_CLICKS,
+    AMAZON_COOKIE_REJECT_CLICK,
     COOLBLUE_COOKIE_ACCEPT_CLICK,
     COOLBLUE_COOKIE_DISMISS_CLICKS,
     COOLBLUE_COOKIE_REJECT_CLICK,
@@ -59,6 +62,9 @@ from app.jarvis.overlay import (
     look_is_abuse_block,
     look_is_http_error,
     look_is_leftover_for_ask,
+    look_is_amazon_cookie_banner,
+    look_is_amazon_host,
+    look_is_cookie_wall,
     look_is_coolblue_cookie_modal,
     look_is_nl_retailer,
     look_is_retailer_block,
@@ -103,6 +109,7 @@ from app.jarvis.voice_ask import (
     _BOOKING_BOUNCED,
     _HOTEL_ALT_FAILED,
     _CART_UNFINISHED,
+    _COOKIE_STUCK,
     _RETAILER_BLOCKED,
     _WEB_STUCK,
     ask_abort_ms,
@@ -3023,6 +3030,31 @@ LIVE_COOLBLUE_COOKIE_MODAL = {
     ),
 }
 
+# Live 2026-09-11 SHA d3885bd / PR #46: amazon.nl fallback stuck on
+# Cookies and Advertising Choices. Buttons Accept / Decline / Customise.
+# Vision often mashes the heading and names no (x,y).
+LIVE_AMAZON_COOKIE_BANNER = {
+    "ok": True,
+    "title": "Amazon.nl: Large range, small prices - Chromium",
+    "url": "https://www.amazon.nl/",
+    "vision_description": (
+        "CookiesandAdvertisingChoices. A white cookie consent overlay "
+        "covers amazon.nl under the hero. Cookie notice. "
+        "Accept. Decline. Customise. Alle cookies. "
+        "No search results. No basket. No euro prices."
+    ),
+}
+
+AMAZON_HOME_AFTER_COOKIE = {
+    "ok": True,
+    "title": "Amazon.nl: Large range, small prices - Chromium",
+    "url": "https://www.amazon.nl/",
+    "vision_description": (
+        "Amazon.nl homepage. Search box at (520, 72). "
+        "No cookie banner. No basket. No euro prices."
+    ),
+}
+
 COOLBLUE_HOME_AFTER_COOKIE = {
     "ok": True,
     "title": "Coolblue - Allereerst voor een glimlach - Chromium",
@@ -3577,10 +3609,16 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
     assert look_has_cart_results(COOLBLUE_TWO_PRODUCTS) is True
     assert overlay_kind(COOLBLUE_COOKIE) == "cookie"
     assert overlay_kind(LIVE_COOLBLUE_COOKIE_MODAL) == "cookie"
+    assert overlay_kind(LIVE_AMAZON_COOKIE_BANNER) == "cookie"
     assert overlay_kind(GOOGLE_CART_ASK, goal=LIVE_COOLBLUE_CART) is None
     assert look_is_coolblue_cookie_modal(LIVE_COOLBLUE_COOKIE_MODAL) is True
     assert look_is_coolblue_cookie_modal(GOOGLE_CART_ASK) is False
+    assert look_is_amazon_cookie_banner(LIVE_AMAZON_COOKIE_BANNER) is True
+    assert look_is_amazon_cookie_banner(LIVE_COOLBLUE_COOKIE_MODAL) is False
+    assert look_is_cookie_wall(LIVE_COOLBLUE_COOKIE_MODAL) is True
+    assert look_is_cookie_wall(LIVE_AMAZON_COOKIE_BANNER) is True
     assert look_is_footer(LIVE_COOLBLUE_COOKIE_MODAL) is False
+    assert look_is_footer(LIVE_AMAZON_COOKIE_BANNER) is False
     tools = ["run_app", "see_screen", "click", "type", "keys"]
     leak = _speak_web_job(LIVE_COOLBLUE_CART, dict(GOOGLE_CART_ASK), tools, opened=True)
     assert leak["reply"] != _STOP_PAY
@@ -3786,6 +3824,277 @@ def test_coolblue_cookie_modal_stuck_falls_back_to_amazon():
     )
     assert spoken["reply"] != _STOP_PAY
     low = spoken["reply"].lower()
+    assert "sony" in low or "logitech" in low or "headphones" in low
+
+
+def test_coolblue_cookie_clicks_hit_live_1280x720_modal():
+    """Prior Coolblue CMP fixture names (900, 620) — not the cookie-man."""
+    from app.jarvis.serp import look_has_cookie_overlay
+
+    assert COOLBLUE_COOKIE_ACCEPT_CLICK == (900, 620)
+    assert COOLBLUE_COOKIE_REJECT_CLICK == (700, 620)
+    assert COOLBLUE_COOKIE_ACCEPT_CLICK[1] >= 600
+    assert COOLBLUE_COOKIE_ACCEPT_CLICK[1] < 720
+    assert COOLBLUE_COOKIE_REJECT_CLICK[1] >= 600
+    assert (888, 520) not in COOLBLUE_COOKIE_DISMISS_CLICKS
+    assert look_has_cookie_overlay(LIVE_COOLBLUE_COOKIE_MODAL) is True
+    named = overlay_dismiss_plan(COOLBLUE_COOKIE, goal=LIVE_COOLBLUE_BASKET)
+    assert named is not None
+    # Prior fixture names both buttons; Weigeren / Reject wins.
+    assert named.click == (700, 620)
+    live = overlay_dismiss_plan(
+        LIVE_COOLBLUE_COOKIE_MODAL, goal=LIVE_COOLBLUE_BASKET
+    )
+    assert live is not None
+    assert live.kind == "cookie"
+    assert live.click == COOLBLUE_COOKIE_ACCEPT_CLICK
+    second = overlay_dismiss_plan(
+        LIVE_COOLBLUE_COOKIE_MODAL, goal=LIVE_COOLBLUE_BASKET, dismisses=1
+    )
+    assert second is not None
+    assert second.click == COOLBLUE_COOKIE_REJECT_CLICK
+
+
+def test_amazon_cookie_banner_clicks_dismiss_on_first_looks():
+    """Amazon.nl cookie choices must click Accept then Decline, not Coolblue."""
+    from app.jarvis.serp import look_has_cookie_overlay
+    from app.jarvis.voice_ask import _speak_web_job
+
+    assert look_is_amazon_host(LIVE_AMAZON_COOKIE_BANNER) is True
+    assert look_is_amazon_cookie_banner(LIVE_AMAZON_COOKIE_BANNER) is True
+    assert look_has_cookie_overlay(LIVE_AMAZON_COOKIE_BANNER) is True
+    assert look_is_shop_homepage(LIVE_AMAZON_COOKIE_BANNER) is False
+    assert look_is_unfinished_cart(LIVE_AMAZON_COOKIE_BANNER) is False
+    assert needs_cart_followthrough(
+        LIVE_COOLBLUE_BASKET, LIVE_AMAZON_COOKIE_BANNER
+    ) is False
+    plan = overlay_dismiss_plan(
+        LIVE_AMAZON_COOKIE_BANNER, goal=LIVE_COOLBLUE_BASKET
+    )
+    assert plan is not None
+    assert plan.kind == "cookie"
+    assert plan.click == AMAZON_COOKIE_ACCEPT_CLICK
+    assert plan.click in AMAZON_COOKIE_DISMISS_CLICKS
+    assert plan.click != COOLBLUE_COOKIE_ACCEPT_CLICK
+    reject = overlay_dismiss_plan(
+        LIVE_AMAZON_COOKIE_BANNER, goal=LIVE_COOLBLUE_BASKET, dismisses=1
+    )
+    assert reject is not None
+    assert reject.click == AMAZON_COOKIE_REJECT_CLICK
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        if looks["n"] == 1:
+            return dict(LIVE_AMAZON_COOKIE_BANNER)
+        if any("winkelwagen" in (u or "") or "cart/view" in (u or "") for u in opened):
+            return dict(AMAZON_NL_TWO_PRODUCTS)
+        if typed:
+            return dict(AMAZON_NL_TWO_PRODUCTS)
+        return dict(AMAZON_HOME_AFTER_COOKIE)
+
+    out = continue_web_search(
+        dict(LIVE_AMAZON_COOKIE_BANNER),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert clicks, "must click Amazon cookie dismiss"
+    assert clicks[0] == AMAZON_COOKIE_ACCEPT_CLICK
+    assert AMAZON_COOKIE_ACCEPT_CLICK not in COOLBLUE_COOKIE_DISMISS_CLICKS
+    assert all(c != COOLBLUE_COOKIE_ACCEPT_CLICK for c in clicks[:2]), clicks
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert spoken["reply"] != _COOKIE_STUCK
+    low = spoken["reply"].lower()
+    assert "sony" in low or "logitech" in low or "headphones" in low
+
+
+def test_amazon_cookie_banner_stuck_returns_json_not_504():
+    """Two missed Amazon cookie clicks must return honest stuck, not hang."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        return dict(LIVE_AMAZON_COOKIE_BANNER)
+
+    started = time.monotonic()
+    out = continue_web_search(
+        dict(LIVE_AMAZON_COOKIE_BANNER),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < 2.0, elapsed
+    assert looks["n"] <= 6, looks["n"]
+    assert clicks, "must click Amazon cookie dismiss before stuck"
+    assert clicks[0] == AMAZON_COOKIE_ACCEPT_CLICK
+    assert AMAZON_COOKIE_REJECT_CLICK in clicks or len(clicks) >= OVERLAY_DISMISS_MAX
+    assert out.get("_cookie_stuck") is True
+    assert not out.get("_retailer_blocked")
+    assert all("google.com/search" not in (t or "").lower() for t in typed), typed
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] == _COOKIE_STUCK
+    assert "504" not in spoken["reply"]
+    assert spoken["reply"] != _RETAILER_BLOCKED
+
+
+def test_cookie_deadline_returns_json_before_gateway_timeout():
+    """Expired first-attempt budget must reply JSON, not loop to nginx 504."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        if any("amazon.nl" in (u or "") for u in opened):
+            return dict(LIVE_AMAZON_COOKIE_BANNER)
+        return dict(LIVE_COOLBLUE_COOKIE_MODAL)
+
+    started = time.monotonic()
+    out = continue_web_search(
+        dict(LIVE_COOLBLUE_COOKIE_MODAL),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() - 1,
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < 2.0, elapsed
+    assert looks["n"] <= 8, looks["n"]
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["ok"] is True
+    assert spoken["reply"] in {_COOKIE_STUCK, _CART_UNFINISHED}
+    assert "504" not in spoken["reply"]
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_amazon_cookie_banner_dismisses_then_cart(
+    monkeypatch, tmp_path
+):
+    """Ask path: amazon.nl cookie choices must click dismiss, then basket."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_AMAZON_COOKIE_BANNER),
+        dict(AMAZON_HOME_AFTER_COOKIE),
+        dict(AMAZON_NL_TWO_PRODUCTS),
+    ]
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("google.com/search" in u for u in urls):
+            return dict(GOOGLE_CART_ASK)
+        if looks:
+            return dict(looks.pop(0))
+        return dict(AMAZON_NL_TWO_PRODUCTS)
+
+    _patch_voice_ask_web(
+        monkeypatch,
+        [dict(LIVE_AMAZON_COOKIE_BANNER)],
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_COOLBLUE_BASKET)
+    assert clicks, "must click Amazon cookie dismiss"
+    assert clicks[0] == AMAZON_COOKIE_ACCEPT_CLICK
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert body["reply"] != _STOP_PAY
+    assert body["reply"] != _COOKIE_STUCK
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
     assert "sony" in low or "logitech" in low or "headphones" in low
 
 
