@@ -52,6 +52,7 @@ from pathlib import Path
 from typing import Any
 
 from app.jarvis.audit import redact
+from app.jarvis.openrouter_leaders import PREFERRED_FLASH_ID
 from app.jarvis.permissions import PROFILE_MAX_AUTO
 from app.jarvis.realtime import ALLOWED_REALTIME_VOICES
 from app.jarvis.workspace import default_workspace
@@ -145,7 +146,7 @@ SECRET_ENV_NAMES: tuple[str, ...] = (
 )
 
 _DEFAULT_MODEL_SUGGESTIONS: tuple[str, ...] = (
-    "deepseek/deepseek-v4.1-flash",
+    PREFERRED_FLASH_ID,
     "deepseek/deepseek-v4-flash-0731",
     "deepseek/deepseek-v4-pro-0813",
     "z-ai/glm-5.2",
@@ -471,7 +472,7 @@ def _env_model() -> str:
     return (
         os.environ.get("JARVIS_MODEL")
         or os.environ.get("DEFAULT_MODEL")
-        or "deepseek/deepseek-v4.1-flash"
+        or PREFERRED_FLASH_ID
     ).strip()
 
 

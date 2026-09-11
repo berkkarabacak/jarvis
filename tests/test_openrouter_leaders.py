@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.jarvis.model_router import _DEFAULT_LADDER
+from app.jarvis.model_router import _CHEAP_FALLBACK, _DEFAULT_LADDER, cheap_default_model
 from app.jarvis.openrouter_leaders import (
     DEFAULT_TOP_N,
     PREFERRED_FLASH_ID,
@@ -100,6 +100,26 @@ def test_snapshot_uses_current_v4_pro_ga_not_0423_or_glm_53():
     )
     assert "z-ai/glm-5.2" in SNAPSHOT_MODEL_IDS
     assert "z-ai/glm-5.3" not in SNAPSHOT_MODEL_IDS
+
+
+def test_fresh_host_defaults_to_v41_flash(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """Restarts / empty hosts use V4.1 Flash when no env or settings pin."""
+    monkeypatch.delenv("JARVIS_MODEL", raising=False)
+    monkeypatch.delenv("DEFAULT_MODEL", raising=False)
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path / "Jarvis"))
+    monkeypatch.setenv("JARVIS_LEADERBOARD_LIVE", "0")
+    from app.jarvis import settings_store
+
+    settings_store.reset_cache()
+    assert PREFERRED_FLASH_ID == "deepseek/deepseek-v4.1-flash"
+    assert _CHEAP_FALLBACK == PREFERRED_FLASH_ID
+    assert cheap_default_model() == PREFERRED_FLASH_ID
+    assert settings_store.get_model() == PREFERRED_FLASH_ID
+    assert settings_store.public_view()["model"] == PREFERRED_FLASH_ID
+    assert settings_store.public_view()["model_suggestions"][0] == PREFERRED_FLASH_ID
+    assert "deepseek/deepseek-v4-flash-0731" in settings_store.public_view()["model_suggestions"]
+    assert "deepseek/deepseek-v4-pro-0813" in SNAPSHOT_MODEL_IDS
+    settings_store.reset_cache()
 
 
 def test_default_ladder_and_suggestions_use_current_catalog_ids():
