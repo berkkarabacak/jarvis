@@ -1216,7 +1216,7 @@
         const frame = document.getElementById("pc-frame");
         if (!frame) return;
         if (pcFrameIsLive(frame)) return;
-        frame.setAttribute("src", pcScreenSrc());
+        frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
       }
 
       function paintTalkMode() {
@@ -1275,7 +1275,7 @@
           url.searchParams.set("t", String(Date.now()));
           frame.setAttribute("src", url.pathname + url.search);
         } catch (_) {
-          frame.setAttribute("src", pcScreenSrc());
+          frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
         }
       }
 
