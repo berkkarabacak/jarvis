@@ -755,8 +755,8 @@ def _normalize_talk_mode(raw: str | None) -> str | None:
 def get_talk_mode(root: Path | None = None) -> str:
     """computer | terminal. Public Talk interaction mode. Default computer.
 
-    Terminal is chat/CLI only (no PC). Server-side tool blocking is a
-    follow-up; this helper is the shared read for UI + later enforcement.
+    Terminal is chat/CLI only (no PC). Server-side enforcement lives in
+    ``talk_mode`` and the tool gateway.
     """
     stored = load(root).get("talk_mode")
     parsed = _normalize_talk_mode(stored if isinstance(stored, str) else None)

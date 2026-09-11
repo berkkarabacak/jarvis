@@ -732,6 +732,11 @@ class ToolContext:
 
 def run_tool(ctx: ToolContext, name: str, args: dict[str, Any]) -> str:
     try:
+        from app.jarvis.talk_mode import refuse_computer_tool_result
+
+        blocked = refuse_computer_tool_result(name)
+        if blocked:
+            return json.dumps(blocked)
         fn = _DISPATCH.get(name)
         if not fn:
             return json.dumps({"ok": False, "error": f"unknown tool: {name}"})

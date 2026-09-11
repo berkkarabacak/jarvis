@@ -1082,6 +1082,12 @@ def _linux_chrome_title_is_blank() -> bool:
 
 
 def linux_run_app(plan: dict[str, Any]) -> dict[str, Any]:
+    from app.jarvis.talk_mode import refuse_computer_tool_result
+
+    blocked = refuse_computer_tool_result("run_app")
+    if blocked:
+        blocked["computer"] = JARVIS_COMPUTER
+        return blocked
     argv = list(plan.get("argv") or [])
     if not argv:
         return {"ok": False, "error": "empty launch", "computer": JARVIS_COMPUTER}
@@ -1134,6 +1140,12 @@ def desktop_file_path(name: str) -> str:
 
 def linux_install_package(pkg: str) -> dict[str, Any]:
     """apt-get install -y in the ONE existing jarvis-computer. Never docker run."""
+    from app.jarvis.talk_mode import refuse_computer_tool_result
+
+    blocked = refuse_computer_tool_result("install")
+    if blocked:
+        blocked["computer"] = JARVIS_COMPUTER
+        return blocked
     name = map_apt_package(pkg)
     if not name or not _SAFE_PKG_RE.match(name):
         return {"ok": False, "error": f"bad package name: {pkg or name}"}

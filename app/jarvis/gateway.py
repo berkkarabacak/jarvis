@@ -219,6 +219,10 @@ class ToolGateway:
         args = args or {}
         if not is_known_tool(name):
             return GatewayDecision(False, False, "L5", f"unknown tool: {name}")
+        from app.jarvis.talk_mode import blocks_computer_tool, refuse_computer_decision
+
+        if blocks_computer_tool(name):
+            return refuse_computer_decision(f"L{int(tool_tier(name))}")
         # MCP tools must carry an explicit registry tier (acceptance: none
         # dispatchable without one). is_known_tool already enforced that.
 
@@ -378,6 +382,13 @@ class ToolGateway:
         if child_must_block_tool(tool, source):
             return {"ok": False, "error": CHILD_FORBIDDEN, "tool": tool}
 
+        from app.jarvis.talk_mode import DESKTOP_TOOLS, refuse_computer_tool_result
+
+        blocked = refuse_computer_tool_result(tool)
+        if blocked:
+            blocked["tier"] = f"L{int(tool_tier(tool))}"
+            return blocked
+
         # Meta-tools: resolve pending confirms without normal dispatch
         if tool in {"confirm_action", "confirm_pending", "confirm_screen_action"}:
             if tool == "confirm_screen_action":
@@ -410,16 +421,7 @@ class ToolGateway:
             }
 
         tracker = self._tracker(source)
-        desktop_tools = {
-            "see_screen",
-            "screenshot",
-            "keys",
-            "click",
-            "type",
-            "scroll",
-            "focus_app",
-            "run_app",
-        }
+        desktop_tools = DESKTOP_TOOLS
         if tool in desktop_tools and not tracker.user_goal:
             fallback = str((args or {}).get("goal") or "").strip()
             if fallback:

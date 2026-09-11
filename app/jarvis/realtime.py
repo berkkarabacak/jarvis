@@ -767,6 +767,12 @@ def prepare_realtime_tool_call(
         raw = "list_github_repos"
     args = dict(arguments or {})
 
+    from app.jarvis.talk_mode import refuse_computer_tool_result
+
+    early_block = refuse_computer_tool_result(raw)
+    if early_block is not None:
+        return raw, args, early_block
+
     from app.jarvis.computer import goal_targets_user_windows
     from app.jarvis.virtual_pc import goal_asks_host_disk, hosted_linux_talk
 
