@@ -3512,7 +3512,9 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
     assert look_has_cart_results(COOLBLUE_TWO_PRODUCTS) is True
     assert overlay_kind(COOLBLUE_COOKIE) == "cookie"
     assert overlay_kind(LIVE_COOLBLUE_COOKIE_MODAL) == "cookie"
+    assert overlay_kind(GOOGLE_CART_ASK, goal=LIVE_COOLBLUE_CART) is None
     assert look_is_coolblue_cookie_modal(LIVE_COOLBLUE_COOKIE_MODAL) is True
+    assert look_is_coolblue_cookie_modal(GOOGLE_CART_ASK) is False
     assert look_is_footer(LIVE_COOLBLUE_COOKIE_MODAL) is False
     tools = ["run_app", "see_screen", "click", "type", "keys"]
     leak = _speak_web_job(LIVE_COOLBLUE_CART, dict(GOOGLE_CART_ASK), tools, opened=True)

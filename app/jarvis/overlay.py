@@ -174,8 +174,8 @@ _COOKIE_RE = re.compile(
     r"i\s+agree|"
     r"agree\s+and\s+continue|"
     r"before you continue|"
-    r"cookie\s+(?:banner|modal|consent|wall|notice|dialog|popup)|"
-    r"consent\s+(?:banner|modal|overlay|dialog)|"
+    r"cookie\s+(?:banner|modal|consent|wall|notice)|"
+    r"consent\s+(?:banner|modal|overlay)|"
     r"reject(?:\s+all)?(?:\s+cookies)?|"
     r"accept\s+(?:all\s+)?cookies|"
     r"alles\s*accepteren|"
@@ -184,8 +184,7 @@ _COOKIE_RE = re.compile(
     r"\bweigeren\b|"
     r"\btoestaan\b|"
     r"smaakmakers|"
-    r"zelf\s*instellen|"
-    r"\bcookies?\s*[.:]"
+    r"zelf\s*instellen"
     r")",
     re.I,
 )
@@ -198,7 +197,7 @@ _COOLBLUE_COOKIE_RE = re.compile(
     r"alles\s*weigeren|"
     r"\bweigeren\b|"
     r"cookievoorkeuren|"
-    r"\bcookies?\s*[.:]"
+    r"(?<![+\w])cookies?\s*[.:]"
     r")",
     re.I,
 )
@@ -885,7 +884,7 @@ def overlay_kind(
                 pass
             else:
                 return "signin"
-    if _COOKIE_RE.search(blob):
+    if _COOKIE_RE.search(blob) or look_is_coolblue_cookie_modal(item):
         return "cookie"
     return None
 

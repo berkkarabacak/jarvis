@@ -109,8 +109,8 @@ _COOKIE_OVERLAY_RE = re.compile(
     r"\bi\s+agree\b|"
     r"\bagree\s+and\s+continue\b|"
     r"before you continue|"
-    r"cookie\s+(?:banner|modal|consent|wall|notice|dialog|popup)|"
-    r"consent\s+(?:banner|modal|overlay|dialog)|"
+    r"cookie\s+(?:banner|modal|consent|wall|notice)|"
+    r"consent\s+(?:banner|modal|overlay)|"
     r"terms\s+(?:of\s+use\s+)?accept|"
     r"accept\s+(?:all\s+)?cookies|"
     r"alles\s*accepteren|"
@@ -118,8 +118,7 @@ _COOKIE_OVERLAY_RE = re.compile(
     r"\bweigeren\b|"
     r"smaakmakers|"
     r"zelf\s*instellen|"
-    r"cookievoorkeuren|"
-    r"\bcookies?\s*[.:]"
+    r"cookievoorkeuren"
     r")",
     re.I,
 )
