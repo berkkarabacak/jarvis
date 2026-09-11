@@ -258,6 +258,7 @@ _WEB_JOB_RE = re.compile(
     r"\bhotels?\s+in\b|"
     r"\bflights?\s+to\b|"
     r"\b(?:use|using)\s+chrome\b|"
+    r"\bgoogle\s+shopping\b|"
     r"\badd\b.{0,80}\bcart\b|"
     r"\bto\s+cart\b|"
     r"\bin-stock\b|"

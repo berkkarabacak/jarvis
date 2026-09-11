@@ -430,6 +430,44 @@ _CART_FILLER_RE = re.compile(
     r")\b",
     re.I,
 )
+_SHOP_COMPARE_ASK_RE = re.compile(
+    r"("
+    r"\bgoogle\s+shopping\b|"
+    r"\bshopping\s+tab\b|"
+    r"priced\s+result(?:s)?(?:\s+for\s+each)?|"
+    r"product\s+titles?\s+and\s+prices|"
+    r"\bcompare\b.{0,48}\b(?:prices?|products?)"
+    r")",
+    re.I,
+)
+_GOOGLE_SHOPPING_URL_RE = re.compile(
+    r"("
+    r"[?&]tbm=shop\b|"
+    r"shopping\.google\.com|"
+    r"google\.[^/\s]+/shopping"
+    r")",
+    re.I,
+)
+_GOOGLE_SHOPPING_LOOK_RE = re.compile(
+    r"\bgoogle\s+shopping\b|\bshopping\s+(?:tab|results?)\b",
+    re.I,
+)
+_SHOP_DOLLAR_RE = re.compile(r"\$\s*\d+(?:[.,]\d{1,2})?")
+_SHOP_PRICE_RE = re.compile(
+    r"("
+    r"\$\s*\d+(?:[.,]\d{1,2})?"
+    r"|€\s*\d+(?:[.,]\d{1,2})?"
+    r"|\b\d+[.,]\d{2}\s*(?:usd|eur|euro)\b"
+    r")",
+    re.I,
+)
+_SHOP_PRICED_ITEM_RE = re.compile(
+    r"([A-Za-z0-9][^$€\n]{2,90}?)(?:\s*[—–\-:]\s*|\s+)"
+    r"(\$\s*\d+(?:[.,]\d{1,2})?)",
+)
+_SHOP_CLAUSE_SPLIT_RE = re.compile(
+    r"(?<=[.!?])\s+|(?:\s+[•|]\s+)|\s+and\s+(?=[A-Za-z0-9].{0,80}\$)"
+)
 _DISMISS_LABEL_RE = re.compile(
     r"("
     r"\bno thanks\b|"
@@ -620,8 +658,8 @@ _GENIUS_BANNER_RE = re.compile(
 _PAY_COACHING_RE = re.compile(
     r"("
     r"do\s+not\s+invent(?:,\s*check[\s-]?out,\s*or\s*pay)?"
-    r"|do\s+not\s+(?:book|pay|check[\s-]?out)"
-    r"(?:\s+or\s+(?:book|pay|check[\s-]?out))*"
+    r"|do\s+not\s+(?:book|pay|check[\s-]?out|buy)"
+    r"(?:\s+or\s+(?:book|pay|check[\s-]?out|buy))*"
     r"|don['’]?t\s+(?:book|pay|check[\s-]?out)"
     r"|never\s+(?:book|pay|check[\s-]?out)"
     r"|no\s+check[\s-]?out"
@@ -665,9 +703,15 @@ _COACHING_PHRASE_RE = re.compile(
     r"dismiss(?:\s+the)?\s+(?:popups?|overlays?|cookies?|modals?)|"
     r"do\s+not\s+invent(?:,\s*check[\s-]?out,\s*or\s*pay)?|"
     r"do\s+not\s+book(?:\s+or\s+pay)?|"
+    r"do\s+not\s+buy|"
     r"do\s+not\s+(?:check[\s-]?out|pay)(?:\s+or\s+(?:check[\s-]?out|pay))?|"
     r"no\s+check[\s-]?out|"
     r"stop\s+before\s+(?:the\s+)?(?:payment|check[\s-]?out)|"
+    r"open\s+google\s+shopping|"
+    r"find\s+one\s+real\s+priced\s+result(?:\s+for\s+each)?|"
+    r"one\s+real\s+priced\s+result(?:\s+for\s+each)?|"
+    r"reply\s+with(?:\s+both)?(?:\s+product)?\s+titles?(?:\s+and\s+prices?)?|"
+    r"product\s+titles?\s+and\s+prices|"
     r"reply\s+with\s+both\s+names|"
     r"names?,?\s*euro prices|"
     r"euro prices|"
@@ -686,7 +730,10 @@ _COACHING_PHRASE_RE = re.compile(
     re.I,
 )
 _COACHING_LEFTOVER_RE = re.compile(
-    r"\b(?:google\s+)?(?:chrome|chromium)\b",
+    r"("
+    r"\b(?:google\s+)?(?:chrome|chromium)\b|"
+    r"\bgoogle\s+shopping\b"
+    r")",
     re.I,
 )
 # Vision dump / "Searching…" on a Google SERP is not hotel results.
@@ -839,7 +886,7 @@ _ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "shop",
         re.compile(
-            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon|coolblue|products)\b",
+            r"\b(buy|shop(?:ping)?|grinder|cart|coffee grinder|bol\.com|amazon|coolblue|products|google\s+shopping)\b",
             re.I,
         ),
     ),
@@ -1648,7 +1695,8 @@ def shop_typed_query(asked: str) -> str:
         r"\b("
         r"check[\s-]?out|checkout|pay|purchase|buy|"
         r"reply|names?|confirmation|blocked|cookies?|"
-        r"dismiss|invent|different|real|both|euro|prices?"
+        r"dismiss|invent|different|real|both|euro|prices?|"
+        r"google|shopping|results?|each|titles?|products?|one"
         r")\b",
         " ",
         raw,
@@ -1835,6 +1883,114 @@ def shop_search_click(looked: dict[str, Any] | None) -> tuple[int, int]:
     if look_is_coolblue_host(looked) or look_is_nl_retailer(looked):
         return COOLBLUE_SEARCH_CLICK
     return SEARCH_BOX_CLICK
+
+
+def ask_wants_shopping_compare(asked: str) -> bool:
+    """Google Shopping / priced-product compare — not a cart or hotel stay."""
+    raw = asked or ""
+    if ask_wants_cart(raw) or ask_wants_hotel(raw) or ask_wants_payment(raw):
+        return False
+    return bool(_SHOP_COMPARE_ASK_RE.search(raw))
+
+
+def google_shopping_url(asked: str) -> str:
+    """Shopping tab with product tokens. Never the coaching essay."""
+    q = shop_typed_query(asked) or web_search_query(asked) or "products"
+    return "https://www.google.com/search?tbm=shop&q=" + quote_plus(q)
+
+
+def look_is_google_shopping(looked: dict[str, Any] | None) -> bool:
+    """True for a Google Shopping tab / shopping.google.com look."""
+    item = looked or {}
+    url = str(item.get("url") or "")
+    if _GOOGLE_SHOPPING_URL_RE.search(url):
+        return True
+    return bool(_GOOGLE_SHOPPING_LOOK_RE.search(look_blob(item)))
+
+
+def look_is_shopping_or_serp(looked: dict[str, Any] | None) -> bool:
+    """Shopping tab or a search-engine results page — a place to read prices."""
+    return look_is_google_shopping(looked) or _look_is_search_engine(looked)
+
+
+def _shop_clauses(blob: str) -> list[str]:
+    return [
+        part.strip()
+        for part in _SHOP_CLAUSE_SPLIT_RE.split(blob or "")
+        if part and part.strip()
+    ]
+
+
+def _shop_priced_items(blob: str) -> list[tuple[str, str]]:
+    """Product title + $NN.NN pairs from vision. Never invent a price."""
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for clause in _shop_clauses(blob):
+        if _SEARCHING_CAPTION_RE.search(clause) and not _SHOP_DOLLAR_RE.search(
+            clause
+        ):
+            continue
+        for raw_title, price in _SHOP_PRICED_ITEM_RE.findall(clause):
+            title = re.sub(r"\s+", " ", raw_title).strip(" .,;:-—–")
+            title = _SEARCHING_CAPTION_RE.sub(" ", title)
+            title = _COACHING_PHRASE_RE.sub(" ", title)
+            title = re.sub(r"\s+", " ", title).strip(" .,;:-—–")
+            if len(re.findall(r"[A-Za-z0-9]{2,}", title)) < 2:
+                continue
+            if re.search(r"\b(do not|reply with|priced result)\b", title, re.I):
+                continue
+            compact = re.sub(r"\s+", "", price)
+            key = f"{title.lower()}|{compact}"
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append((title, compact))
+    return found
+
+
+def look_has_shop_results(looked: dict[str, Any] | None) -> bool:
+    """True when a shopping/SERP look already shows ≥2 priced product titles.
+
+    Coaching ('one real priced result') and a Searching… caption are not
+    results. Dollar prices must be on the page — never invented.
+    """
+    if (
+        look_is_loading_or_blank(looked)
+        or look_is_focused_new_tab(looked)
+        or look_is_empty_desktop(looked)
+        or look_is_footer(looked)
+        or look_is_leftover_surface(looked)
+        or look_is_captcha(looked)
+        or look_is_http_error(looked)
+        or look_has_blocking_overlay(looked)
+    ):
+        return False
+    if not look_is_shopping_or_serp(looked):
+        return False
+    blob = look_result_blob(looked)
+    if len(_shop_priced_items(blob)) >= 2:
+        return True
+    return len(_SHOP_DOLLAR_RE.findall(blob)) >= 2 and bool(
+        re.search(r"[A-Za-z]{3,}", blob or "")
+    )
+
+
+def shop_option_lines(looked: dict[str, Any] | None) -> list[str]:
+    """Vision lines that name a product and a $ price. Never invent."""
+    if not look_has_shop_results(looked):
+        return []
+    items = _shop_priced_items(look_result_blob(looked))
+    if items:
+        return [f"{title} — {price}" for title, price in items[:4]]
+    text = look_result_blob(looked)
+    kept = [
+        part.strip()
+        for part in _shop_clauses(text)
+        if _SHOP_DOLLAR_RE.search(part)
+        and not _SEARCHING_CAPTION_RE.search(part)
+        and not _COACHING_PHRASE_RE.search(part)
+    ]
+    return kept[:4]
 
 
 def look_is_nl_retailer(looked: dict[str, Any] | None) -> bool:
@@ -2185,6 +2341,11 @@ def needs_web_query(
         # Homepage / PDP / search after cookies — not done until two
         # priced basket lines. A typed query on the shop root is not done.
         return True
+    if (
+        (ask_wants_shop(asked) or ask_wants_shopping_compare(asked))
+        and look_has_shop_results(looked)
+    ):
+        return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
         return True
     if look_is_empty_destination(looked) or look_is_footer(looked):

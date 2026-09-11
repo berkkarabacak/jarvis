@@ -71,7 +71,11 @@ from app.jarvis.overlay import (
     ask_wants_cart,
     ask_wants_payment,
     ask_wants_shop,
+    ask_wants_shopping_compare,
+    google_shopping_url,
     look_has_cart_results,
+    look_has_shop_results,
+    shop_option_lines,
     look_is_pay_control,
     look_is_shop_homepage,
     look_is_shop_pdp,
@@ -255,11 +259,13 @@ def _typed_is_user_query(text: str) -> bool:
         "dismiss popups",
         "do not invent",
         "do not book",
+        "do not buy",
         "do not check",
         "no checkout",
         "cart confirmation",
         "concrete options",
         "reply with",
+        "open google shopping",
     )
     return not any(token in low for token in banned)
 
@@ -3637,6 +3643,106 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
         opened=True,
     )
     assert pay_ask["reply"] == _STOP_PAY
+
+
+# Live 2026-09-11 aicontrolroom.nl: Google Shopping compare typed the
+# coaching essay into google.com/search. Vision already listed two $
+# prices; speak returned _WEB_STUCK. Do not invent when vision has none.
+LIVE_GOOGLE_SHOPPING = (
+    "Use the computer. Open Google Shopping. Search USB-C cable and HDMI cable. "
+    "Find one real priced result for each. Do not invent. Do not buy. "
+    "Reply with both product titles and prices."
+)
+LIVE_GOOGLE_SHOPPING_SERP = {
+    "ok": True,
+    "title": (
+        "Google Shopping. USB-C cable HDMI cable. one real priced result "
+        "for each. Do not buy. Reply with both product titles prices - "
+        "Google Search"
+    ),
+    "url": (
+        "https://www.google.com/search?q=Google+Shopping.+USB-C+cable+"
+        "HDMI+cable.+one+real+priced+result+for+each.+Do+not+buy.+Reply+"
+        "with+both+product+titles+prices"
+    ),
+    "vision_description": (
+        "Can't generate an AI overview right now. Searching… "
+        "Best Buy essentials 6' USB-C to HDMI Cable — $19.99. "
+        "6ft USB 3.1 Type C to HDMI Cable — $24.99."
+    ),
+}
+LIVE_GOOGLE_SHOPPING_EMPTY = {
+    "ok": True,
+    "title": "USB-C cable HDMI cable - Google Shopping",
+    "url": "https://www.google.com/search?tbm=shop&q=USB-C+cable+HDMI+cable",
+    "vision_description": (
+        "Google Shopping. Filters. Sort by price. No product names. "
+        "No prices. Can't generate an AI overview right now."
+    ),
+}
+
+
+def test_shopping_compare_query_strips_do_not_buy_coaching():
+    """Typed shopping query is USB-C / HDMI, never do-not-buy coaching."""
+    q = web_search_query(LIVE_GOOGLE_SHOPPING)
+    typed_q = shop_typed_query(LIVE_GOOGLE_SHOPPING)
+    url = google_shopping_url(LIVE_GOOGLE_SHOPPING)
+    for text in (q, typed_q, url):
+        low = text.lower()
+        assert "do not buy" not in low
+        assert "do not invent" not in low
+        assert "reply with" not in low
+        assert "open google shopping" not in low
+        assert "find one real" not in low
+        assert "priced result" not in low
+    assert _typed_is_user_query(q)
+    assert _typed_is_user_query(typed_q)
+    low_q = f"{q} {typed_q}".lower()
+    assert "usb-c" in low_q or "usb" in low_q
+    assert "hdmi" in low_q
+    assert "cable" in low_q
+    assert "tbm=shop" in url.lower()
+    assert "do+not" not in url.lower()
+    assert ask_wants_shopping_compare(LIVE_GOOGLE_SHOPPING) is True
+    assert ask_wants_shop(LIVE_GOOGLE_SHOPPING) is True
+    assert ask_wants_cart(LIVE_GOOGLE_SHOPPING) is False
+    assert ask_wants_payment(LIVE_GOOGLE_SHOPPING) is False
+    assert shop_home_url(LIVE_GOOGLE_SHOPPING) is None
+    assert shop_home_url(LIVE_COOLBLUE_CART) == "https://www.coolblue.nl/"
+
+
+def test_speak_web_job_shopping_compare_priced_vision_not_stuck():
+    """Two $NN.NN product lines on a shopping/SERP look are the answer."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    tools = ["run_app", "see_screen"]
+    assert look_has_shop_results(LIVE_GOOGLE_SHOPPING_SERP) is True
+    lines = shop_option_lines(LIVE_GOOGLE_SHOPPING_SERP)
+    blob = " ".join(lines)
+    assert "$19.99" in blob
+    assert "$24.99" in blob
+    assert "USB-C" in blob or "USB" in blob
+    spoken = _speak_web_job(
+        LIVE_GOOGLE_SHOPPING,
+        dict(LIVE_GOOGLE_SHOPPING_SERP),
+        tools,
+        opened=True,
+    )
+    assert spoken["reply"] != _WEB_STUCK
+    low = spoken["reply"]
+    assert "$19.99" in low
+    assert "$24.99" in low
+    assert "I could not finish the search." not in low
+    assert look_has_shop_results(LIVE_GOOGLE_SHOPPING_EMPTY) is False
+    assert shop_option_lines(LIVE_GOOGLE_SHOPPING_EMPTY) == []
+    empty = _speak_web_job(
+        LIVE_GOOGLE_SHOPPING,
+        dict(LIVE_GOOGLE_SHOPPING_EMPTY),
+        tools,
+        opened=True,
+    )
+    assert empty["reply"] == _WEB_STUCK
+    assert "$" not in empty["reply"]
 
 
 def look_blob_title_pay() -> str:
