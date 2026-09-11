@@ -131,6 +131,7 @@ def test_public_talk_cards_wire_persist_for_every_control():
     assert "look_speed" in server_keys
     assert "permission_profile" in server_keys
     assert "computer_kind" in server_keys
+    assert "talk_mode" in server_keys
     assert "saveTalkSettings({ quality_vs_price: q, model_lock: false })" in js
 
     assert "rememberTalkSettings" in js
@@ -216,6 +217,7 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
         "talk_speed",
         "look_speed",
         "permission_profile",
+        "talk_mode",
     }
 
     quality = await public_client.put(
@@ -259,12 +261,13 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
 
     look = await public_client.put(
         "/api/jarvis/settings",
-        json={"look_speed": "10s", "permission_profile": "locked", "computer_kind": "android"},
+        json={"look_speed": "10s", "permission_profile": "locked", "computer_kind": "android", "talk_mode": "terminal"},
     )
     assert look.status_code == 200, look.text
     assert look.json()["look_speed"] == "10s"
     assert look.json()["permission_profile"] == "locked"
     assert look.json()["computer_kind"] == "android"
+    assert look.json()["talk_mode"] == "terminal"
 
     settings_store.reset_cache()
     assert settings_store.get_quality_vs_price() == "fast"
@@ -275,6 +278,7 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
     assert settings_store.get_talk_speed() == "quick"
     assert settings_store.get_look_speed() == "10s"
     assert settings_store.get_permission_profile() == "locked"
+    assert settings_store.get_talk_mode() == "terminal"
 
     health = await public_client.get("/jarvis/api/jarvis/health")
     assert health.status_code == 200
@@ -286,6 +290,7 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
     assert sheet["talk_speed"] == "quick"
     assert sheet["look_speed"] == "10s"
     assert sheet["permission_profile"] == "locked"
+    assert sheet["talk_mode"] == "terminal"
 
     denied = await public_client.put(
         "/api/jarvis/settings",
