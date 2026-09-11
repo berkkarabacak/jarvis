@@ -157,6 +157,11 @@ _SIMPLE_GREET_RE = re.compile(
     r")(?:\s+jarvis)?[\s!.?,]*$",
     re.I,
 )
+# "Say hi in one short sentence." — hello-style, not a screen job.
+_SAY_HI_RE = re.compile(
+    r"^\s*(?:please\s+)?(?:say|tell\s+me)\s+(?:a\s+)?(?:hi|hello|hey)\b",
+    re.I,
+)
 _MEMORY_TALK_RE = re.compile(
     r"("
     r"\b("
@@ -526,7 +531,14 @@ def _has_hard_pc_job(goal: str) -> bool:
 
 
 def goal_is_greeting(goal: str) -> bool:
-    return bool(_SIMPLE_GREET_RE.fullmatch((goal or "").strip()))
+    g = (goal or "").strip()
+    if _SIMPLE_GREET_RE.fullmatch(g):
+        return True
+    if not _SAY_HI_RE.search(g):
+        return False
+    if wants_look_job(g) or wants_screen_job(g) or wants_web_job(g):
+        return False
+    return True
 
 
 def goal_is_memory_ask(goal: str) -> bool:

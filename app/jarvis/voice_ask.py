@@ -529,6 +529,20 @@ _DESKTOP_TALK_RE = re.compile(
     r")",
     re.I,
 )
+# Vision dump from see_screen / last_look. Talk-only — look jobs still speak these.
+_STALE_SCREEN_CAPTION_RE = re.compile(
+    r"("
+    r"the focused window is|"
+    r"google chrome browser tab|"
+    r"the page shows weather|"
+    r"fills the screenshot"
+    r")",
+    re.I,
+)
+_EXACT_REPLY_RE = re.compile(
+    r"^\s*reply\s+with\s+exactly:\s*(.+?)\s*$",
+    re.I,
+)
 _FOOTER_TALK_RE = re.compile(
     r"("
     r"\bfooter\b|"
@@ -997,6 +1011,49 @@ def _is_desktop_talk(text: str) -> bool:
     return bool(_DESKTOP_TALK_RE.search(text or ""))
 
 
+def _exact_reply_answer(asked: str) -> str:
+    """Echo 'Reply with exactly: PONG' — never a leftover screen caption."""
+    match = _EXACT_REPLY_RE.match((asked or "").strip())
+    if not match:
+        return ""
+    return match.group(1).strip().strip("\"'")
+
+
+def _reply_is_stale_look(text: str) -> bool:
+    """True when speech is leftover last_look / a see_screen caption dump."""
+    raw = re.sub(r"\s+", " ", (text or "").strip())
+    if not raw:
+        return False
+    if _STALE_SCREEN_CAPTION_RE.search(raw) or _is_desktop_talk(raw):
+        return True
+    try:
+        from app.jarvis.capture import last_look
+
+        looked = last_look() or {}
+    except Exception:
+        looked = {}
+    desc = re.sub(r"\s+", " ", str(looked.get("vision_description") or "").strip())
+    if not desc:
+        return False
+    r = raw.casefold()
+    d = desc.casefold()
+    if r == d:
+        return True
+    if len(r) >= 24 and (r in d or d in r):
+        return True
+    first = re.split(r"(?<=[.!?])\s+", d, maxsplit=1)[0].strip()
+    return bool(first and len(first) >= 24 and r == first)
+
+
+def _talk_reply_is_junk(text: str) -> bool:
+    return (
+        _is_blank_talk(text)
+        or _is_stall_talk(text)
+        or _is_desktop_talk(text)
+        or _reply_is_stale_look(text)
+    )
+
+
 def _talk_last_resort(asked: str) -> str:
     lang = spoken_language(asked)
     math = _math_answer(asked)
@@ -1023,6 +1080,9 @@ def _talk_last_resort(asked: str) -> str:
     choice = _or_choice_answer(asked)
     if choice:
         return choice
+    exact = _exact_reply_answer(asked)
+    if exact:
+        return exact
     history: list[dict[str, Any]] = []
     try:
         from app.jarvis.talk_log import recent_talk_turns
@@ -1051,7 +1111,7 @@ def _talk_last_resort(asked: str) -> str:
 
 def _talk_ok(reply: str, asked: str = "") -> dict[str, Any]:
     text = (reply or "").strip()
-    if _is_blank_talk(text) or _is_stall_talk(text) or _is_desktop_talk(text):
+    if _talk_reply_is_junk(text):
         text = _talk_last_resort(asked)
     return {
         "ok": True,
@@ -1165,7 +1225,10 @@ _TALK_SYSTEM = (
     "Really? / what do you think / more on that: give a short opinion or reaction "
     "on THE last topic in the recent turns. Do not repeat your last spoken lines. "
     "Never switch to leftover browser text "
-    "or another country. Never a Wikipedia paragraph or tourism brochure. "
+    "or another country. Never a leftover last_look or screen caption "
+    "(focused window, weather page, old see_screen). "
+    "Hello / say hi / reply-with-exactly stay on their words. "
+    "Never a Wikipedia paragraph or tourism brochure. "
     "Stop means stop — say OK. Do not offer more details. "
     "If they ask for the news, a fact, weather, or an explanation, keep it short and human. "
     "You were already talking. Use the recent turns for follow-ups "
@@ -1227,7 +1290,7 @@ def _last_jarvis_sentence(
         if row.get("role") != "jarvis":
             continue
         raw = str(row.get("text") or "").strip()
-        if not raw or _is_stall_talk(raw) or _is_desktop_talk(raw):
+        if not raw or _talk_reply_is_junk(raw):
             continue
         if skip_opinions and _CANNED_OPINION_RE.search(raw):
             continue
@@ -1355,7 +1418,7 @@ def _friend_talk_reply(asked: str, reply: str) -> str:
     if wants_stop_talk(asked):
         return _STOP_OK_TR if spoken_language(asked) == "tr" else _STOP_OK
     text = _HEDGE_RE.sub("", reply or "").strip()
-    if _is_stall_talk(text) or _is_desktop_talk(text):
+    if _talk_reply_is_junk(text):
         return _talk_last_resort(asked)
     text = _first_sentences(text, n=2, max_chars=240)
     history = _recent_talk_history(asked)
@@ -1435,8 +1498,11 @@ def _talk_oneshot_messages(asked: str) -> list[dict[str, str]]:
     for row in prior:
         role = str(row.get("role") or "").strip()
         content = str(row.get("content") or "").strip()
-        if role in {"user", "assistant"} and content:
-            messages.append({"role": role, "content": content})
+        if role not in {"user", "assistant"} or not content:
+            continue
+        if role == "assistant" and _talk_reply_is_junk(content):
+            continue
+        messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": asked})
     return messages
 
@@ -1449,7 +1515,7 @@ async def _simple_talk_oneshot(asked: str) -> str:
         if should_use_hosted_talk():
             body = await _hosted_voice_ask(asked)
             reply = str(body.get("reply") or "").strip()
-            if _is_blank_talk(reply) or _is_stall_talk(reply) or _is_desktop_talk(reply):
+            if _talk_reply_is_junk(reply):
                 log.warning("simple talk oneshot empty")
                 return _talk_last_resort(asked)
             return _friend_talk_reply(asked, reply)
@@ -1467,7 +1533,7 @@ async def _simple_talk_oneshot(asked: str) -> str:
     if not result.ok:
         log.warning("simple talk oneshot failed: status %s", result.status)
         return _talk_last_resort(asked)
-    if _is_blank_talk(reply):
+    if _talk_reply_is_junk(reply):
         log.warning("simple talk oneshot empty")
         return _talk_last_resort(asked)
     if result.data:
@@ -1496,6 +1562,9 @@ async def _simple_talk_answer(asked: str) -> dict[str, Any]:
     if wants_stop_talk(asked):
         stop = _STOP_OK_TR if spoken_language(asked) == "tr" else _STOP_OK
         return _talk_ok(stop, asked)
+    exact = _exact_reply_answer(asked)
+    if exact:
+        return _talk_ok(exact, asked)
     opinion = _opinion_on_last_talk(asked)
     if opinion:
         return _talk_ok(opinion, asked)

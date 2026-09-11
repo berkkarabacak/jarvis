@@ -458,6 +458,30 @@ def test_followups_are_simple_talk_not_desktop():
     assert not goal_is_simple_talk("I can still see the file manager.")
 
 
+def test_recap_and_oneshot_skip_leftover_last_look_caption(talk_ws):
+    from app.jarvis.talk_log import (
+        append_turn,
+        talk_messages_for_oneshot,
+        talk_recap_for_session,
+    )
+
+    leftover = (
+        "The focused window is a Google Chrome browser tab. "
+        "The page shows weather information for Amsterdam."
+    )
+    append_turn("you", "weather in Amsterdam", root=talk_ws)
+    append_turn("jarvis", leftover, root=talk_ws)
+    append_turn("you", "and then?", root=talk_ws)
+    recap = talk_recap_for_session(root=talk_ws)
+    blob = json.dumps(talk_messages_for_oneshot("and then?", root=talk_ws))
+    assert leftover not in recap
+    assert leftover not in blob
+    assert "focused window" not in recap.lower()
+    assert "focused window" not in blob.lower()
+    assert "browser tab" not in recap.lower()
+    assert "browser tab" not in blob.lower()
+
+
 def test_friend_reply_kills_brochure_and_hedge(talk_ws):
     from app.jarvis.voice_ask import _TALK_SYSTEM, _friend_talk_reply, _talk_last_resort
 
