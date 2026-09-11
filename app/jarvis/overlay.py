@@ -45,6 +45,9 @@ BOOKING_DATES_CLICK = (560, 500)
 BOOKING_SEARCH_CLICK = (1148, 500)
 # Persistent hero / failed dismiss: stop clicking X and fill the form.
 OVERLAY_DISMISS_MAX = 2
+# searchresults.html briefly loaded then bounced to index: re-open the
+# same dated URL (or click Search) this many times before only waiting.
+HOTEL_SEARCH_REOPEN_MAX = 2
 # Chromium omnibox / address bar on 1280x720 (y≈0–110 chrome, not the page).
 OMNIBOX_CLICK = (420, 52)
 # Newest tab on the tab strip (above the omnibox). keys(ctrl+t) often opens
@@ -311,6 +314,10 @@ _TRAVEL_FORM_RE = re.compile(
 )
 _BOOKING_HOMEPAGE_URL_RE = re.compile(
     r"booking\.com/(?:index\.html)?(?:\?|#|$)|booking\.com/?$",
+    re.I,
+)
+_BOOKING_SEARCHRESULTS_RE = re.compile(
+    r"booking\.com/searchresults|searchresults\.html",
     re.I,
 )
 # Hero / promo Genius banner (not a loyalty badge on a priced card).
@@ -790,6 +797,45 @@ def look_is_travel_search_form(looked: dict[str, Any] | None) -> bool:
         or _EMPTY_DEST_RE.search(blob)
         or _GENIUS_BANNER_RE.search(blob)
     )
+
+
+def look_is_booking_searchresults(looked: dict[str, Any] | None) -> bool:
+    """True when the look is a Booking searchresults.html page / URL."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "")
+        for key in ("url", "title", "vision_description")
+    )
+    return bool(_BOOKING_SEARCHRESULTS_RE.search(blob))
+
+
+def look_is_hotel_search_pending(looked: dict[str, Any] | None) -> bool:
+    """Loading or submitting a dated searchresults page — not homepage.
+
+    In-progress after type. An empty Booking index / dest+dates form is
+    not this — that is a bounce, not a list that is still coming in.
+    """
+    if look_has_hotel_results(looked):
+        return False
+    if look_is_travel_search_form(looked):
+        return False
+    if look_is_booking_searchresults(looked):
+        return True
+    return bool(look_is_travel_site(looked) and look_is_loading_or_blank(looked))
+
+
+def hotel_option_lines(looked: dict[str, Any] | None) -> list[str]:
+    """Vision sentences that name a hotel or a stay price. Never invent.
+
+    Name and price are often adjacent sentences. Up to three hotels
+    (name + price) — never coaching or the ask budget.
+    """
+    if not look_has_hotel_results(looked):
+        return []
+    text = look_result_blob(looked)
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
+    kept = [p for p in parts if _named_hotel_in(p) or _stay_price_in(p)]
+    return kept[:6]
 
 
 def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
@@ -1396,6 +1442,44 @@ def _fill_travel_search_form(
     return nxt, ok
 
 
+def _reopen_dated_hotel_search(
+    current: dict[str, Any],
+    goal: str,
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    """Homepage bounce after a dated search: Search again or the same URL.
+
+    Do not treat an empty dest/dates index as typed-success. Prefer the
+    dated searchresults.html URL — Search with blank fields stays home.
+    """
+    query = hotel_typed_query(goal)
+    click(x=BOOKING_SEARCH_CLICK[0], y=BOOKING_SEARCH_CLICK[1])
+    _pause_after_web_act()
+    nxt = look_again() or current
+    if current.get("_typed_query"):
+        nxt["_typed_query"] = current.get("_typed_query") or query
+    if look_has_hotel_results(nxt) or look_is_hotel_search_pending(nxt):
+        return nxt, True
+    nxt, ok = _type_query_at(
+        OMNIBOX_CLICK,
+        hotel_travel_url(goal),
+        nxt,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    if ok:
+        nxt["_typed_query"] = query
+    elif current.get("_typed_query"):
+        nxt["_typed_query"] = current["_typed_query"]
+    return nxt, ok
+
+
 def _focus_new_tab(
     current: dict[str, Any],
     *,
@@ -1509,9 +1593,11 @@ def continue_web_search(
     into the leftover sorry tab. Never click I'm not a robot. A first
     failed focus is not done — keep clicking; do not give up in under
     ~30s. After a few still-blank looks, type the query into the Chromium
-    omnibox. Never return without type when a query is needed. A homepage
+    omnibox.     Never return without type when a query is needed. A homepage
     that never says "search box" still types. Footer looks Home first —
-    never (640, 320) on copyright.
+    never (640, 320) on copyright. After a dated Booking search, keep
+    looking until a named hotel + stay price, or the deadline. A
+    searchresults bounce back to index re-opens the same URL.
     """
     query = web_search_query(goal)
     type_query = hotel_typed_query(goal) if ask_wants_hotel(goal) else query
@@ -1528,6 +1614,7 @@ def continue_web_search(
     captcha_focus_started: float | None = None
     blank_looks = 0
     overlay_dismisses = 0
+    hotel_reopens = 0
     if deadline is not None:
         limit = 64
     else:
@@ -1638,6 +1725,34 @@ def continue_web_search(
         if not needs_web_query(goal, current, query):
             return _mark(current)
         if typed_query:
+            if look_has_hotel_results(current) and not look_is_travel_search_form(
+                current
+            ):
+                return _mark(current)
+            if ask_wants_hotel(goal) and not look_has_hotel_results(current):
+                # After dest/dates or a searchresults URL, keep looking
+                # until named hotel + stay price, or the first-attempt
+                # budget ends. Do not stop on an empty homepage.
+                if _deadline_passed(deadline):
+                    return _mark(current)
+                if (
+                    look_is_travel_search_form(current)
+                    and hotel_reopens < HOTEL_SEARCH_REOPEN_MAX
+                ):
+                    current, reopened = _reopen_dated_hotel_search(
+                        current,
+                        goal,
+                        click=click,
+                        type_text=type_text,
+                        keys=keys,
+                        look_again=look_again,
+                    )
+                    hotel_reopens += 1
+                    typed_query = typed_query or reopened
+                    continue
+                _pause_for_page_load()
+                current = _mark(look_again() or current)
+                continue
             if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
                 return _mark(current)
             _pause_for_page_load()
