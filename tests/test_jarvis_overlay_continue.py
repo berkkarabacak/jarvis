@@ -12,6 +12,7 @@ from app.jarvis.overlay import (
     BOOKING_DATES_CLICK,
     BOOKING_DEST_CLICK,
     BOOKING_SEARCH_CLICK,
+    HOTEL_SEARCH_ALT_MAX,
     HOTEL_SEARCH_REOPEN_MAX,
     NEW_TAB_CLICK,
     NEW_TAB_FOCUS_CLICKS,
@@ -27,6 +28,7 @@ from app.jarvis.overlay import (
     ask_wants_hotel,
     continue_web_search,
     dismiss_blocking_overlays,
+    hotel_alt_travel_url,
     hotel_destination,
     hotel_option_lines,
     hotel_stay_dates,
@@ -34,6 +36,7 @@ from app.jarvis.overlay import (
     hotel_typed_query,
     look_has_blocking_overlay,
     look_has_hotel_results,
+    look_is_booking_bounce,
     look_is_booking_searchresults,
     look_is_hotel_search_pending,
     look_is_travel_site,
@@ -65,6 +68,7 @@ from app.jarvis.voice_ask import (
     ASK_WEB_ABORT_MS,
     ASK_WEB_FIRST_ATTEMPT_S,
     ASK_WEB_REPLY_HEADROOM_S,
+    _BOOKING_BOUNCED,
     _WEB_STUCK,
     ask_abort_ms,
     ask_deadline_s,
@@ -636,7 +640,8 @@ def test_continue_web_search_persistent_genius_banner_types_form():
         deadline=time.monotonic() + 30,
     )
     assert OVERLAY_DISMISS_MAX <= 2
-    assert HOTEL_SEARCH_REOPEN_MAX <= 2
+    assert HOTEL_SEARCH_REOPEN_MAX >= 4
+    assert HOTEL_SEARCH_ALT_MAX >= 1
     assert typed, "Genius homepage must type destination / dates"
     assert BOOKING_DEST_CLICK in clicks
     assert BOOKING_DATES_CLICK in clicks
@@ -654,11 +659,13 @@ def test_continue_web_search_persistent_genius_banner_types_form():
         opened=True,
     )
     assert spoken["reply"] != _WEB_STUCK
-    assert "i could not finish the search" not in spoken["reply"].lower()
+    assert "i opened the page" not in spoken["reply"].lower()
+    assert "i typed the search" not in spoken["reply"].lower()
+    assert "bounced" in spoken["reply"].lower()
     assert look_has_hotel_results(out) is False
     assert look_is_travel_search_form(out) is True
-    assert "i typed the search" not in spoken["reply"].lower()
     assert out.get("_typed_query")
+    assert out.get("_hotel_reopened") or any("searchresults.html" in t for t in typed)
 
 
 @pytest.mark.asyncio
@@ -694,7 +701,9 @@ async def test_voice_ask_painted_booking_homepage_uses_click_and_type(
     assert "use the computer" not in blob
     assert body["reply"] != _WEB_STUCK
     assert "i typed the search" not in body["reply"].lower()
+    assert "i opened the page" not in body["reply"].lower()
     assert "180" not in body["reply"]
+    assert "bounced" in body["reply"].lower()
     assert any("searchresults.html" in t for t in typed)
 
 
@@ -759,7 +768,10 @@ def test_speak_web_job_homepage_after_type_is_not_typed_success():
     home["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
     bounced = _speak_web_job(LIVE_ITALY_HOTEL, home, tools, opened=True)
     assert bounced["reply"] != _WEB_STUCK
+    assert bounced["reply"] == _BOOKING_BOUNCED
     assert "i typed the search" not in bounced["reply"].lower()
+    assert "i opened the page" not in bounced["reply"].lower()
+    assert "bounced" in bounced["reply"].lower()
     loading = dict(LIVE_BOOKING_SEARCHRESULTS_LOADING)
     loading["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
     pending = _speak_web_job(LIVE_ITALY_HOTEL, loading, tools, opened=True)
@@ -858,6 +870,235 @@ async def test_voice_ask_homepage_bounce_finishes_with_priced_hotels(
     assert "type" in tools
     assert any("searchresults.html" in t for t in typed)
     low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+    assert body["reply"] != _WEB_STUCK
+
+
+# Live 2026-09-11 SHA 64e891d / PR #38: run_app opened dated
+# searchresults.html (white results pane), then Booking bounced to
+# index.html?label=… Genius homepage. Reopen never ran — reply was
+# "I opened the page." and noVNC never left the homepage.
+LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE = {
+    "ok": True,
+    "title": "Booking.com",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=Rome&checkin=2026-10-02&checkout=2026-10-05"
+    ),
+    "vision_description": (
+        "Booking.com. A blank white results area. Select dates. "
+        "Genius. No priced hotel names."
+    ),
+}
+
+LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/index.html?"
+        "label=gen173nr-10FCAEoggI46AdIM1gEaDKIAQGYATG4ARfIAQzYAQHoAQGIAgGoAg"
+    ),
+    "vision_description": (
+        "Unlock Flight savings with members-only deals. "
+        "Genius flight savings. Empty Check-in and Check-out. "
+        "Search button. Coaching to enter a destination."
+    ),
+}
+
+GOOGLE_HOTELS_ROME = {
+    "ok": True,
+    "title": "Hotels in Rome - Google Travel",
+    "url": (
+        "https://www.google.com/travel/search?q=Rome+hotels"
+        "&dates=2026-10-02,2026-10-05"
+    ),
+    "vision_description": (
+        "Google Hotels. Hotels in Rome. Hotel Eden. From 180 EUR. "
+        "Hotel Artemide. From 210 EUR."
+    ),
+}
+
+
+def test_blank_white_searchresults_is_pending_not_homepage():
+    """White results pane on searchresults.html is pending, not a form."""
+    white = LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE
+    home = LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE
+    assert look_is_booking_searchresults(white) is True
+    assert look_is_hotel_search_pending(white) is True
+    assert look_is_travel_search_form(white) is False
+    assert look_has_hotel_results(white) is False
+    assert look_is_travel_search_form(home) is True
+    assert look_is_hotel_search_pending(home) is False
+    assert look_is_booking_bounce(home, saw_searchresults=True) is True
+    assert look_is_booking_bounce(home, saw_searchresults=False) is False
+    assert look_is_booking_bounce(white, saw_searchresults=True) is False
+
+
+def test_continue_web_search_searchresults_then_homepage_reopens_run_app():
+    """Homepage after a prior searchresults look must run_app the dated URL."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if opened:
+            return dict(PRICED_ROME_HOTELS)
+        return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE),
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert opened, "bounce must run_app searchresults, not idle on homepage"
+    assert any("searchresults.html" in u for u in opened), opened
+    assert any("checkin=" in u for u in opened)
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i opened the page" not in low
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+
+
+def test_continue_web_search_booking_bounce_uses_google_hotels_alt():
+    """Persistent Booking homepage bounce must try Google Hotels."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("google.com/travel" in u for u in opened):
+            return dict(GOOGLE_HOTELS_ROME)
+        return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+        | {"_saw_searchresults": True, "_typed_query": hotel_typed_query(LIVE_ITALY_HOTEL)},
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    alt = hotel_alt_travel_url(LIVE_ITALY_HOTEL)
+    assert any("google.com/travel" in u for u in opened), opened
+    assert any("searchresults.html" in u for u in opened), opened
+    assert "dates=" in alt
+    assert look_has_hotel_results(out) is True
+    from app.jarvis.voice_ask import _speak_web_job
+
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "eden" in low
+    assert "180" in low
+    assert "i opened the page" not in low
+
+
+def test_speak_web_job_empty_homepage_after_type_is_not_opened_success():
+    """Empty homepage after type is a bounce stuck line, not success."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    home = dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+    home["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    home["_saw_searchresults"] = True
+    home["_hotel_reopened"] = True
+    spoken = _speak_web_job(LIVE_ITALY_HOTEL, home, tools, opened=True)
+    low = spoken["reply"].lower()
+    assert spoken["reply"] == _BOOKING_BOUNCED
+    assert "i opened the page" not in low
+    assert "i typed the search" not in low
+    assert "bounced" in low
+    assert "180" not in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_searchresults_bounce_reopens_via_run_app(
+    monkeypatch, tmp_path
+):
+    """Ask path: searchresults → homepage bounce → extra run_app → prices."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE),
+        dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE),
+        dict(PRICED_ROME_HOTELS),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert len([u for u in urls if "searchresults.html" in u]) >= 2, urls
+    low = body["reply"].lower()
+    assert "i opened the page" not in low
     assert "i typed the search" not in low
     assert "eden" in low
     assert "180" in low
