@@ -208,7 +208,7 @@ def web_job_deadline(asked: str) -> float:
     """
     remaining = remaining_ask_deadline_s(asked)
     usable = max(8.0, remaining - ASK_WEB_REPLY_HEADROOM_S)
-    if ask_wants_hotel(asked):
+    if ask_wants_hotel(asked) or ask_wants_cart(asked):
         usable = min(usable, ASK_WEB_FIRST_ATTEMPT_S)
     return time.monotonic() + usable
 
@@ -767,7 +767,8 @@ _PAGE_FAIL_RE = re.compile(
     re.I,
 )
 _COOKIE_XY_RE = re.compile(
-    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue)"
+    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s*accepteren|"
+    r"weigeren|reject(?:\s+all)?)"
     r"(?:\s+button|\s+and\s+continue)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
@@ -776,7 +777,8 @@ _COOKIE_SPEECH_RE = re.compile(
     r"("
     r"accept (?:all )?cookies|cookie (?:banner|modal|consent|wall)|"
     r"before you continue|i agree|terms accept|"
-    r"you might need to click|please click accept"
+    r"you might need to click|please click accept|"
+    r"alles\s*accepteren|smaakmakers|zelf\s*instellen|\bweigeren\b"
     r")",
     re.I,
 )

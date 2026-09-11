@@ -172,6 +172,15 @@ def test_look_helpers_404_cookie_and_news_page():
             "vision_description": "Before you continue. Accept at (640, 360).",
         }
     )
+    assert look_has_cookie_overlay(
+        {
+            "title": "Coolblue",
+            "url": "https://www.coolblue.nl/",
+            "vision_description": (
+                "COOKIES. Smaakmakers. Alles accepteren. Zelf instellen."
+            ),
+        }
+    )
     assert look_is_news_page(
         {
             "ok": True,

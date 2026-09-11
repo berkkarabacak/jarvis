@@ -46,6 +46,17 @@ BOOKING_DATES_CLICK = (560, 500)
 BOOKING_SEARCH_CLICK = (1148, 500)
 # Persistent hero / failed dismiss: stop clicking X and fill the form.
 OVERLAY_DISMISS_MAX = 2
+# Coolblue 2026-09-11 CMP on jarvis-computer 1280x720 (live SHA 7cd1c7c).
+# Centered white "COOKIES. Smaakmakers." card. Green Alles accepteren
+# sits bottom-right of the card, left of Zelf instellen. Weigeren is
+# absent on this layout; other CMP variants put Reject to the left.
+# Never click Zelf instellen (preferences). Escape does not close it.
+COOLBLUE_COOKIE_ACCEPT_CLICK = (888, 520)
+COOLBLUE_COOKIE_REJECT_CLICK = (720, 520)
+COOLBLUE_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
+    COOLBLUE_COOKIE_ACCEPT_CLICK,
+    COOLBLUE_COOKIE_REJECT_CLICK,
+)
 # searchresults.html briefly loaded then bounced to index: one dated
 # Booking reopen, then immediately the hotel alt host. After that alt
 # run_app, keep looking on that tab — do not switch back to Booking.
@@ -163,15 +174,31 @@ _COOKIE_RE = re.compile(
     r"i\s+agree|"
     r"agree\s+and\s+continue|"
     r"before you continue|"
-    r"cookie\s+(?:banner|modal|consent|wall|notice)|"
-    r"consent\s+(?:banner|modal|overlay)|"
+    r"cookie\s+(?:banner|modal|consent|wall|notice|dialog|popup)|"
+    r"consent\s+(?:banner|modal|overlay|dialog)|"
     r"reject(?:\s+all)?(?:\s+cookies)?|"
     r"accept\s+(?:all\s+)?cookies|"
-    r"alles\s+accepteren|"
-    r"alles\s+weigeren|"
+    r"alles\s*accepteren|"
+    r"alles\s*weigeren|"
     r"cookievoorkeuren|"
     r"\bweigeren\b|"
-    r"\btoestaan\b"
+    r"\btoestaan\b|"
+    r"smaakmakers|"
+    r"zelf\s*instellen|"
+    r"\bcookies?\s*[.:]"
+    r")",
+    re.I,
+)
+# Coolblue "COOKIES. Smaakmakers." card — with or without button coords.
+_COOLBLUE_COOKIE_RE = re.compile(
+    r"("
+    r"smaakmakers|"
+    r"zelf\s*instellen|"
+    r"alles\s*accepteren|"
+    r"alles\s*weigeren|"
+    r"\bweigeren\b|"
+    r"cookievoorkeuren|"
+    r"\bcookies?\s*[.:]"
     r")",
     re.I,
 )
@@ -246,7 +273,7 @@ _DISMISS_LABEL_RE = re.compile(
     r"\bdismiss\b|"
     r"\bclose\b|"
     r"\bweigeren\b|"
-    r"alles\s+weigeren|"
+    r"alles\s*weigeren|"
     r"(?:the\s+)?(?:x|×)\s+(?:button|control)?"
     r")",
     re.I,
@@ -254,14 +281,14 @@ _DISMISS_LABEL_RE = re.compile(
 _DISMISS_XY_RE = re.compile(
     r"(?:"
     r"no thanks|not now|cancel|reject(?:\s+all)?(?:\s+cookies)?|"
-    r"dismiss|close|weigeren|alles weigeren|(?:the\s+)?(?:x|×)"
+    r"dismiss|close|weigeren|alles\s*weigeren|(?:the\s+)?(?:x|×)"
     r")"
     r"(?:\s+button|\s+control)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
 )
 _COOKIE_ACCEPT_XY_RE = re.compile(
-    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s+accepteren)"
+    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s*accepteren)"
     r"(?:\s+button|\s+and\s+continue)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
@@ -903,11 +930,28 @@ def _named_click_from_look(looked: dict[str, Any] | None) -> tuple[int, int] | N
     return None
 
 
+def _cookie_fallback_click(
+    looked: dict[str, Any] | None,
+    *,
+    dismisses: int = 0,
+) -> tuple[int, int]:
+    """Hardcoded CMP button when vision names no (x,y).
+
+    Coolblue's live card has no Weigeren and no coords — click Alles
+    accepteren first, then Weigeren on the next look. Never a random
+    product / cookie-man pixel. Never Escape-only.
+    """
+    clicks = COOLBLUE_COOKIE_DISMISS_CLICKS
+    idx = min(max(int(dismisses), 0), len(clicks) - 1)
+    return clicks[idx]
+
+
 def overlay_dismiss_plan(
     looked: dict[str, Any] | None,
     *,
     goal: str = "",
     kind: OverlayKind | None = None,
+    dismisses: int = 0,
 ) -> OverlayPlan | None:
     """Click X / No thanks / Cancel / Reject. Never Sign in / Restore / Pay."""
     if look_is_captcha(looked):
@@ -953,16 +997,18 @@ def overlay_dismiss_plan(
             keys="escape",
             reason="Sign-in / Genius modal — click X / No thanks, never Sign in.",
         )
-    # Cookie: prefer Reject / No thanks coords. Accept only when that is the
-    # named control and no dismiss label is present (news walls).
-    click = named_dismiss
-    if click is None and not _DISMISS_LABEL_RE.search(blob):
-        click = _cookie_accept_xy(blob) or _named_click_from_look(looked)
+    # Cookie: named Weigeren / Reject, then named Accept, then the
+    # Coolblue Alles accepteren pixel. A body-text "weigeren" without
+    # coords is not a reason to send Escape only — that hung live.
+    # Never _named_click_from_look (the cookie-man / a product).
+    click = named_dismiss or _cookie_accept_xy(blob)
+    if click is None:
+        click = _cookie_fallback_click(looked, dismisses=dismisses)
     return OverlayPlan(
         kind="cookie",
         click=click,
-        keys="escape" if click is None or _DISMISS_LABEL_RE.search(blob) else "enter",
-        reason="Cookie / consent — Reject or the named dismiss, never Sign in.",
+        keys="escape" if _DISMISS_LABEL_RE.search(blob) else "enter",
+        reason="Cookie / consent — Reject or Alles accepteren, never Sign in.",
     )
 
 
@@ -983,7 +1029,13 @@ def _search_field_xy(blob: str) -> tuple[int, int] | None:
 
 
 def look_is_footer(looked: dict[str, Any] | None) -> bool:
-    """True when vision is the page footer, not the destination field."""
+    """True when vision is the page footer, not the destination field.
+
+    A Coolblue cookie card that mentions cookie-en privacyverklaring is
+    not the footer — Home-looping that modal burns the nginx 180s.
+    """
+    if overlay_kind(looked) == "cookie" or look_is_coolblue_cookie_modal(looked):
+        return False
     blob = look_blob(looked)
     if _search_field_xy(blob):
         return False
@@ -1440,6 +1492,26 @@ def look_is_nl_retailer(looked: dict[str, Any] | None) -> bool:
         str(item.get(key) or "") for key in ("url", "title", "vision_description")
     )
     return bool(_NL_RETAILER_HOST_RE.search(blob))
+
+
+def look_is_coolblue_host(looked: dict[str, Any] | None) -> bool:
+    """True when the focused tab is coolblue.nl."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "") for key in ("url", "title", "vision_description")
+    )
+    return bool(re.search(r"\b(?:www\.)?coolblue\.nl\b", blob, re.I))
+
+
+def look_is_coolblue_cookie_modal(looked: dict[str, Any] | None) -> bool:
+    """Coolblue COOKIES. Smaakmakers. card — coords optional.
+
+    Live 2026-09-11: green Alles accepteren + Zelf instellen, no Weigeren
+    button, no (x,y) from vision. Escape does not close it.
+    """
+    if not look_is_coolblue_host(looked):
+        return False
+    return bool(_COOLBLUE_COOKIE_RE.search(look_blob(looked)))
 
 
 def _url_host_label(url: str) -> str:
@@ -2181,7 +2253,9 @@ def continue_web_search(
     Do not spend the whole first-attempt budget on Booking alone.
     A shop IP-block / abuse / access-denied look is not typed-success —
     immediately run_app coolblue.nl, then amazon.nl, and keep the same
-    cart job. Speak stuck only after those fallbacks fail.
+    cart job. A Coolblue cookie card that survives the first dismiss
+    clicks is the same — fall back to amazon.nl. Never burn the nginx
+    180s on Escape / Home. Speak stuck only after those fallbacks fail.
     """
     query = web_search_query(goal)
     if ask_wants_hotel(goal):
@@ -2254,9 +2328,11 @@ def continue_web_search(
             item["_retailer_blocked"] = True
         return item
 
-    def _open_retailer_fallback() -> bool:
-        nonlocal current, retailer_tried, typed_query
-        if not ask_wants_shop(goal) or not look_is_retailer_block(current):
+    def _open_retailer_fallback(*, force: bool = False) -> bool:
+        nonlocal current, retailer_tried, typed_query, overlay_dismisses
+        if not ask_wants_shop(goal):
+            return False
+        if not force and not look_is_retailer_block(current):
             return False
         if open_url is None:
             return False
@@ -2273,6 +2349,7 @@ def continue_web_search(
         nxt["_retailer_tried"] = list(retailer_tried)
         current = nxt
         typed_query = False
+        overlay_dismisses = 0
         return True
 
     for i in range(limit):
@@ -2292,12 +2369,27 @@ def continue_web_search(
                 retailer_blocked = True
                 current["_retailer_blocked"] = True
                 return _mark(current)
-        plan = overlay_dismiss_plan(current, goal=goal)
+        plan = overlay_dismiss_plan(
+            current, goal=goal, dismisses=overlay_dismisses
+        )
         memory_toast = plan is not None and plan.kind == "memory_saver"
         if memory_toast and memory_dismisses >= MEMORY_SAVER_DISMISS_MAX:
             # Toast already clicked — do not loop No thanks forever.
             plan = None
             memory_toast = False
+        if (
+            plan is not None
+            and plan.kind == "cookie"
+            and overlay_dismisses >= OVERLAY_DISMISS_MAX
+            and ask_wants_cart(goal)
+        ):
+            # Cookie still up after Alles accepteren / Weigeren clicks.
+            # Do not Home-loop the modal until nginx 504 — open amazon.nl.
+            if _open_retailer_fallback(force=True):
+                continue
+            retailer_blocked = True
+            current["_retailer_blocked"] = True
+            return _mark(current)
         if (
             plan is not None
             and (memory_toast or overlay_dismisses < OVERLAY_DISMISS_MAX)
@@ -2722,8 +2814,8 @@ def dismiss_blocking_overlays(
 ) -> dict[str, Any]:
     """Look → dismiss → look, up to max_rounds. Product path for Talk/Chrome."""
     current = dict(looked or {})
-    for _ in range(max(1, int(max_rounds))):
-        plan = overlay_dismiss_plan(current, goal=goal)
+    for i in range(max(1, int(max_rounds))):
+        plan = overlay_dismiss_plan(current, goal=goal, dismisses=i)
         if plan is None:
             return current
         if plan.click is not None:
