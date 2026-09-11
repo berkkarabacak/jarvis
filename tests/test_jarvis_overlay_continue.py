@@ -58,8 +58,14 @@ from app.jarvis.overlay import (
     look_is_leftover_for_ask,
     look_is_nl_retailer,
     look_is_retailer_block,
+    ask_wants_cart,
+    ask_wants_payment,
     ask_wants_shop,
+    look_has_cart_results,
+    look_is_pay_control,
     next_retailer_fallback_url,
+    shop_home_url,
+    shop_typed_query,
     retailer_fallback_urls,
     look_is_leftover_surface,
     look_is_loading_or_blank,
@@ -102,6 +108,14 @@ GRINDER = "go to bol.com and find a coffee grinder"
 LIVE_CART = (
     "go to bol.com, add two real in-stock products to cart, dismiss popups, "
     "no checkout, reply with names+euro prices."
+)
+# Live 2026-09-11 SHA 5265ef79 / PR #42: do-not-checkout aborted the cart
+# and Googled the ask. Constraints, not a stop.
+LIVE_COOLBLUE_CART = (
+    "Use the computer. Open coolblue.nl. Add two different in-stock products "
+    "to the cart. Dismiss cookies. Do not invent, check out, or pay. Reply "
+    "with both names, euro prices, and cart confirmation. If coolblue or bol "
+    "is blocked, use amazon.nl."
 )
 WEATHER = "use Chrome to look up the weather in Amsterdam"
 LIVE_WEATHER = (
@@ -156,6 +170,7 @@ def test_rome_hotel_is_a_web_computer_job_not_look_and_tell():
     assert wants_web_job(WEATHER) is True
     assert wants_web_job(GRINDER) is True
     assert wants_web_job(LIVE_CART) is True
+    assert wants_web_job(LIVE_COOLBLUE_CART) is True
     assert wants_web_job(LIVE_ITALY_HOTEL) is True
     assert goal_is_computer_job(LIVE_ITALY_HOTEL) is True
     assert goal_is_simple_talk(LIVE_ITALY_HOTEL) is False
@@ -208,6 +223,9 @@ def _typed_is_user_query(text: str) -> bool:
         "dismiss popups",
         "do not invent",
         "do not book",
+        "do not check",
+        "no checkout",
+        "cart confirmation",
         "concrete options",
         "reply with",
     )
@@ -2954,6 +2972,33 @@ COOLBLUE_TWO_PRODUCTS = {
     ),
 }
 
+COOLBLUE_COOKIE = {
+    "ok": True,
+    "title": "Coolblue",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "Coolblue cookie consent. Alles accepteren at (900, 620). "
+        "Weigeren at (700, 620). Cookie banner covers the shop."
+    ),
+}
+
+GOOGLE_CART_ASK = {
+    "ok": True,
+    "title": (
+        "Add two different in-stock products to the cart. checkout, or pay. "
+        "Reply w"
+    ),
+    "url": (
+        "https://www.google.com/search?q=Add+two+different+in-stock+products+"
+        "to+the+cart.+Dismiss+cookies.+Do+not+invent,+check+out,+or+pay"
+    ),
+    "vision_description": (
+        "Google Search. AI Overview. As an AI, I cannot browse live "
+        "e-commerce sites, add items to a cart, or handle checkout and "
+        "payments. Coolblue is not open. No product names. No euro prices."
+    ),
+}
+
 AMAZON_NL_TWO_PRODUCTS = {
     "ok": True,
     "title": "Amazon.nl",
@@ -3369,6 +3414,233 @@ async def test_voice_ask_bol_abuse_block_run_app_coolblue(monkeypatch, tmp_path)
     assert "89" in low
     assert body["reply"] != _WEB_STUCK
     assert body["reply"] != _RETAILER_BLOCKED
+
+
+_STOP_PAY = "I stopped. I will not pay or check out."
+
+
+def _cart_query_is_clean(text: str) -> bool:
+    low = (text or "").lower()
+    banned = (
+        "do not check",
+        "do not invent",
+        "do not pay",
+        "no checkout",
+        "check out, or pay",
+        "use the computer",
+        "dismiss cookies",
+        "cart confirmation",
+        "google.com/search",
+        "reply with both",
+    )
+    return not any(token in low for token in banned)
+
+
+def test_do_not_checkout_is_constraint_not_cart_abort():
+    """Live Coolblue ask: do-not-checkout must not stop or Google the essay."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    assert ask_wants_shop(LIVE_COOLBLUE_CART) is True
+    assert ask_wants_cart(LIVE_COOLBLUE_CART) is True
+    assert ask_wants_payment(LIVE_COOLBLUE_CART) is False
+    assert ask_wants_cart(LIVE_CART) is True
+    assert ask_wants_payment(LIVE_CART) is False
+    assert ask_wants_payment(
+        "Open coolblue.nl and check out. Pay with my card."
+    ) is True
+    assert look_is_pay_control(
+        "Add to cart. Checkout. Pay. Two items in the basket.",
+        LIVE_COOLBLUE_CART,
+    ) is False
+    assert look_is_pay_control(look_blob_title_pay(), LIVE_COOLBLUE_CART) is False
+    assert shop_home_url(LIVE_COOLBLUE_CART) == "https://www.coolblue.nl/"
+    q = web_search_query(LIVE_COOLBLUE_CART)
+    typed_q = shop_typed_query(LIVE_COOLBLUE_CART)
+    assert _cart_query_is_clean(q)
+    assert _cart_query_is_clean(typed_q)
+    assert _typed_is_user_query(q)
+    assert _typed_is_user_query(typed_q)
+    assert "google.com" not in q.lower()
+    assert look_is_leftover_for_ask(GOOGLE_CART_ASK, LIVE_COOLBLUE_CART) is True
+    assert look_has_cart_results(GOOGLE_CART_ASK) is False
+    assert look_has_cart_results(COOLBLUE_TWO_PRODUCTS) is True
+    assert overlay_kind(COOLBLUE_COOKIE) == "cookie"
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    leak = _speak_web_job(LIVE_COOLBLUE_CART, dict(GOOGLE_CART_ASK), tools, opened=True)
+    assert leak["reply"] != _STOP_PAY
+    assert "i typed the search" not in leak["reply"].lower()
+    cart = dict(COOLBLUE_TWO_PRODUCTS)
+    cart["vision_description"] += " Add to cart. Checkout. Pay."
+    spoken = _speak_web_job(LIVE_COOLBLUE_CART, cart, tools, opened=True)
+    assert spoken["reply"] != _STOP_PAY
+    low = spoken["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+    pay_ask = _speak_web_job(
+        "Open coolblue.nl and complete checkout. Pay now with my card.",
+        dict(COOLBLUE_TWO_PRODUCTS),
+        tools,
+        opened=True,
+    )
+    assert pay_ask["reply"] == _STOP_PAY
+
+
+def look_blob_title_pay() -> str:
+    return (
+        f"{GOOGLE_CART_ASK['vision_description']} {GOOGLE_CART_ASK['title']} "
+        f"{GOOGLE_CART_ASK['url']}"
+    )
+
+
+def test_continue_web_search_coolblue_cookie_then_cart_not_google():
+    """Dismiss Coolblue cookies, stay on the shop, never Google the ask."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        if looks["n"] == 1:
+            return dict(COOLBLUE_COOKIE)
+        return dict(COOLBLUE_TWO_PRODUCTS)
+
+    out = continue_web_search(
+        dict(COOLBLUE_COOKIE),
+        goal=LIVE_COOLBLUE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert clicks, "must dismiss Coolblue cookie consent"
+    assert all("google.com/search" not in (t or "").lower() for t in typed), typed
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert all("google.com/search" not in (u or "").lower() for u in opened), opened
+    assert look_is_nl_retailer(out) is True
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_CART,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert "i typed the search" not in spoken["reply"].lower()
+    low = spoken["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+
+
+def test_continue_web_search_cart_google_leak_returns_to_coolblue():
+    """A Google SERP of the cart ask must run_app coolblue.nl, not type it."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    typed: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("coolblue.nl" in u for u in opened):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        return dict(GOOGLE_CART_ASK)
+
+    out = continue_web_search(
+        dict(GOOGLE_CART_ASK),
+        goal=LIVE_COOLBLUE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert any("coolblue.nl" in u for u in opened), opened
+    assert all("google.com/search" not in (t or "").lower() for t in typed), typed
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_CART,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert "i typed the search" not in spoken["reply"].lower()
+    low = spoken["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_do_not_checkout_coolblue_cart(monkeypatch, tmp_path):
+    """Ask path: do not check out or pay + coolblue cart must shop, not stop."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [dict(COOLBLUE_COOKIE), dict(COOLBLUE_TWO_PRODUCTS)]
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("google.com/search" in u for u in urls):
+            return dict(GOOGLE_CART_ASK)
+        if looks:
+            return dict(looks.pop(0))
+        return dict(COOLBLUE_TWO_PRODUCTS)
+
+    _patch_voice_ask_web(
+        monkeypatch,
+        [dict(COOLBLUE_COOKIE)],
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_COOLBLUE_CART)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("coolblue.nl" in u for u in urls), urls
+    assert all("google.com/search" not in u.lower() for u in urls), urls
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert body["reply"] != _STOP_PAY
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
 
 
 def _run_continue(looks, goal, clicks, typed, keys):
