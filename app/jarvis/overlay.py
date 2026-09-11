@@ -225,6 +225,16 @@ _HOTEL_RESULT_RE = re.compile(
     r")",
     re.I,
 )
+# "hotels in" leaked from the ask on a Google New Tab is not results.
+_HOTEL_RESULT_EVIDENCE_RE = re.compile(
+    r"("
+    r"\bsearch results\b|"
+    r"\bfrom \d+\s*(?:eur|usd|gbp|€|\$)\b|"
+    r"\bhotel [A-Za-z]|"
+    r"\bprices? from\b"
+    r")",
+    re.I,
+)
 # "hotel" on the Booking.com homepage is marketing, not a typed query.
 _GENERIC_QUERY_WORD_RE = re.compile(
     r"^(?:hotels?|search|chrome|chromium|booking|find|stays?|rooms?|flights?|"
@@ -575,9 +585,28 @@ def look_is_footer(looked: dict[str, Any] | None) -> bool:
 
 
 def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
-    """True when vision shows hotel search results, not the homepage form."""
+    """True when vision shows hotel search results, not the homepage form.
+
+    A leftover Google New Tab / homepage that mentions the hotel ask
+    ("hotels in Rome") is not a result list. Untitled / blank / loading
+    is not results. look_speed=off does not change this.
+    """
+    if (
+        look_is_loading_or_blank(looked)
+        or look_is_focused_new_tab(looked)
+        or look_is_empty_desktop(looked)
+        or look_is_footer(looked)
+        or look_is_leftover_surface(looked)
+        or look_is_captcha(looked)
+        or look_is_http_error(looked)
+    ):
+        return False
     blob = look_blob(looked)
-    return bool(_HOTEL_RESULT_RE.search(blob)) and not look_is_footer(looked)
+    if not _HOTEL_RESULT_RE.search(blob):
+        return False
+    if _look_is_search_engine(looked) and not _HOTEL_RESULT_EVIDENCE_RE.search(blob):
+        return False
+    return True
 
 
 def look_is_empty_destination(looked: dict[str, Any] | None) -> bool:

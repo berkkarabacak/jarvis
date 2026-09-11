@@ -3916,7 +3916,10 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
     no show/open/on-screen) does not open Chrome. News they asked to show
     or open uses ONE known publisher homepage and looks. If that page is
     already BBC/Reuters/NZZ/CNN with headlines, just look and tell. Control
-    looks first, then clicks or types what is there. Compound
+    looks first, then clicks or types what is there. Find / hotel /
+    search jobs that also say dismiss / click / type still open a
+    travel or search URL — they do not stop after one see_screen of a
+    leftover Google New Tab. Compound
     "close the tabs and … news" closes first, then opens the homepage.
     """
     from app.jarvis.virtual_pc import goal_is_simple_talk
@@ -3951,9 +3954,17 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
             return fail
     elif wants_close_all(asked) and not named and not mail and not notepad and not calc:
         return _close_all_from_ask(asked)
-    elif wants_control_screen(asked) and not named and not mail and not notepad and not calc:
-        if wants_web_job(asked):
-            return _with_prior_tools(_tell_from_current_screen(asked), prior_tools)
+    elif (
+        wants_control_screen(asked)
+        and not named
+        and not mail
+        and not notepad
+        and not calc
+        and not wants_web_job(asked)
+    ):
+        # Find / hotel / search asks often say "dismiss popups" or
+        # "click and type". That is not a look-only job — still open a
+        # travel or search URL unless last_look is leftover.
         return _control_from_screen(asked)
     if wants_web_job(asked) and not named and not mail and not notepad and not calc:
         try:
