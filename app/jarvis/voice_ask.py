@@ -29,7 +29,9 @@ from app.jarvis.overlay import (
     ask_wants_hotel,
     ask_wants_payment,
     ask_wants_shop,
+    ask_wants_shopping_compare,
     continue_web_search,
+    google_shopping_url,
     hotel_alt_fallback_url,
     hotel_alt_travel_url,
     hotel_option_lines,
@@ -39,6 +41,7 @@ from app.jarvis.overlay import (
     cart_option_lines,
     look_has_cart_results,
     look_has_hotel_results,
+    look_has_shop_results,
     look_is_booking_bounce,
     look_is_captcha,
     look_is_hotel_alt_host,
@@ -68,6 +71,7 @@ from app.jarvis.overlay import (
     query_visible_on_look,
     search_box_point,
     shop_home_url,
+    shop_option_lines,
     web_look_pause_s,
     web_search_query,
 )
@@ -2396,8 +2400,24 @@ def _speak_web_job(
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
+    elif (
+        (ask_wants_shopping_compare(asked) or ask_wants_shop(asked))
+        and look_has_shop_results(looked)
+    ):
+        # Priced product titles already on a shopping/SERP look — speak
+        # those. Do not finalize _WEB_STUCK because the caption also
+        # said Searching… / AI overview / coaching.
+        options = " ".join(shop_option_lines(looked)).strip()
+        if options and _usable_tell_text(options):
+            reply = options
+        elif usable:
+            reply = spoken
+        else:
+            reply = spoken if spoken else _WEB_STUCK
     elif leftover and not (
-        look_has_hotel_results(looked) or look_has_cart_results(looked)
+        look_has_hotel_results(looked)
+        or look_has_cart_results(looked)
+        or look_has_shop_results(looked)
     ):
         # Never speak leftover / 403 / Google-of-the-ask as success.
         # A cart SERP that repeats the essay is leftover, not typed-success.
@@ -2469,6 +2489,21 @@ def _speak_web_job(
     elif usable:
         reply = spoken
     else:
+        reply = _WEB_STUCK
+    if (
+        ask_wants_shopping_compare(asked)
+        and not look_has_shop_results(looked)
+        and not look_has_cart_results(looked)
+        and reply
+        not in {
+            "I typed the search.",
+            "I opened the page.",
+            _RETAILER_BLOCKED,
+            "I stopped. I will not pay or check out.",
+        }
+        and "I opened the page but I am stuck" not in reply
+    ):
+        # Compare ask, no priced product lines — do not invent titles.
         reply = _WEB_STUCK
     if _LOOK_AT_SCREEN_RE.search(reply):
         reply = _WEB_STUCK
@@ -4563,6 +4598,8 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
                 ask_wants_shop(asked) and shop_home_url(asked)
             ):
                 url = shop_home_url(asked) or "https://www.coolblue.nl/"
+            elif ask_wants_shopping_compare(asked) or ask_wants_shop(asked):
+                url = google_shopping_url(asked)
             else:
                 q = web_search_query(asked) or asked
                 url = "https://www.google.com/search?q=" + quote_plus(q)
