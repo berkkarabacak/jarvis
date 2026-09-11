@@ -13,7 +13,9 @@ from app.jarvis.overlay import (
     BOOKING_DEST_CLICK,
     BOOKING_SEARCH_CLICK,
     HOTEL_SEARCH_ALT_MAX,
+    HOTEL_BOUNCE_BOOKING_BEFORE_ALT,
     HOTEL_SEARCH_REOPEN_MAX,
+    MEMORY_SAVER_DISMISS_CLICK,
     NEW_TAB_CLICK,
     NEW_TAB_FOCUS_CLICKS,
     OMNIBOX_CLICK,
@@ -920,6 +922,25 @@ GOOGLE_HOTELS_ROME = {
     ),
 }
 
+# Live 2026-09-11 SHA fd4bcaf / PR #39: bounce message fired, but Google
+# Hotels never opened. End state was join.booking.com list-your-property
+# with Chromium Memory Saver toast. tools_used had one run_app host.
+LIVE_BOOKING_LIST_YOUR_PROPERTY = {
+    "ok": True,
+    "title": "List Your Apartment, Hotel, Vacation Home, or B&B on Booking.com",
+    "url": (
+        "https://join.booking.com/index.html?"
+        "label=gen173nr-10CAQoggJCC3NYXjaF9yb21B-gBMYgBAZgBMsIBCtgBA"
+    ),
+    "vision_description": (
+        "List anything on Booking.com. Register for free. "
+        "Genius flights homepage. Empty Check-in and Check-out. "
+        "Make Chromium faster. Memory Saver frees up memory from "
+        "inactive tabs so it can be used by active tabs. "
+        "No thanks. Turn on."
+    ),
+}
+
 
 def test_blank_white_searchresults_is_pending_not_homepage():
     """White results pane on searchresults.html is pending, not a form."""
@@ -1049,6 +1070,159 @@ def test_continue_web_search_booking_bounce_uses_google_hotels_alt():
     assert "i opened the page" not in low
 
 
+def test_list_your_property_after_searchresults_is_bounce_not_results():
+    """join.booking.com / List your apartment is a bounce homepage."""
+    listed = LIVE_BOOKING_LIST_YOUR_PROPERTY
+    assert look_is_travel_site(listed) is True
+    assert look_is_travel_search_form(listed) is True
+    assert look_has_hotel_results(listed) is False
+    assert look_is_booking_searchresults(listed) is False
+    assert look_is_hotel_search_pending(listed) is False
+    assert look_is_booking_bounce(listed, saw_searchresults=True) is True
+    assert look_is_booking_bounce(listed, saw_searchresults=False) is False
+    assert overlay_kind(listed, goal=LIVE_ITALY_HOTEL) == "memory_saver"
+    plan = overlay_dismiss_plan(listed, goal=LIVE_ITALY_HOTEL)
+    assert plan is not None
+    assert plan.kind == "memory_saver"
+    assert plan.click == MEMORY_SAVER_DISMISS_CLICK
+    assert plan.click != (0, 0)
+
+
+def test_memory_saver_toast_dismisses_no_thanks_not_turn_on():
+    """Chromium Memory Saver must not steal focus from the search."""
+    toast = {
+        "ok": True,
+        "title": "Booking.com",
+        "url": "https://www.booking.com/index.html?label=gen",
+        "vision_description": (
+            "Make Chromium faster. Memory Saver frees up memory from "
+            "inactive tabs. No thanks at (1000, 208). Turn on at (1140, 208)."
+        ),
+    }
+    assert overlay_kind(toast) == "memory_saver"
+    plan = overlay_dismiss_plan(toast)
+    assert plan is not None
+    assert plan.kind == "memory_saver"
+    assert plan.click == (1000, 208)
+    assert plan.click != (1140, 208)
+    named = {
+        "vision_description": (
+            "Memory-saving notification. No thanks at (968, 190)."
+        )
+    }
+    named_plan = overlay_dismiss_plan(named)
+    assert named_plan is not None
+    assert named_plan.click == (968, 190)
+
+
+def test_continue_web_search_bounce_opens_google_hotels_before_stuck():
+    """After searchresults → homepage, run_app Google Hotels before bounce reply."""
+    from app.jarvis.voice_ask import _BOOKING_BOUNCED, _HOTEL_ALT_FAILED, _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("google.com/travel" in u for u in opened):
+            return dict(GOOGLE_HOTELS_ROME)
+        return dict(LIVE_BOOKING_LIST_YOUR_PROPERTY)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE),
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() - 1,
+    )
+    assert any("google.com/travel" in u for u in opened), opened
+    assert HOTEL_BOUNCE_BOOKING_BEFORE_ALT == 1
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "eden" in low
+    assert "180" in low
+    assert spoken["reply"] not in {_BOOKING_BOUNCED, _HOTEL_ALT_FAILED, _WEB_STUCK}
+    assert MEMORY_SAVER_DISMISS_CLICK in clicks or overlay_kind(
+        LIVE_BOOKING_LIST_YOUR_PROPERTY
+    ) == "memory_saver"
+
+
+def test_continue_web_search_expired_deadline_still_opens_google_hotels():
+    """Deadline on a confirmed bounce must not skip the Google Hotels host."""
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("google.com/travel" in u for u in opened):
+            return dict(GOOGLE_HOTELS_ROME)
+        return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+        | {"_saw_searchresults": True, "_typed_query": hotel_typed_query(LIVE_ITALY_HOTEL)},
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() - 5,
+    )
+    assert any("google.com/travel" in u for u in opened), opened
+    assert look_has_hotel_results(out) is True
+
+
+def test_speak_web_job_alt_failed_says_google_hotels_failed():
+    """After a real Google Hotels attempt, do not pretend Booking-only stuck."""
+    from app.jarvis.voice_ask import _HOTEL_ALT_FAILED, _speak_web_job
+
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    home = dict(LIVE_BOOKING_LIST_YOUR_PROPERTY)
+    home["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    home["_saw_searchresults"] = True
+    home["_hotel_reopened"] = True
+    home["_hotel_alt"] = True
+    home["_hotel_bounced"] = True
+    spoken = _speak_web_job(LIVE_ITALY_HOTEL, home, tools, opened=True)
+    assert spoken["reply"] == _HOTEL_ALT_FAILED
+    assert "google hotels" in spoken["reply"].lower()
+    assert "180" not in spoken["reply"]
+
+
 def test_speak_web_job_empty_homepage_after_type_is_not_opened_success():
     """Empty homepage after type is a bounce stuck line, not success."""
     from app.jarvis.voice_ask import _speak_web_job
@@ -1103,6 +1277,54 @@ async def test_voice_ask_searchresults_bounce_reopens_via_run_app(
     assert "eden" in low
     assert "180" in low
     assert body["reply"] != _WEB_STUCK
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_booking_bounce_opens_google_hotels_before_stuck(
+    monkeypatch, tmp_path
+):
+    """Ask path: searchresults → list-your-property must run_app Google Hotels."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    n = {"i": 0}
+
+    def fake_see(ctx, args):
+        if any("google.com/travel" in str(p.get("url") or "") for p in launched):
+            return dict(GOOGLE_HOTELS_ROME)
+        n["i"] += 1
+        if n["i"] == 1:
+            return dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)
+        return dict(LIVE_BOOKING_LIST_YOUR_PROPERTY)
+
+    looks = [dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("google.com/travel" in u for u in urls), urls
+    assert any("searchresults.html" in u for u in urls), urls
+    assert "run_app" in list(body.get("tools_used") or [])
+    low = body["reply"].lower()
+    assert "eden" in low
+    assert "180" in low
+    assert "i opened the page" not in low
+    assert "i typed the search" not in low
+    assert body["reply"] != _WEB_STUCK
+    assert body["reply"] != _BOOKING_BOUNCED
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():

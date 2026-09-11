@@ -1,10 +1,11 @@
 """Dismiss Chrome / site overlays, then keep going.
 
 Talk computer jobs die on the first Restore pages? bubble, cookie wall,
-Genius sign-in modal, or Chromium --no-sandbox infobar. After every look,
-click a dismiss control (X, No thanks, Cancel, Reject, Not now) and look
-again. Never Sign in, never Restore pages unless they asked to sign in,
-never buy / pay / checkout. A sorry / captcha / I'm-not-a-robot look is
+Genius sign-in modal, Chromium --no-sandbox infobar, or Memory Saver
+toast. After every look, click a dismiss control (X, No thanks, Cancel,
+Reject, Not now) and look again. Never Sign in, never Restore pages
+unless they asked to sign in, never buy / pay / checkout. Never Turn on
+Memory Saver. A sorry / captcha / I'm-not-a-robot look is
 not the answer — Ctrl+T once, click until New Tab is focused, then type
 THIS ask on DuckDuckGo, Bing, or a weather site. Never type into the
 sorry tab. Never click I'm not a robot.
@@ -24,7 +25,7 @@ from urllib.parse import quote_plus
 
 from app.jarvis.serp import look_blob
 
-OverlayKind = Literal["restore", "sandbox", "signin", "cookie"]
+OverlayKind = Literal["restore", "sandbox", "signin", "cookie", "memory_saver"]
 
 # jarvis-computer Xvfb is 1280x720. Chromium chrome occupies y≈0–110.
 # Restore pages? X: right edge of the crash-restore infobar under the toolbar.
@@ -45,11 +46,18 @@ BOOKING_DATES_CLICK = (560, 500)
 BOOKING_SEARCH_CLICK = (1148, 500)
 # Persistent hero / failed dismiss: stop clicking X and fill the form.
 OVERLAY_DISMISS_MAX = 2
-# searchresults.html briefly loaded then bounced to index: re-open the
-# same dated URL (run_app / Search / omnibox) this many times, then one
-# Google Hotels / travel-search fallback. Do not idle on the homepage.
+# searchresults.html briefly loaded then bounced to index: one dated
+# Booking reopen, then immediately Google Hotels / travel-search. More
+# Booking reopens are allowed after the alt if budget remains. Do not
+# idle on the homepage or burn the ~110s first-attempt on Booking alone.
 HOTEL_SEARCH_REOPEN_MAX = 4
 HOTEL_SEARCH_ALT_MAX = 1
+HOTEL_BOUNCE_BOOKING_BEFORE_ALT = 1
+HOTEL_ALT_LOOKS_MAX = 4
+# Chromium "Make Chromium faster" / Memory Saver toast (top-right on
+# 1280x720). No thanks — never Turn on. Steals omnibox focus.
+MEMORY_SAVER_DISMISS_CLICK = (1000, 208)
+MEMORY_SAVER_DISMISS_MAX = 2
 # Chromium omnibox / address bar on 1280x720 (y≈0–110 chrome, not the page).
 OMNIBOX_CLICK = (420, 52)
 # Newest tab on the tab strip (above the omnibox). keys(ctrl+t) often opens
@@ -88,6 +96,18 @@ _SANDBOX_RE = re.compile(
     r"unsupported command-line flag|"
     r"stability and security will suffer|"
     r"you are using an unsupported"
+    r")",
+    re.I,
+)
+# Chromium Memory Saver / "Make Chromium faster" toast. Not a site modal.
+_MEMORY_SAVER_RE = re.compile(
+    r"("
+    r"make chromium faster|"
+    r"make chrome faster|"
+    r"memory[\s-]?saver|"
+    r"memory[\s-]?saving|"
+    r"frees up memory from inactive tabs|"
+    r"free up memory from inactive"
     r")",
     re.I,
 )
@@ -321,11 +341,26 @@ _TRAVEL_FORM_RE = re.compile(
     re.I,
 )
 _BOOKING_HOMEPAGE_URL_RE = re.compile(
-    r"booking\.com/(?:index\.html)?(?:\?|#|$)|booking\.com/?$",
+    r"("
+    r"join\.booking\.com|"
+    r"booking\.com/(?:index\.html|flights?|flight-deals|sign-?in)(?:\?|#|$)|"
+    r"booking\.com/(?:index\.html)?(?:\?|#|$)|"
+    r"booking\.com/?$"
+    r")",
     re.I,
 )
 _BOOKING_SEARCHRESULTS_RE = re.compile(
     r"booking\.com/searchresults|searchresults\.html",
+    re.I,
+)
+# Partner listing / Genius flights after a dated searchresults bounce.
+_LIST_YOUR_PROPERTY_RE = re.compile(
+    r"("
+    r"list\s+your\s+(?:apartment|hotel|property|guest\s*house|"
+    r"vacation\s+home|home|b\s*&\s*b)|"
+    r"list\s+anything\s+on\s+booking|"
+    r"join\s+2[0-9,]+\s+other\s+listings"
+    r")",
     re.I,
 )
 # Hero / promo Genius banner (not a loyalty badge on a priced card).
@@ -646,6 +681,8 @@ def overlay_kind(
         return "restore"
     if _SANDBOX_RE.search(blob):
         return "sandbox"
+    if _MEMORY_SAVER_RE.search(blob):
+        return "memory_saver"
     if not user_asked_sign_in(goal):
         result_blob = look_result_blob(item)
         # Mashed Sign-in modal / covering dialog. A Genius *homepage*
@@ -674,7 +711,10 @@ def look_has_blocking_overlay(
     *,
     goal: str = "",
 ) -> bool:
-    return overlay_kind(looked, goal=goal) is not None
+    found = overlay_kind(looked, goal=goal)
+    # Memory Saver is a corner toast — dismiss it, but priced hotel
+    # names on the page are still readable.
+    return found is not None and found != "memory_saver"
 
 
 def _xy_from_blob(blob: str) -> tuple[int, int] | None:
@@ -739,6 +779,13 @@ def overlay_dismiss_plan(
             click=named_dismiss or SANDBOX_DISMISS_CLICK,
             keys="escape",
             reason="Chromium --no-sandbox banner — click the X.",
+        )
+    if found == "memory_saver":
+        return OverlayPlan(
+            kind="memory_saver",
+            click=named_dismiss or MEMORY_SAVER_DISMISS_CLICK,
+            keys="escape",
+            reason="Chromium Memory Saver toast — No thanks, never Turn on.",
         )
     if found == "signin":
         if user_asked_sign_in(goal):
@@ -808,6 +855,8 @@ def look_is_travel_search_form(looked: dict[str, Any] | None) -> bool:
     if _BOOKING_HOMEPAGE_URL_RE.search(url):
         return True
     blob = look_result_blob(looked)
+    if _LIST_YOUR_PROPERTY_RE.search(blob) or _LIST_YOUR_PROPERTY_RE.search(title):
+        return True
     return bool(
         _TRAVEL_FORM_RE.search(blob)
         or _EMPTY_DEST_RE.search(blob)
@@ -1000,7 +1049,12 @@ def look_is_booking_bounce(
     *,
     saw_searchresults: bool = False,
 ) -> bool:
-    """True when a dated searchresults look is now empty index / homepage."""
+    """True when a dated searchresults look is now empty index / homepage.
+
+    index.html, join.booking.com list-your-property, Genius flights,
+    and any other booking.com URL that is not searchresults after a
+    prior dated list — antibot bounce, not a priced stay.
+    """
     if look_has_hotel_results(looked):
         return False
     if look_is_booking_searchresults(looked) or look_is_hotel_search_pending(
@@ -1010,8 +1064,17 @@ def look_is_booking_bounce(
     prior = bool(saw_searchresults or (looked or {}).get("_saw_searchresults"))
     if not prior:
         return False
-    url = str((looked or {}).get("url") or "")
+    item = looked or {}
+    url = str(item.get("url") or "")
+    title = str(item.get("title") or "")
+    blob = look_result_blob(item)
     if _BOOKING_HOMEPAGE_URL_RE.search(url):
+        return True
+    if _LIST_YOUR_PROPERTY_RE.search(url + " " + title + " " + blob):
+        return True
+    if re.search(r"booking\.com", url, re.I) and not _BOOKING_SEARCHRESULTS_RE.search(
+        url
+    ):
         return True
     return look_is_travel_search_form(looked)
 
@@ -1504,13 +1567,16 @@ def _reopen_dated_hotel_search(
     look_again: Callable[[], dict[str, Any]],
     open_url: Callable[[str], dict[str, Any]] | None = None,
     alt: bool = False,
+    fill: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     """Homepage bounce after a dated search: run_app the URL, Search, or omnibox.
 
     Prefer run_app of the dated searchresults.html URL — clicking Search
     with blank dest/dates stays on index, and omnibox type often misses.
-    After Booking keeps bouncing, ``alt`` opens Google Hotels / travel
-    search. Do not treat an empty dest/dates index as typed-success.
+    After a confirmed bounce, ``alt`` opens Google Hotels / travel
+    search immediately. Skip the dest/dates fill when ``fill`` is false
+    so bounce recovery does not burn the ask budget on Booking alone.
+    Do not treat an empty dest/dates index as typed-success.
     """
     query = hotel_typed_query(goal)
     url = hotel_alt_travel_url(goal) if alt else hotel_travel_url(goal)
@@ -1531,7 +1597,7 @@ def _reopen_dated_hotel_search(
         ):
             return nxt, True
         current = nxt
-    if not alt:
+    if not alt and fill:
         nxt, _filled = _fill_travel_search_form(
             current,
             goal,
@@ -1681,8 +1747,9 @@ def continue_web_search(
     that never says "search box" still types. Footer looks Home first —
     never (640, 320) on copyright. After a dated Booking search, keep
     looking until a named hotel + stay price. A searchresults bounce
-    back to index re-opens the same URL via run_app (then Search /
-    omnibox). After Booking keeps bouncing, open Google Hotels.
+    back to index / list-your-property / Genius homepage re-opens the
+    dated Booking URL once, then immediately run_app Google Hotels.
+    Do not spend the whole first-attempt budget on Booking alone.
     """
     query = web_search_query(goal)
     type_query = hotel_typed_query(goal) if ask_wants_hotel(goal) else query
@@ -1701,7 +1768,9 @@ def continue_web_search(
     captcha_focus_started: float | None = None
     blank_looks = 0
     overlay_dismisses = 0
+    memory_dismisses = 0
     hotel_reopens = int(current.get("_hotel_reopens") or 0)
+    hotel_alt_looks = int(current.get("_hotel_alt_looks") or 0)
     if ask_wants_hotel(goal) and (
         look_is_booking_searchresults(current)
         or look_is_hotel_search_pending(current)
@@ -1734,6 +1803,7 @@ def continue_web_search(
             item["_hotel_reopens"] = hotel_reopens
         if hotel_alt:
             item["_hotel_alt"] = True
+            item["_hotel_alt_looks"] = hotel_alt_looks
         return item
 
     for i in range(limit):
@@ -1741,14 +1811,24 @@ def continue_web_search(
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
         plan = overlay_dismiss_plan(current, goal=goal)
+        memory_toast = plan is not None and plan.kind == "memory_saver"
+        if memory_toast and memory_dismisses >= MEMORY_SAVER_DISMISS_MAX:
+            # Toast already clicked — do not loop No thanks forever.
+            plan = None
+            memory_toast = False
         if (
             plan is not None
-            and overlay_dismisses < OVERLAY_DISMISS_MAX
+            and (memory_toast or overlay_dismisses < OVERLAY_DISMISS_MAX)
             and not (_deadline_passed(deadline) and not typed_query)
         ):
-            # Real Sign-in / cookie / Restore. A Genius homepage banner is
-            # not this — overlay_kind skips it so we reach the form.
-            overlay_dismisses += 1
+            # Real Sign-in / cookie / Restore / Memory Saver. A Genius
+            # homepage banner is not this — overlay_kind skips it so we
+            # reach the form. Memory Saver does not consume the modal
+            # dismiss budget — it steals focus from the search.
+            if memory_toast:
+                memory_dismisses += 1
+            else:
+                overlay_dismisses += 1
             if plan.click is not None:
                 click(x=plan.click[0], y=plan.click[1])
             if plan.keys:
@@ -1833,6 +1913,31 @@ def continue_web_search(
             saw_searchresults = True
         if not needs_web_query(goal, current, query):
             return _mark(current)
+
+        def _open_hotel_alt() -> bool:
+            nonlocal current, hotel_alt, typed_query, hotel_alt_looks
+            if hotel_alt or HOTEL_SEARCH_ALT_MAX <= 0:
+                return False
+            if not ask_wants_hotel(goal):
+                return False
+            if look_has_hotel_results(current):
+                return False
+            current, reopened = _reopen_dated_hotel_search(
+                current,
+                goal,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+                open_url=open_url,
+                alt=True,
+                fill=False,
+            )
+            hotel_alt = True
+            hotel_alt_looks = 0
+            typed_query = typed_query or reopened
+            return True
+
         if typed_query:
             if look_has_hotel_results(current) and not look_is_travel_search_form(
                 current
@@ -1840,14 +1945,53 @@ def continue_web_search(
                 return _mark(current)
             if ask_wants_hotel(goal) and not look_has_hotel_results(current):
                 # After dest/dates or a searchresults URL, keep looking
-                # until named hotel + stay price. Homepage after a
-                # searchresults look is a bounce — re-open immediately.
-                # Do not return on deadline before at least one reopen.
+                # until named hotel + stay price. Homepage / list-your-
+                # property after a searchresults look is a bounce — one
+                # Booking reopen, then immediately Google Hotels. Do not
+                # return on deadline before the alt host runs.
                 on_form = look_is_travel_search_form(current)
                 bounced = look_is_booking_bounce(
                     current, saw_searchresults=saw_searchresults
                 )
+                bounce_confirmed = bool(bounced or saw_searchresults)
+                if hotel_alt and not look_has_hotel_results(current):
+                    hotel_alt_looks += 1
+                    if look_has_hotel_results(current):
+                        return _mark(current)
+                    if (
+                        hotel_alt_looks < HOTEL_ALT_LOOKS_MAX
+                        and not _deadline_passed(deadline)
+                    ):
+                        _pause_for_page_load()
+                        current = _mark(look_again() or current)
+                        continue
+                    if hotel_reopens < HOTEL_SEARCH_REOPEN_MAX and (
+                        on_form or bounced
+                    ):
+                        current, reopened = _reopen_dated_hotel_search(
+                            current,
+                            goal,
+                            click=click,
+                            type_text=type_text,
+                            keys=keys,
+                            look_again=look_again,
+                            open_url=open_url,
+                            alt=False,
+                            fill=open_url is None,
+                        )
+                        hotel_reopens += 1
+                        typed_query = typed_query or reopened
+                        continue
+                    current["_hotel_bounced"] = True
+                    current["_hotel_reopened"] = True
+                    return _mark(current)
                 if on_form or bounced:
+                    if (
+                        bounce_confirmed
+                        and hotel_reopens >= HOTEL_BOUNCE_BOOKING_BEFORE_ALT
+                        and _open_hotel_alt()
+                    ):
+                        continue
                     if hotel_reopens < HOTEL_SEARCH_REOPEN_MAX:
                         current, reopened = _reopen_dated_hotel_search(
                             current,
@@ -1858,33 +2002,37 @@ def continue_web_search(
                             look_again=look_again,
                             open_url=open_url,
                             alt=False,
+                            fill=not bounce_confirmed or open_url is None,
                         )
                         hotel_reopens += 1
                         typed_query = typed_query or reopened
+                        if (
+                            bounce_confirmed
+                            and (
+                                look_is_booking_bounce(
+                                    current, saw_searchresults=True
+                                )
+                                or look_is_travel_search_form(current)
+                            )
+                            and _open_hotel_alt()
+                        ):
+                            continue
                         continue
-                    if not hotel_alt and HOTEL_SEARCH_ALT_MAX > 0:
-                        current, reopened = _reopen_dated_hotel_search(
-                            current,
-                            goal,
-                            click=click,
-                            type_text=type_text,
-                            keys=keys,
-                            look_again=look_again,
-                            open_url=open_url,
-                            alt=True,
-                        )
-                        hotel_alt = True
-                        typed_query = typed_query or reopened
+                    if _open_hotel_alt():
                         continue
                     current["_hotel_bounced"] = True
                     current["_hotel_reopened"] = True
                     return _mark(current)
                 if _deadline_passed(deadline):
+                    if bounce_confirmed and _open_hotel_alt():
+                        continue
                     return _mark(current)
                 _pause_for_page_load()
                 current = _mark(look_again() or current)
                 continue
             if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
+                if ask_wants_hotel(goal) and saw_searchresults and _open_hotel_alt():
+                    continue
                 return _mark(current)
             _pause_for_page_load()
             current = _mark(look_again() or current)
@@ -1974,6 +2122,8 @@ def continue_web_search(
             ) or look_is_hotel_search_pending(current):
                 saw_searchresults = True
             if _deadline_passed(deadline):
+                if saw_searchresults and _open_hotel_alt():
+                    continue
                 return _mark(current)
             _pause_for_page_load()
             current = _mark(look_again() or current)
