@@ -218,6 +218,10 @@ _SEARCH_FIELD_RE = re.compile(
     r"find your next stay|"
     r"omnibox|"
     r"empty search|"
+    r"search in your own words|"
+    r"select(?:\s+your)?\s+dates|"
+    r"check-?in date|"
+    r"enter search criteria|"
     r"type (?:your )?(?:destination|city|query|place)"
     r")",
     re.I,
@@ -227,7 +231,9 @@ _SEARCH_FIELD_RE = re.compile(
 _SEARCH_XY_AFTER_RE = re.compile(
     r"(?:"
     r"search box|search field|search bar|destination|where are you going|"
-    r"omnibox|empty search|type (?:your )?(?:destination|city|query|place)"
+    r"omnibox|empty search|search in your own words|select(?:\s+your)?\s+dates|"
+    r"enter search criteria|"
+    r"type (?:your )?(?:destination|city|query|place)"
     r")"
     r"(?:[^.\n()]{0,80})?"
     r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
@@ -243,7 +249,9 @@ _SEARCH_XY_BEFORE_RE = re.compile(
 )
 _EMPTY_DEST_RE = re.compile(
     r"search box is empty|destination is empty|where are you going|"
-    r"empty destination|type your destination",
+    r"empty destination|type your destination|enter search criteria|"
+    r"search in your own words|search form is empty|"
+    r"select(?:\s+your)?\s+dates",
     re.I,
 )
 _HOTEL_RESULT_RE = re.compile(
@@ -256,16 +264,69 @@ _HOTEL_RESULT_RE = re.compile(
     r")",
     re.I,
 )
-# A search-results URL / "hotels in" caption is not priced options.
-# Need a named hotel or a visible price — not the Booking address bar.
-_HOTEL_RESULT_EVIDENCE_RE = re.compile(
+# Coaching ("hotel name, city") / "no priced hotel names" is not a listing.
+_GENERIC_HOTEL_NAME = (
+    r"names?|search|results?|deals?|form|page|site|options?|ask|query|"
+    r"list|card|booking|finder|criteria|savings?|banner|promo"
+)
+_NAMED_HOTEL_RE = re.compile(
+    r"\bhotel\s+(?!" + _GENERIC_HOTEL_NAME + r"\b)[A-Za-z]{2,}",
+    re.I,
+)
+# Stay prices on a result card — not the ask budget leaked in a URL.
+_STAY_PRICE_RE = re.compile(
     r"("
     r"\bfrom \d+\s*(?:eur|usd|gbp|€|\$)\b|"
-    r"\bhotel [A-Za-z]|"
     r"\bprices? from\b|"
-    r"\b\d+\s*(?:eur|usd|gbp|€)\b|"
-    r"\btotal\s*(?:price|€|eur)"
+    r"\b\d+\s*(?:eur|usd|gbp|€)\s+(?:per\s+(?:night|stay)|total|off)\b|"
+    r"[€$£]\s*\d+"
     r")",
+    re.I,
+)
+# Booking homepage / empty search form — not a result list.
+_TRAVEL_FORM_RE = re.compile(
+    r"("
+    r"index\.html|"
+    r"official site|"
+    r"search in your own words|"
+    r"select(?:\s+your)?\s+dates|"
+    r"check-?in date|"
+    r"where are you going|"
+    r"enter search criteria|"
+    r"landing(?:\s+page)?|"
+    r"\bhomepage\b|"
+    r"search box is empty|"
+    r"destination is empty|"
+    r"search form is empty"
+    r")",
+    re.I,
+)
+_BOOKING_HOMEPAGE_URL_RE = re.compile(
+    r"booking\.com/(?:index\.html)?(?:\?|#|$)|booking\.com/?$",
+    re.I,
+)
+# Hero / promo Genius banner (not a loyalty badge on a priced card).
+_GENIUS_BANNER_RE = re.compile(
+    r"("
+    r"\bgenius\b.{0,96}(?:banner|promo|promotional|members?-only|unlock)|"
+    r"(?:banner|promo|promotional|members?-only|unlock).{0,96}\bgenius\b|"
+    r"unlock .{0,48}savings"
+    r")",
+    re.I,
+)
+_PAY_COACHING_RE = re.compile(
+    r"do\s+not\s+(?:book|pay)|never\s+(?:book|pay)|do\s+not\s+invent",
+    re.I,
+)
+_HOTEL_DEST_IN_RE = re.compile(
+    r"\b(?:in|near|around)\s+((?:central\s+|downtown\s+|greater\s+)?"
+    r"[A-Za-z][A-Za-z]*(?:[\s-][A-Za-z]+){0,3})",
+    re.I,
+)
+_HOTEL_DEST_PAREN_RE = re.compile(r"\(([A-Za-z][A-Za-z\s,/or-]+?)\)")
+_BUDGET_TOKEN_RE = re.compile(
+    r"^(?:euro|eur|usd|gbp|total|stay|sometime|months?|nights?|available|"
+    r"under|next|for|a|an|the|or)$",
     re.I,
 )
 # "hotel" on the Booking.com homepage is marketing, not a typed query.
@@ -501,7 +562,9 @@ def look_is_empty_desktop(looked: dict[str, Any] | None) -> bool:
 
 
 def look_is_pay_control(text: str) -> bool:
-    return bool(_PAY_RE.search(text or ""))
+    raw = text or ""
+    cleaned = _PAY_COACHING_RE.sub(" ", raw)
+    return bool(_PAY_RE.search(cleaned))
 
 
 def _title_is_restore(looked: dict[str, Any] | None) -> bool:
@@ -516,8 +579,26 @@ def _title_is_restore(looked: dict[str, Any] | None) -> bool:
     return bool(_RESTORE_RE.search(title))
 
 
+def look_result_blob(looked: dict[str, Any] | None) -> str:
+    """Vision + title only. The address bar repeats the ask — not prices."""
+    item = looked or {}
+    return " ".join(
+        str(item.get(key) or "") for key in ("vision_description", "title")
+    )
+
+
+def _named_hotel_in(blob: str) -> bool:
+    return bool(_NAMED_HOTEL_RE.search(blob or ""))
+
+
+def _stay_price_in(blob: str) -> bool:
+    return bool(_STAY_PRICE_RE.search(blob or ""))
+
+
 def _hotel_price_evidence(blob: str) -> bool:
-    return bool(_HOTEL_RESULT_EVIDENCE_RE.search(blob or ""))
+    """True only for a listed property with a stay price — not coaching."""
+    text = blob or ""
+    return _named_hotel_in(text) and _stay_price_in(text)
 
 
 def overlay_kind(
@@ -540,14 +621,17 @@ def overlay_kind(
     if _SANDBOX_RE.search(blob):
         return "sandbox"
     if not user_asked_sign_in(goal):
-        signin_hit = bool(_SIGNIN_RE.search(blob))
+        result_blob = look_result_blob(item)
+        signin_hit = bool(_SIGNIN_RE.search(blob) or _GENIUS_BANNER_RE.search(blob))
         covering = bool(_COVERING_MODAL_RE.search(blob)) and look_is_travel_site(
             item
         )
         if signin_hit or covering:
             # Priced cards that mention Genius are not the modal — unless
             # vision also names a sign-in / save-money dialog.
-            if _hotel_price_evidence(blob) and not _SIGNIN_MODAL_RE.search(blob):
+            if _hotel_price_evidence(result_blob) and not _SIGNIN_MODAL_RE.search(
+                blob
+            ):
                 pass
             else:
                 return "signin"
@@ -673,15 +757,35 @@ def look_is_footer(looked: dict[str, Any] | None) -> bool:
     return bool(_FOOTER_RE.search(blob))
 
 
+def look_is_travel_search_form(looked: dict[str, Any] | None) -> bool:
+    """True for Booking homepage / empty date form — not a priced list.
+
+    index.html, Official site, Genius promo, Search in your own words,
+    Select dates, Enter search criteria. A searchresults URL is not
+    this unless vision still shows the empty landing form.
+    """
+    if not look_is_travel_site(looked):
+        return False
+    if _hotel_price_evidence(look_result_blob(looked)):
+        return False
+    url = str((looked or {}).get("url") or "")
+    if _BOOKING_HOMEPAGE_URL_RE.search(url):
+        return True
+    blob = look_result_blob(looked)
+    return bool(_TRAVEL_FORM_RE.search(blob) or _EMPTY_DEST_RE.search(blob))
+
+
 def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
     """True when vision shows hotel search results, not the homepage form.
 
     A leftover Google New Tab / homepage that mentions the hotel ask
     ("hotels in Rome") is not a result list. A Booking search-results
-    URL with no readable names or prices is not results. A Genius /
-    sign-in / cookie overlay covering the list is not results.
-    Untitled / blank / loading is not results. look_speed=off does
-    not change this.
+    URL with no readable names or prices is not results. Coaching
+    ("hotel name, city" / "no priced hotel names") is not results.
+    Ask-budget "2000 Euro" in the address bar is not a stay price.
+    A Genius / sign-in / cookie overlay covering the list is not
+    results. Untitled / blank / loading is not results.
+    look_speed=off does not change this.
     """
     if (
         look_is_loading_or_blank(looked)
@@ -692,12 +796,13 @@ def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
         or look_is_captcha(looked)
         or look_is_http_error(looked)
         or look_has_blocking_overlay(looked)
+        or look_is_travel_search_form(looked)
     ):
         return False
-    blob = look_blob(looked)
-    if not _HOTEL_RESULT_RE.search(blob):
+    blob = look_result_blob(looked)
+    if not _HOTEL_RESULT_RE.search(blob) and not _named_hotel_in(blob):
         return False
-    # "hotels in" / searchresults.html in the address bar is not a list.
+    # Named hotel + stay price in vision/title. Never the address bar.
     if not _hotel_price_evidence(blob):
         return False
     return True
@@ -743,9 +848,50 @@ def hotel_date_query(today: date | None = None) -> str:
     return f"check-in {checkin.isoformat()} check-out {checkout.isoformat()}"
 
 
+def hotel_destination(asked: str) -> str:
+    """Rome / central Italy — not the full ask or coaching dump."""
+    raw = _COACHING_PHRASE_RE.sub(" ", asked or "")
+    raw = _COACHING_LEFTOVER_RE.sub(" ", raw)
+    paren = _HOTEL_DEST_PAREN_RE.search(raw)
+    if paren:
+        first = re.split(r"\s*,\s*|\s+or\s+", paren.group(1), flags=re.I)[0]
+        first = first.strip(" .,")
+        if first and not _BUDGET_TOKEN_RE.match(first):
+            return first
+    place = _HOTEL_DEST_IN_RE.search(raw)
+    if place:
+        dest = place.group(1).strip(" .,")
+        dest = re.sub(
+            r"\s+(for|under|with|during|this|next|the|and)$",
+            "",
+            dest,
+            flags=re.I,
+        )
+        dest = dest.strip(" .,")
+        if dest and not _BUDGET_TOKEN_RE.match(dest):
+            return dest
+    tokens = [
+        part
+        for part in distinctive_query_tokens(web_search_query(asked))
+        if not part.isdigit() and not _BUDGET_TOKEN_RE.match(part)
+    ]
+    if tokens:
+        return " ".join(tokens[:3])
+    return "hotel"
+
+
+def hotel_typed_query(asked: str, today: date | None = None) -> str:
+    """Clean destination + real check-in/out. Never the coaching essay."""
+    dest = hotel_destination(asked)
+    dates = hotel_date_query(today)
+    if dest.lower() in {"hotel", "hotels"}:
+        return f"hotels {dates}".strip()
+    return f"{dest} hotels {dates}".strip()
+
+
 def hotel_travel_url(asked: str, today: date | None = None) -> str:
     """Booking.com search with destination + real check-in/out dates."""
-    dest = web_search_query(asked) or "hotel"
+    dest = hotel_destination(asked) or "hotel"
     checkin, checkout = hotel_stay_dates(today)
     return (
         "https://www.booking.com/searchresults.html?"
@@ -1061,6 +1207,9 @@ def needs_web_query(
         # Genius / cookie / Restore still up — not done. URL tokens from
         # searchresults.html are not priced options.
         return True
+    if ask_wants_hotel(asked) and look_is_travel_search_form(looked):
+        # Homepage / empty date form — type destination + dates.
+        return True
     if look_has_hotel_results(looked):
         return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
@@ -1285,11 +1434,12 @@ def continue_web_search(
     never (640, 320) on copyright.
     """
     query = web_search_query(goal)
+    type_query = hotel_typed_query(goal) if ask_wants_hotel(goal) else query
     current = dict(looked or {})
     blob = look_blob(current)
     if look_is_pay_control(blob) and "hotel" not in blob.lower():
         return current
-    if not (query or "").strip():
+    if not (query or type_query or "").strip():
         return current
     typed_query = bool(current.get("_typed_query"))
     opened_new_tab = bool(current.get("_opened_new_tab"))
@@ -1304,7 +1454,7 @@ def continue_web_search(
 
     def _mark(item: dict[str, Any]) -> dict[str, Any]:
         if typed_query:
-            item["_typed_query"] = query
+            item["_typed_query"] = type_query or query
         if opened_new_tab:
             item["_opened_new_tab"] = True
         if captcha_retried:
@@ -1370,7 +1520,7 @@ def continue_web_search(
             continue
         if look_is_leftover_for_ask(current, goal) and not typed_query:
             current, typed_query = _type_new_tab_or_omnibox(
-                query,
+                type_query or query,
                 current,
                 goal=goal,
                 click=click,
@@ -1381,7 +1531,9 @@ def continue_web_search(
             )
             opened_new_tab = True
             continue
-        if look_has_hotel_results(current):
+        if look_has_hotel_results(current) and not look_is_travel_search_form(
+            current
+        ):
             return _mark(current)
         if needs_hotel_followthrough(goal, current, query) and not hotel_followed:
             # First Google SERP / focused-window caption is not done.
@@ -1389,7 +1541,7 @@ def continue_web_search(
             current, typed_query = _advance_unfinished_hotel(
                 current,
                 goal,
-                query,
+                type_query or query,
                 click=click,
                 type_text=type_text,
                 keys=keys,
@@ -1421,7 +1573,7 @@ def continue_web_search(
             if xy is not None:
                 current, typed_query = _type_query_at(
                     xy,
-                    query,
+                    type_query or query,
                     current,
                     click=click,
                     type_text=type_text,
@@ -1434,7 +1586,7 @@ def continue_web_search(
         if xy is not None:
             current, typed_query = _type_query_at(
                 xy,
-                query,
+                type_query or query,
                 current,
                 click=click,
                 type_text=type_text,
@@ -1452,7 +1604,7 @@ def continue_web_search(
         ):
             current, typed_query = _type_query_at(
                 OMNIBOX_CLICK,
-                query,
+                type_query or query,
                 current,
                 click=click,
                 type_text=type_text,
@@ -1470,7 +1622,7 @@ def continue_web_search(
             return _mark(current)
         current, typed_query = _type_query_at(
             OMNIBOX_CLICK,
-            query,
+            type_query or query,
             current,
             click=click,
             type_text=type_text,
@@ -1539,7 +1691,7 @@ def _advance_unfinished_hotel(
         nxt["_hotel_followed"] = True
         return nxt, True
     dates = hotel_date_query()
-    refined = f"{query} {dates}".strip()
+    refined = hotel_typed_query(goal) or f"{query} {dates}".strip()
     xy = search_box_point(current) or OMNIBOX_CLICK
     nxt, typed = _type_query_at(
         xy,

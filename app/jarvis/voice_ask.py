@@ -39,6 +39,7 @@ from app.jarvis.overlay import (
     look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
+    look_is_travel_search_form,
     look_is_travel_site,
     look_is_unfinished_hotel_search,
     needs_hotel_followthrough,
@@ -2285,9 +2286,14 @@ def _speak_web_job(
     hotel = ask_wants_hotel(asked)
     unfinished = hotel and look_is_unfinished_hotel_search(looked)
     overlay = look_has_blocking_overlay(looked, goal=asked)
+    travel_form = hotel and look_is_travel_search_form(looked)
+    acted = typed or any(name in tools for name in ("click", "type", "keys"))
     if overlay:
         # Genius / cookie / Restore still up — never finalize _WEB_STUCK.
         # The ask path must dismiss, then type dates / destination.
+        reply = "I opened the page."
+    elif travel_form and not look_has_hotel_results(looked) and not typed:
+        # Booking landing / empty date form after only see_screen — keep going.
         reply = "I opened the page."
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
@@ -2337,6 +2343,15 @@ def _speak_web_job(
         reply = _WEB_STUCK
     if _LOOK_AT_SCREEN_RE.search(reply):
         reply = _WEB_STUCK
+    if (
+        reply == _WEB_STUCK
+        and hotel
+        and (look_is_travel_site(looked) or travel_form)
+        and not acted
+        and not look_has_hotel_results(looked)
+    ):
+        # Never finalize stuck after only run_app+see_screen on Booking.
+        reply = "I opened the page."
     return {
         "ok": True,
         "reply": reply,
