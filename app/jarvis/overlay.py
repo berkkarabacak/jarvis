@@ -47,13 +47,19 @@ BOOKING_SEARCH_CLICK = (1148, 500)
 # Persistent hero / failed dismiss: stop clicking X and fill the form.
 OVERLAY_DISMISS_MAX = 2
 # searchresults.html briefly loaded then bounced to index: one dated
-# Booking reopen, then immediately Google Hotels / travel-search. More
-# Booking reopens are allowed after the alt if budget remains. Do not
-# idle on the homepage or burn the ~110s first-attempt on Booking alone.
+# Booking reopen, then immediately the hotel alt host. After that alt
+# run_app, keep looking on that tab — do not switch back to Booking.
+# Google Travel /search and /hotels both 302 to /travel/unsupported
+# (blank body) on jarvis-computer (live 2026-09-11 SHA 35d5797). The
+# URL that paints names+prices from this IP is DuckDuckGo HTML
+# (`hotel_alt_fallback_url`). Try /travel/hotels first; if the look
+# stays blank, open that DDG list. More Booking reopens are not used
+# after the alt. Do not idle on the homepage.
 HOTEL_SEARCH_REOPEN_MAX = 4
 HOTEL_SEARCH_ALT_MAX = 1
 HOTEL_BOUNCE_BOOKING_BEFORE_ALT = 1
-HOTEL_ALT_LOOKS_MAX = 4
+HOTEL_ALT_LOOKS_MAX = 8
+HOTEL_ALT_BLANK_BEFORE_FALLBACK = 2
 # Chromium "Make Chromium faster" / Memory Saver toast (top-right on
 # 1280x720). No thanks — never Turn on. Steals omnibox focus.
 MEMORY_SAVER_DISMISS_CLICK = (1000, 208)
@@ -447,8 +453,26 @@ _TRAVEL_SITE_RE = re.compile(
     r"\bexpedia\b|"
     r"kayak\.com|"
     r"\bairbnb\b|"
-    r"google\.[^/\s]+/travel"
+    r"google\.[^/\s]+/travel|"
+    r"html\.duckduckgo\.com|"
+    r"duckduckgo\.com/.{0,160}hotels"
     r")",
+    re.I,
+)
+# Google Hotels / Travel or the DDG hotels list used after a Booking bounce.
+# /travel/unsupported is still this host — just a blank look.
+_HOTEL_ALT_HOST_RE = re.compile(
+    r"("
+    r"google\.[^/\s]+/travel|"
+    r"google travel|"
+    r"google hotels|"
+    r"html\.duckduckgo\.com|"
+    r"duckduckgo\.com/\?q=[^\s]*hotels"
+    r")",
+    re.I,
+)
+_GOOGLE_TRAVEL_UNSUPPORTED_RE = re.compile(
+    r"google\.[^/\s]+/travel/unsupported",
     re.I,
 )
 # Google /sorry, I'm not a robot, unusual traffic — any find/search job.
@@ -878,11 +902,15 @@ def look_is_hotel_search_pending(looked: dict[str, Any] | None) -> bool:
     """Loading or submitting a dated searchresults page — not homepage.
 
     In-progress after type. A blank / white results pane on
-    searchresults.html is still pending. An empty Booking index /
-    dest+dates form is not this — that is a bounce.
+    searchresults.html is still pending. A blank Google Travel /
+    Hotels look after the alt run_app is pending — not typed-success.
+    An empty Booking index / dest+dates form is not this — that is
+    a bounce (or a lost tab after the alt opened).
     """
     if look_has_hotel_results(looked):
         return False
+    if look_is_hotel_alt_host(looked):
+        return True
     if look_is_booking_searchresults(looked):
         return True
     if look_is_travel_search_form(looked):
@@ -943,13 +971,47 @@ def ask_wants_hotel(asked: str) -> bool:
 
 
 def look_is_travel_site(looked: dict[str, Any] | None) -> bool:
-    """Booking / Hotels.com / Google Hotels — a place to gather prices."""
+    """Booking / Hotels.com / Google Hotels / DDG hotels — gather prices."""
     item = looked or {}
     blob = " ".join(
         str(item.get(key) or "")
         for key in ("url", "title", "vision_description")
     )
-    return bool(_TRAVEL_SITE_RE.search(blob))
+    return bool(_TRAVEL_SITE_RE.search(blob) or _HOTEL_ALT_HOST_RE.search(blob))
+
+
+def look_is_hotel_alt_host(looked: dict[str, Any] | None) -> bool:
+    """True when the focused tab is Google Travel/Hotels or DDG hotels.
+
+    /travel/search on jarvis-computer paints blank (302 unsupported).
+    /travel/hotels does the same from this IP. html.duckduckgo.com
+    hotels queries paint names + prices (verified 2026-09-11).
+    """
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "")
+        for key in ("url", "title", "vision_description")
+    )
+    return bool(_HOTEL_ALT_HOST_RE.search(blob))
+
+
+def look_lost_hotel_alt(looked: dict[str, Any] | None) -> bool:
+    """Booking still focused after the alt host was opened.
+
+    see_screen must not stay on index / searchresults / Genius while
+    a Google / DDG hotels tab sits unused. Not results, not the alt.
+    """
+    if look_has_hotel_results(looked) or look_is_hotel_alt_host(looked):
+        return False
+    item = looked or {}
+    url = str(item.get("url") or "")
+    if re.search(r"booking\.com", url, re.I):
+        return True
+    return bool(
+        look_is_booking_searchresults(looked)
+        or look_is_travel_search_form(looked)
+        or look_is_booking_bounce(looked, saw_searchresults=True)
+    )
 
 
 def look_is_unfinished_hotel_search(looked: dict[str, Any] | None) -> bool:
@@ -1031,17 +1093,42 @@ def hotel_travel_url(asked: str, today: date | None = None) -> str:
 
 
 def hotel_alt_travel_url(asked: str, today: date | None = None) -> str:
-    """Google Hotels / travel search — stays on a results list.
+    """First alt after a Booking bounce: Google /travel/hotels.
 
-    Booking searchresults.html on some GCP / datacenter IPs bounces to
-    index.html?label=… (antibot). This dated Google travel URL is the
-    working alternate. Never invent prices — only speak what vision shows.
+    Live 2026-09-11 SHA 35d5797: /travel/search?q=Rome+hotels&dates=…
+    opened on jarvis-computer but stayed blank (302 /travel/unsupported,
+    empty body). /travel/hotels?checkin=&checkout= does the same from
+    this IP (curl 2026-09-11). Still try /travel/hotels first — some
+    networks paint a list — then hotel_alt_fallback_url (DuckDuckGo
+    HTML) when the look stays blank. Never invent prices.
     """
     dest = hotel_destination(asked) or "hotel"
     checkin, checkout = hotel_stay_dates(today)
+    dest_path = quote_plus(dest)
     q = quote_plus(f"{dest} hotels")
-    dates = quote_plus(f"{checkin.isoformat()},{checkout.isoformat()}")
-    return f"https://www.google.com/travel/search?q={q}&dates={dates}"
+    return (
+        f"https://www.google.com/travel/hotels/{dest_path}"
+        f"?q={q}&checkin={checkin.isoformat()}&checkout={checkout.isoformat()}"
+    )
+
+
+def hotel_alt_fallback_url(asked: str, today: date | None = None) -> str:
+    """DuckDuckGo HTML hotels list — paints names+prices on this host.
+
+    Verified 2026-09-11 from the jarvis-computer egress: html.duckduckgo.com
+    returns '10 Best Rome Hotels (From US$87)', Tripadvisor from $76,
+    Booking 'Check in Rome'. Google Travel /search and /hotels both
+    302 to /travel/unsupported with a blank body. !g stays on DDG
+    here (no bang redirect). Use the HTML endpoint so Chromium does
+    not need the JS Travel UI.
+    """
+    dest = hotel_destination(asked) or "hotel"
+    checkin, checkout = hotel_stay_dates(today)
+    q = quote_plus(
+        f"{dest} hotels check-in {checkin.isoformat()} "
+        f"check-out {checkout.isoformat()}"
+    )
+    return f"https://html.duckduckgo.com/html/?q={q}"
 
 
 def look_is_booking_bounce(
@@ -1113,6 +1200,9 @@ def look_is_loading_or_blank(looked: dict[str, Any] | None) -> bool:
         return True
     if look_is_leftover_surface(item) or look_is_captcha(item):
         return False
+    url = str(item.get("url") or "")
+    if _GOOGLE_TRAVEL_UNSUPPORTED_RE.search(url):
+        return True
     blob = look_blob(item)
     title = str(item.get("title") or "")
     desc = str(item.get("vision_description") or "").strip()
@@ -1557,6 +1647,63 @@ def _fill_travel_search_form(
     return nxt, ok
 
 
+def _focus_hotel_alt_tab(
+    current: dict[str, Any],
+    goal: str,
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+    open_url: Callable[[str], dict[str, Any]] | None = None,
+    focus: Callable[..., dict[str, Any]] | None = None,
+    fallback: bool = False,
+) -> dict[str, Any]:
+    """Raise the alt hotels tab. Booking must not stay focused.
+
+    After run_app the new tab is usually rightmost. Click the strip,
+    focus Chrome, then if see_screen is still Booking navigate this
+    tab to the alt URL so the next look cannot be the homepage.
+    Leave leftover Booking tabs in the background — do not ctrl+w
+    the alt host.
+    """
+    if look_has_hotel_results(current) or look_is_hotel_alt_host(current):
+        current["_hotel_alt"] = True
+        return current
+    if focus is not None:
+        try:
+            focus(app="chrome")
+        except Exception:
+            pass
+        nxt = look_again() or current
+        if look_has_hotel_results(nxt) or look_is_hotel_alt_host(nxt):
+            nxt["_hotel_alt"] = True
+            return nxt
+        current = nxt
+    for xy in reversed(NEW_TAB_FOCUS_CLICKS):
+        click(x=xy[0], y=xy[1])
+        _pause_after_web_act()
+        nxt = look_again() or current
+        if look_has_hotel_results(nxt) or look_is_hotel_alt_host(nxt):
+            nxt["_hotel_alt"] = True
+            return nxt
+        current = nxt
+    url = hotel_alt_fallback_url(goal) if fallback else hotel_alt_travel_url(goal)
+    nxt, _ = _type_query_at(
+        OMNIBOX_CLICK,
+        url,
+        current,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    nxt["_hotel_alt"] = True
+    if fallback:
+        nxt["_hotel_alt_fallback"] = True
+    return nxt
+
+
 def _reopen_dated_hotel_search(
     current: dict[str, Any],
     goal: str,
@@ -1566,20 +1713,32 @@ def _reopen_dated_hotel_search(
     keys: Callable[..., dict[str, Any]],
     look_again: Callable[[], dict[str, Any]],
     open_url: Callable[[str], dict[str, Any]] | None = None,
+    focus: Callable[..., dict[str, Any]] | None = None,
     alt: bool = False,
     fill: bool = True,
+    fallback: bool = False,
 ) -> tuple[dict[str, Any], bool]:
     """Homepage bounce after a dated search: run_app the URL, Search, or omnibox.
 
     Prefer run_app of the dated searchresults.html URL — clicking Search
     with blank dest/dates stays on index, and omnibox type often misses.
-    After a confirmed bounce, ``alt`` opens Google Hotels / travel
-    search immediately. Skip the dest/dates fill when ``fill`` is false
-    so bounce recovery does not burn the ask budget on Booking alone.
+    After a confirmed bounce, ``alt`` opens Google /travel/hotels
+    immediately. ``fallback`` opens the DuckDuckGo HTML hotels list
+    (the URL that paints names+prices when Travel stays blank).
+    Skip the dest/dates fill when ``fill`` is false so bounce recovery
+    does not burn the ask budget on Booking alone.
+    After alt run_app, a Booking look is the wrong tab — focus / click
+    the new tab or omnibox-navigate to the alt URL. Do not treat a
+    leftover searchresults pending look as the alt page.
     Do not treat an empty dest/dates index as typed-success.
     """
     query = hotel_typed_query(goal)
-    url = hotel_alt_travel_url(goal) if alt else hotel_travel_url(goal)
+    if fallback:
+        url = hotel_alt_fallback_url(goal)
+    elif alt:
+        url = hotel_alt_travel_url(goal)
+    else:
+        url = hotel_travel_url(goal)
     nxt = current
     if open_url is not None:
         opened = open_url(url)
@@ -1588,16 +1747,31 @@ def _reopen_dated_hotel_search(
         if current.get("_typed_query"):
             nxt["_typed_query"] = current.get("_typed_query") or query
         nxt["_hotel_reopened"] = True
-        if alt:
+        if alt or fallback:
             nxt["_hotel_alt"] = True
-        if look_has_hotel_results(nxt) or look_is_hotel_search_pending(nxt):
+        if fallback:
+            nxt["_hotel_alt_fallback"] = True
+        if look_has_hotel_results(nxt):
             return nxt, bool(opened is None or opened.get("ok", True))
-        if alt and look_is_travel_site(nxt) and not look_is_travel_search_form(
-            nxt
-        ):
+        if (alt or fallback) and look_lost_hotel_alt(nxt):
+            nxt = _focus_hotel_alt_tab(
+                nxt,
+                goal,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+                open_url=open_url,
+                focus=focus,
+                fallback=fallback,
+            )
             return nxt, True
+        if (alt or fallback) and look_is_hotel_alt_host(nxt):
+            return nxt, True
+        if not alt and not fallback and look_is_hotel_search_pending(nxt):
+            return nxt, bool(opened is None or opened.get("ok", True))
         current = nxt
-    if not alt and fill:
+    if not alt and not fallback and fill:
         nxt, _filled = _fill_travel_search_form(
             current,
             goal,
@@ -1620,8 +1794,10 @@ def _reopen_dated_hotel_search(
         look_again=look_again,
     )
     nxt["_hotel_reopened"] = True
-    if alt:
+    if alt or fallback:
         nxt["_hotel_alt"] = True
+    if fallback:
+        nxt["_hotel_alt_fallback"] = True
     if ok:
         nxt["_typed_query"] = query
     elif current.get("_typed_query"):
@@ -1728,6 +1904,7 @@ def continue_web_search(
     look_again: Callable[[], dict[str, Any]],
     scroll: Callable[..., dict[str, Any]] | None = None,
     open_url: Callable[[str], dict[str, Any]] | None = None,
+    focus: Callable[..., dict[str, Any]] | None = None,
     max_rounds: int = 3,
     deadline: float | None = None,
 ) -> dict[str, Any]:
@@ -1748,7 +1925,12 @@ def continue_web_search(
     never (640, 320) on copyright. After a dated Booking search, keep
     looking until a named hotel + stay price. A searchresults bounce
     back to index / list-your-property / Genius homepage re-opens the
-    dated Booking URL once, then immediately run_app Google Hotels.
+    dated Booking URL once, then immediately run_app Google /travel/hotels.
+    After that alt opens, focus that tab and keep looking until priced
+    names, captcha/sorry, or the budget ends. A Booking homepage look
+    after the alt is the wrong tab — refocus / reopen the alt, never
+    finalize typed-search. If Google Travel stays blank, open the
+    DuckDuckGo HTML hotels list (the URL that paints on this host).
     Do not spend the whole first-attempt budget on Booking alone.
     """
     query = web_search_query(goal)
@@ -1765,6 +1947,7 @@ def continue_web_search(
     hotel_followed = bool(current.get("_hotel_followed"))
     saw_searchresults = bool(current.get("_saw_searchresults"))
     hotel_alt = bool(current.get("_hotel_alt"))
+    hotel_alt_fallback = bool(current.get("_hotel_alt_fallback"))
     captcha_focus_started: float | None = None
     blank_looks = 0
     overlay_dismisses = 0
@@ -1804,6 +1987,8 @@ def continue_web_search(
         if hotel_alt:
             item["_hotel_alt"] = True
             item["_hotel_alt_looks"] = hotel_alt_looks
+        if hotel_alt_fallback:
+            item["_hotel_alt_fallback"] = True
         return item
 
     for i in range(limit):
@@ -1914,13 +2099,17 @@ def continue_web_search(
         if not needs_web_query(goal, current, query):
             return _mark(current)
 
-        def _open_hotel_alt() -> bool:
+        def _open_hotel_alt(*, fallback: bool = False) -> bool:
             nonlocal current, hotel_alt, typed_query, hotel_alt_looks
-            if hotel_alt or HOTEL_SEARCH_ALT_MAX <= 0:
-                return False
+            nonlocal hotel_alt_fallback
             if not ask_wants_hotel(goal):
                 return False
             if look_has_hotel_results(current):
+                return False
+            if fallback:
+                if hotel_alt_fallback or not hotel_alt:
+                    return False
+            elif hotel_alt or HOTEL_SEARCH_ALT_MAX <= 0:
                 return False
             current, reopened = _reopen_dated_hotel_search(
                 current,
@@ -1930,11 +2119,15 @@ def continue_web_search(
                 keys=keys,
                 look_again=look_again,
                 open_url=open_url,
+                focus=focus,
                 alt=True,
                 fill=False,
+                fallback=fallback,
             )
             hotel_alt = True
             hotel_alt_looks = 0
+            if fallback:
+                hotel_alt_fallback = True
             typed_query = typed_query or reopened
             return True
 
@@ -1947,28 +2140,18 @@ def continue_web_search(
                 # After dest/dates or a searchresults URL, keep looking
                 # until named hotel + stay price. Homepage / list-your-
                 # property after a searchresults look is a bounce — one
-                # Booking reopen, then immediately Google Hotels. Do not
-                # return on deadline before the alt host runs.
+                # Booking reopen, then immediately Google /travel/hotels.
+                # After the alt opens, hold that tab. Do not switch back
+                # to Booking. Do not return typed-search while Travel is
+                # blank. Do not return on deadline before the alt runs.
                 on_form = look_is_travel_search_form(current)
                 bounced = look_is_booking_bounce(
                     current, saw_searchresults=saw_searchresults
                 )
                 bounce_confirmed = bool(bounced or saw_searchresults)
                 if hotel_alt and not look_has_hotel_results(current):
-                    hotel_alt_looks += 1
-                    if look_has_hotel_results(current):
-                        return _mark(current)
-                    if (
-                        hotel_alt_looks < HOTEL_ALT_LOOKS_MAX
-                        and not _deadline_passed(deadline)
-                    ):
-                        _pause_for_page_load()
-                        current = _mark(look_again() or current)
-                        continue
-                    if hotel_reopens < HOTEL_SEARCH_REOPEN_MAX and (
-                        on_form or bounced
-                    ):
-                        current, reopened = _reopen_dated_hotel_search(
+                    if look_lost_hotel_alt(current):
+                        current = _focus_hotel_alt_tab(
                             current,
                             goal,
                             click=click,
@@ -1976,12 +2159,34 @@ def continue_web_search(
                             keys=keys,
                             look_again=look_again,
                             open_url=open_url,
-                            alt=False,
-                            fill=open_url is None,
+                            focus=focus,
+                            fallback=hotel_alt_fallback,
                         )
-                        hotel_reopens += 1
-                        typed_query = typed_query or reopened
+                        hotel_alt_looks = 0
+                        if current.get("_hotel_alt_fallback"):
+                            hotel_alt_fallback = True
                         continue
+                    hotel_alt_looks += 1
+                    if look_has_hotel_results(current):
+                        return _mark(current)
+                    blank_alt = look_is_hotel_alt_host(
+                        current
+                    ) and not look_has_hotel_results(current)
+                    if (
+                        blank_alt
+                        and not hotel_alt_fallback
+                        and hotel_alt_looks >= HOTEL_ALT_BLANK_BEFORE_FALLBACK
+                        and _open_hotel_alt(fallback=True)
+                    ):
+                        continue
+                    if (
+                        hotel_alt_looks < HOTEL_ALT_LOOKS_MAX
+                        or not _deadline_passed(deadline)
+                    ):
+                        _pause_for_page_load()
+                        current = _mark(look_again() or current)
+                        continue
+                    # Budget ended still blank — never reopen Booking.
                     current["_hotel_bounced"] = True
                     current["_hotel_reopened"] = True
                     return _mark(current)
@@ -2001,6 +2206,7 @@ def continue_web_search(
                             keys=keys,
                             look_again=look_again,
                             open_url=open_url,
+                            focus=focus,
                             alt=False,
                             fill=not bounce_confirmed or open_url is None,
                         )

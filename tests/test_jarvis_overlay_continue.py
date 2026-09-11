@@ -15,6 +15,7 @@ from app.jarvis.overlay import (
     HOTEL_SEARCH_ALT_MAX,
     HOTEL_BOUNCE_BOOKING_BEFORE_ALT,
     HOTEL_SEARCH_REOPEN_MAX,
+    HOTEL_ALT_BLANK_BEFORE_FALLBACK,
     MEMORY_SAVER_DISMISS_CLICK,
     NEW_TAB_CLICK,
     NEW_TAB_FOCUS_CLICKS,
@@ -30,6 +31,7 @@ from app.jarvis.overlay import (
     ask_wants_hotel,
     continue_web_search,
     dismiss_blocking_overlays,
+    hotel_alt_fallback_url,
     hotel_alt_travel_url,
     hotel_destination,
     hotel_option_lines,
@@ -41,6 +43,8 @@ from app.jarvis.overlay import (
     look_is_booking_bounce,
     look_is_booking_searchresults,
     look_is_hotel_search_pending,
+    look_is_hotel_alt_host,
+    look_lost_hotel_alt,
     look_is_travel_site,
     look_is_unfinished_hotel_search,
     needs_hotel_followthrough,
@@ -71,6 +75,7 @@ from app.jarvis.voice_ask import (
     ASK_WEB_FIRST_ATTEMPT_S,
     ASK_WEB_REPLY_HEADROOM_S,
     _BOOKING_BOUNCED,
+    _HOTEL_ALT_FAILED,
     _WEB_STUCK,
     ask_abort_ms,
     ask_deadline_s,
@@ -913,11 +918,49 @@ GOOGLE_HOTELS_ROME = {
     "ok": True,
     "title": "Hotels in Rome - Google Travel",
     "url": (
+        "https://www.google.com/travel/hotels/Rome?q=Rome+hotels"
+        "&checkin=2026-10-02&checkout=2026-10-05"
+    ),
+    "vision_description": (
+        "Google Hotels. Hotels in Rome. Hotel Eden. From 180 EUR. "
+        "Hotel Artemide. From 210 EUR."
+    ),
+}
+
+# Live 2026-09-11 SHA 35d5797 / PR #40: run_app opened
+# google.com/travel/search?q=Rome+hotels&dates=… but the tab stayed
+# blank (302 /travel/unsupported). Ask finalized "I typed the search."
+# and see_screen flipped back to Booking. /travel/hotels does the same
+# from this IP. html.duckduckgo.com hotels queries paint names+prices.
+LIVE_GOOGLE_TRAVEL_BLANK = {
+    "ok": True,
+    "title": "Google Travel",
+    "url": (
         "https://www.google.com/travel/search?q=Rome+hotels"
         "&dates=2026-10-02,2026-10-05"
     ),
     "vision_description": (
-        "Google Hotels. Hotels in Rome. Hotel Eden. From 180 EUR. "
+        "Chromium. A blank white page. Still loading. "
+        "No hotel names. No prices."
+    ),
+}
+
+LIVE_GOOGLE_TRAVEL_UNSUPPORTED = {
+    "ok": True,
+    "title": "Google Travel",
+    "url": "https://www.google.com/travel/unsupported?q=Rome+hotels",
+    "vision_description": "A blank white page. Nothing has loaded.",
+}
+
+DDG_HOTELS_ROME = {
+    "ok": True,
+    "title": "Rome hotels at DuckDuckGo",
+    "url": (
+        "https://html.duckduckgo.com/html/?q=Rome+hotels"
+        "+check-in+2026-10-02+check-out+2026-10-05"
+    ),
+    "vision_description": (
+        "DuckDuckGo. 10 Best Rome Hotels. Hotel Eden. From 180 EUR. "
         "Hotel Artemide. From 210 EUR."
     ),
 }
@@ -1054,7 +1097,8 @@ def test_continue_web_search_booking_bounce_uses_google_hotels_alt():
     alt = hotel_alt_travel_url(LIVE_ITALY_HOTEL)
     assert any("google.com/travel" in u for u in opened), opened
     assert any("searchresults.html" in u for u in opened), opened
-    assert "dates=" in alt
+    assert "travel/hotels" in alt
+    assert "checkin=" in alt and "checkout=" in alt
     assert look_has_hotel_results(out) is True
     from app.jarvis.voice_ask import _speak_web_job
 
@@ -1206,6 +1250,243 @@ def test_continue_web_search_expired_deadline_still_opens_google_hotels():
     assert look_has_hotel_results(out) is True
 
 
+def test_hotel_alt_urls_prefer_hotels_then_ddg_html():
+    """jarvis-computer: /travel/search and /travel/hotels stay blank.
+
+    curl 2026-09-11: both 302 to /travel/unsupported (empty body).
+    html.duckduckgo.com/?q=Rome+hotels paints '10 Best Rome Hotels
+    (From US$87)' and Tripadvisor from $76. Primary alt is still
+    /travel/hotels (some networks paint a list); fallback is DDG HTML.
+    """
+    alt = hotel_alt_travel_url(LIVE_ITALY_HOTEL)
+    fallback = hotel_alt_fallback_url(LIVE_ITALY_HOTEL)
+    assert "google.com/travel/hotels" in alt
+    assert "travel/search" not in alt
+    assert "checkin=" in alt and "checkout=" in alt
+    assert "html.duckduckgo.com/html" in fallback
+    assert "hotels" in fallback
+    assert "rome" in fallback.lower()
+
+
+def test_blank_google_travel_after_alt_is_pending_not_typed_success():
+    """After hotel_alt run_app, a blank Travel look is pending, not done."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    blank = LIVE_GOOGLE_TRAVEL_BLANK
+    assert look_is_hotel_alt_host(blank) is True
+    assert look_is_hotel_search_pending(blank) is True
+    assert look_has_hotel_results(blank) is False
+    assert look_is_travel_search_form(blank) is False
+    assert look_lost_hotel_alt(blank) is False
+    assert look_is_loading_or_blank(blank) is True
+    unsupported = LIVE_GOOGLE_TRAVEL_UNSUPPORTED
+    assert look_is_hotel_alt_host(unsupported) is True
+    assert look_is_hotel_search_pending(unsupported) is True
+    assert look_is_loading_or_blank(unsupported) is True
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    item = dict(blank)
+    item["_hotel_alt"] = True
+    item["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    item["_saw_searchresults"] = True
+    spoken = _speak_web_job(LIVE_ITALY_HOTEL, item, tools, opened=True)
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert spoken["reply"] == _HOTEL_ALT_FAILED
+    assert "180" not in spoken["reply"]
+
+
+def test_booking_homepage_after_alt_is_lost_tab_not_typed_success():
+    """Homepage Booking look after alt opened must not finalize typed-search."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    home = dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+    assert look_lost_hotel_alt(home) is True
+    assert look_is_hotel_alt_host(home) is False
+    home["_hotel_alt"] = True
+    home["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    home["_saw_searchresults"] = True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        home,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert spoken["reply"] == _HOTEL_ALT_FAILED
+
+
+def test_continue_web_search_blank_google_travel_keeps_looking():
+    """Blank Google Travel after alt is pending — keep looking, then prices."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        if any("html.duckduckgo.com" in u for u in opened):
+            return dict(DDG_HOTELS_ROME)
+        if any("google.com/travel" in u for u in opened):
+            if looks["n"] >= HOTEL_ALT_BLANK_BEFORE_FALLBACK + 1:
+                return dict(GOOGLE_HOTELS_ROME)
+            return dict(LIVE_GOOGLE_TRAVEL_BLANK)
+        return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+        | {"_saw_searchresults": True, "_typed_query": hotel_typed_query(LIVE_ITALY_HOTEL)},
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert any("google.com/travel" in u for u in opened), opened
+    assert looks["n"] >= 2, looks
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+
+
+def test_continue_web_search_booking_homepage_after_alt_refocuses():
+    """After alt opened, a Booking homepage look refocuses/reopens the alt."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    typed: list[str] = []
+    clicks: list[tuple[int, int]] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        blob = " ".join(opened + typed)
+        if "google.com/travel" in blob or "duckduckgo.com" in blob:
+            return dict(GOOGLE_HOTELS_ROME)
+        return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+        | {
+            "_saw_searchresults": True,
+            "_typed_query": hotel_typed_query(LIVE_ITALY_HOTEL),
+            "_hotel_alt": True,
+        },
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert look_lost_hotel_alt(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE) is True
+    assert (
+        any("google.com/travel" in u for u in opened)
+        or any("google.com/travel" in t or "duckduckgo.com" in t for t in typed)
+        or clicks
+    ), (opened, typed, clicks)
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+
+
+def test_continue_web_search_priced_alt_finishes_with_options():
+    """A priced Google Hotels / DDG list may finish with name + price lines."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        return dict(GOOGLE_HOTELS_ROME)
+
+    out = continue_web_search(
+        dict(LIVE_GOOGLE_TRAVEL_BLANK)
+        | {
+            "_hotel_alt": True,
+            "_typed_query": hotel_typed_query(LIVE_ITALY_HOTEL),
+            "_saw_searchresults": True,
+        },
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "eden" in low
+    assert "180" in low
+    assert "i typed the search" not in low
+    lines = hotel_option_lines(GOOGLE_HOTELS_ROME)
+    assert any("eden" in line.lower() for line in lines)
+
+
 def test_speak_web_job_alt_failed_says_google_hotels_failed():
     """After a real Google Hotels attempt, do not pretend Booking-only stuck."""
     from app.jarvis.voice_ask import _HOTEL_ALT_FAILED, _speak_web_job
@@ -1325,6 +1606,108 @@ async def test_voice_ask_booking_bounce_opens_google_hotels_before_stuck(
     assert "i typed the search" not in low
     assert body["reply"] != _WEB_STUCK
     assert body["reply"] != _BOOKING_BOUNCED
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_blank_google_travel_after_alt_waits_for_prices(
+    monkeypatch, tmp_path
+):
+    """Ask path: after alt run_app, blank Travel is pending until prices."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    n = {"i": 0, "alt": 0}
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("html.duckduckgo.com" in u or "google.com/travel" in u for u in urls):
+            n["alt"] += 1
+            if n["alt"] >= 3:
+                return dict(GOOGLE_HOTELS_ROME)
+            return dict(LIVE_GOOGLE_TRAVEL_BLANK)
+        n["i"] += 1
+        if n["i"] == 1:
+            return dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)
+        return dict(LIVE_BOOKING_LIST_YOUR_PROPERTY)
+
+    looks = [dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("google.com/travel" in u or "duckduckgo.com" in u for u in urls), urls
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+    assert body["reply"] != _WEB_STUCK
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_booking_homepage_after_alt_refocuses(
+    monkeypatch, tmp_path
+):
+    """Ask path: Booking homepage after alt must refocus alt, then prices."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    n = {"i": 0, "after_alt": 0}
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        alt_opened = any(
+            "google.com/travel" in u or "duckduckgo.com" in u for u in urls
+        ) or any(
+            "google.com/travel" in t or "duckduckgo.com" in t for t in typed
+        )
+        if alt_opened:
+            n["after_alt"] += 1
+            if n["after_alt"] == 1:
+                return dict(LIVE_BOOKING_HOMEPAGE_AFTER_BOUNCE)
+            return dict(GOOGLE_HOTELS_ROME)
+        n["i"] += 1
+        if n["i"] == 1:
+            return dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)
+        return dict(LIVE_BOOKING_LIST_YOUR_PROPERTY)
+
+    looks = [dict(LIVE_BOOKING_SEARCHRESULTS_WHITE_PANE)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("google.com/travel" in u or "duckduckgo.com" in u for u in urls) or any(
+        "google.com/travel" in t or "duckduckgo.com" in t for t in typed
+    ), (urls, typed)
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():
@@ -2023,7 +2406,11 @@ def _patch_voice_ask_web(
     def capture_plan(args):
         return {"ok": True, "cmd": "chrome", "argv": ["chromium"], **args}
 
+    def fake_focus(*, app="", title=""):
+        return {"ok": True, "app": app or title, "focused": True}
+
     monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    monkeypatch.setattr("app.jarvis.desktop.focus_app", fake_focus)
     monkeypatch.setattr("app.jarvis.tools._click", fake_click)
     monkeypatch.setattr("app.jarvis.tools._type_text", fake_type)
     monkeypatch.setattr("app.jarvis.tools._keys", fake_keys)

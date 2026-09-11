@@ -27,6 +27,7 @@ from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     ask_wants_hotel,
     continue_web_search,
+    hotel_alt_fallback_url,
     hotel_alt_travel_url,
     hotel_option_lines,
     hotel_travel_url,
@@ -35,6 +36,8 @@ from app.jarvis.overlay import (
     look_has_hotel_results,
     look_is_booking_bounce,
     look_is_captcha,
+    look_is_hotel_alt_host,
+    look_lost_hotel_alt,
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
@@ -2321,6 +2324,10 @@ def _speak_web_job(
     if overlay:
         # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
         reply = "I typed the search." if acted else "I opened the page."
+    elif pending and looked.get("_hotel_alt"):
+        # Blank Google Travel / DDG after the alt run_app is not success.
+        # Continue should have held the tab; speaking here is a real miss.
+        reply = _HOTEL_ALT_FAILED
     elif pending:
         # Loading / submitting searchresults — in-progress after type.
         reply = "I typed the search." if acted else "I opened the page."
@@ -2371,7 +2378,11 @@ def _speak_web_job(
     elif look_is_loading_or_blank(looked) or _page_not_ready(looked):
         # Untitled / blank after type: "I typed the search." Leftover
         # Extensions still focused is not this — that is leftover above.
-        reply = "I typed the search." if typed and not leftover else _WEB_STUCK
+        # After hotel_alt, blank Google Travel is a real miss, not typed-success.
+        if hotel and looked.get("_hotel_alt"):
+            reply = _HOTEL_ALT_FAILED
+        else:
+            reply = "I typed the search." if typed and not leftover else _WEB_STUCK
     elif look_is_empty_desktop(looked) or _is_desktop_talk(desc):
         reply = "I opened the page but I am stuck on the desktop. I did not finish the search."
     elif look_is_footer(looked) or _is_footer_talk(desc):
@@ -2901,7 +2912,7 @@ def _wait_until_page_ready(
 
 
 def _hotel_bounce_needs_alt(asked: str, looked: dict[str, Any]) -> bool:
-    """True when Booking bounced and Google Hotels has not been opened."""
+    """True when Booking bounced and the alt hotels host has not been opened."""
     if not ask_wants_hotel(asked) or look_has_hotel_results(looked):
         return False
     if looked.get("_hotel_alt"):
@@ -2914,6 +2925,37 @@ def _hotel_bounce_needs_alt(asked: str, looked: dict[str, Any]) -> bool:
     )
 
 
+def _hotel_alt_needs_hold(asked: str, looked: dict[str, Any]) -> bool:
+    """True when alt opened but prices are not on the focused tab yet."""
+    if not ask_wants_hotel(asked) or look_has_hotel_results(looked):
+        return False
+    if not looked.get("_hotel_alt"):
+        return False
+    if look_is_captcha(looked):
+        return False
+    if looked.get("_hotel_bounced") and looked.get("_hotel_alt_fallback"):
+        # Continue already spent the budget on Travel + DDG.
+        return False
+    return bool(
+        look_lost_hotel_alt(looked)
+        or look_is_hotel_alt_host(looked)
+        or look_is_hotel_search_pending(looked)
+        or look_is_loading_or_blank(looked)
+        or look_is_travel_search_form(looked)
+    )
+
+
+def _stamp_hotel_alt(current: dict[str, Any], looked: dict[str, Any], asked: str) -> dict[str, Any]:
+    query = hotel_typed_query(asked)
+    current["_hotel_alt"] = True
+    current["_hotel_reopened"] = True
+    current["_saw_searchresults"] = True
+    current["_typed_query"] = looked.get("_typed_query") or query
+    if looked.get("_hotel_alt_fallback"):
+        current["_hotel_alt_fallback"] = True
+    return current
+
+
 def _ensure_hotel_alt_after_bounce(
     asked: str,
     looked: dict[str, Any],
@@ -2921,15 +2963,21 @@ def _ensure_hotel_alt_after_bounce(
     *,
     deadline: float | None = None,
 ) -> dict[str, Any]:
-    """Ask path: after a Booking bounce, run_app Google Hotels before speak.
+    """Ask path: after a Booking bounce, open the alt host before speak.
 
     continue_web_search should already do this. If it returned a bounce
-    homepage without `_hotel_alt`, open the dated travel URL and look
-    until priced names appear or the budget ends. Never invent prices.
+    homepage without `_hotel_alt`, open /travel/hotels (then DDG HTML
+    if that look stays blank). If `_hotel_alt` is set but the look is
+    still Booking or a blank Travel tab, hold / refocus until priced
+    names appear or the budget ends. Never invent prices.
     """
-    if not _hotel_bounce_needs_alt(asked, looked):
-        return looked
-    return _run_hotel_alt_search(asked, looked, tools, deadline=deadline)
+    if _hotel_bounce_needs_alt(asked, looked):
+        return _run_hotel_alt_search(asked, looked, tools, deadline=deadline)
+    if _hotel_alt_needs_hold(asked, looked):
+        return _run_hotel_alt_search(
+            asked, looked, tools, deadline=deadline, already=True
+        )
+    return looked
 
 
 def _run_hotel_alt_search(
@@ -2938,43 +2986,135 @@ def _run_hotel_alt_search(
     tools: list[str],
     *,
     deadline: float | None = None,
+    already: bool = False,
 ) -> dict[str, Any]:
-    """run_app Google Hotels / travel search, then see_screen for prices."""
-    url = hotel_alt_travel_url(asked)
-    opened = _open_chrome_url(url)
-    _note_tool(tools, "run_app")
-    if not opened.get("ok"):
-        current = dict(looked)
-        current["_hotel_alt"] = True
-        current["_hotel_bounced"] = True
-        return current
-    _wait_after_act()
-    current = _look_opened_site(asked)
-    _note_tool(tools, "see_screen")
-    current = _dismiss_overlays_if_needed(asked, current, tools)
-    query = hotel_typed_query(asked)
-    current["_hotel_alt"] = True
-    current["_hotel_reopened"] = True
-    current["_saw_searchresults"] = True
-    current["_typed_query"] = looked.get("_typed_query") or query
-    for _ in range(4):
+    """run_app the alt hotels URL, focus that tab, see_screen for prices.
+
+    Google /travel/hotels first. If the look stays blank / unsupported,
+    open hotel_alt_fallback_url (DuckDuckGo HTML — the list that paints
+    names+prices on jarvis-computer). After run_app, focus Chrome and
+    click the new tab so see_screen is not a leftover Booking homepage.
+    """
+    current = dict(looked)
+    fallback = bool(looked.get("_hotel_alt_fallback"))
+    opened_once = bool(already and looked.get("_hotel_alt"))
+    if not opened_once or look_lost_hotel_alt(current):
+        url = (
+            hotel_alt_fallback_url(asked)
+            if fallback
+            else hotel_alt_travel_url(asked)
+        )
+        opened = _open_chrome_url(url)
+        _note_tool(tools, "run_app")
+        if not opened.get("ok"):
+            current = _stamp_hotel_alt(current, looked, asked)
+            current["_hotel_bounced"] = True
+            return current
+        _wait_after_act()
+        try:
+            _focus_now("chrome")
+            _note_tool(tools, "focus_app")
+        except Exception:
+            pass
+        current = _look_opened_site(asked)
+        _note_tool(tools, "see_screen")
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+        current = _stamp_hotel_alt(current, looked, asked)
+        if look_lost_hotel_alt(current):
+            for xy in reversed(( (880, 16), (720, 16), (560, 16) )):
+                _click_now(xy[0], xy[1])
+                _note_tool(tools, "click")
+                _wait_after_act()
+                current = _look_opened_site(asked)
+                _note_tool(tools, "see_screen")
+                current = _dismiss_overlays_if_needed(asked, current, tools)
+                current = _stamp_hotel_alt(current, looked, asked)
+                if look_has_hotel_results(current) or look_is_hotel_alt_host(
+                    current
+                ):
+                    break
+            if look_lost_hotel_alt(current):
+                current, _typed = _type_into_omnibox_url(asked, current, tools, url)
+    else:
+        current = _stamp_hotel_alt(current, looked, asked)
+    looks = 0
+    cap = 64 if deadline is not None else 8
+    while looks < cap:
         if look_has_hotel_results(current):
             return current
-        if deadline is not None and time.monotonic() >= deadline:
+        if look_is_captcha(current):
+            return current
+        if deadline is not None and time.monotonic() >= deadline and looks:
             break
+        blank_alt = look_is_hotel_alt_host(current) and not look_has_hotel_results(
+            current
+        )
+        if (
+            blank_alt
+            and not fallback
+            and looks >= 2
+        ):
+            fallback = True
+            opened = _open_chrome_url(hotel_alt_fallback_url(asked))
+            _note_tool(tools, "run_app")
+            if opened.get("ok"):
+                _wait_after_act()
+                current = _look_opened_site(asked)
+                _note_tool(tools, "see_screen")
+                current = _dismiss_overlays_if_needed(asked, current, tools)
+                current = _stamp_hotel_alt(current, looked, asked)
+                current["_hotel_alt_fallback"] = True
+                looks = 0
+                continue
+        if look_lost_hotel_alt(current):
+            current, _typed = _type_into_omnibox_url(
+                asked,
+                current,
+                tools,
+                hotel_alt_fallback_url(asked)
+                if fallback
+                else hotel_alt_travel_url(asked),
+            )
+            looks += 1
+            continue
         wait = web_look_pause_s()
         if wait > 0:
             time.sleep(wait)
         current = _look_opened_site(asked)
         _note_tool(tools, "see_screen")
         current = _dismiss_overlays_if_needed(asked, current, tools)
-        current["_hotel_alt"] = True
-        current["_hotel_reopened"] = True
-        current["_saw_searchresults"] = True
-        current["_typed_query"] = looked.get("_typed_query") or query
+        current = _stamp_hotel_alt(current, looked, asked)
+        looks += 1
     if not look_has_hotel_results(current):
         current["_hotel_bounced"] = True
     return current
+
+
+def _type_into_omnibox_url(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    url: str,
+) -> tuple[dict[str, Any], bool]:
+    """Navigate the focused tab to the alt hotels URL. Not a Booking reopen."""
+    from app.jarvis.overlay import OMNIBOX_CLICK
+
+    clicked = _click_now(OMNIBOX_CLICK[0], OMNIBOX_CLICK[1])
+    _note_tool(tools, "click")
+    if not clicked.get("ok"):
+        return looked, False
+    _wait_after_act()
+    typed = _type_now(url)
+    _note_tool(tools, "type")
+    if typed.get("ok"):
+        _keys_now("enter")
+        _note_tool(tools, "keys")
+    _wait_after_act()
+    current = _look_opened_site(asked)
+    _note_tool(tools, "see_screen")
+    current = _dismiss_overlays_if_needed(asked, current, tools)
+    current = _stamp_hotel_alt(current, looked, asked)
+    return current, bool(typed.get("ok"))
 
 
 def _continue_web_job(
@@ -3018,6 +3158,10 @@ def _continue_web_job(
         _note_tool(tools, "run_app")
         return _open_chrome_url(str(url))
 
+    def focus(*, app="chrome", **_k):
+        _note_tool(tools, "focus_app")
+        return _focus_now(str(app) or "chrome")
+
     out = continue_web_search(
         current,
         goal=asked,
@@ -3027,6 +3171,7 @@ def _continue_web_job(
         look_again=look_again,
         scroll=scroll,
         open_url=open_url,
+        focus=focus,
         deadline=deadline,
     )
     return _ensure_hotel_alt_after_bounce(asked, out, tools, deadline=deadline)
