@@ -25,7 +25,9 @@ from app.jarvis.gateway import get_gateway, model_view
 from app.jarvis.realtime import openrouter_api_key
 from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
+    ask_wants_cart,
     ask_wants_hotel,
+    ask_wants_payment,
     ask_wants_shop,
     continue_web_search,
     hotel_alt_fallback_url,
@@ -34,6 +36,7 @@ from app.jarvis.overlay import (
     hotel_travel_url,
     hotel_typed_query,
     look_has_blocking_overlay,
+    look_has_cart_results,
     look_has_hotel_results,
     look_is_booking_bounce,
     look_is_captcha,
@@ -58,6 +61,7 @@ from app.jarvis.overlay import (
     overlay_dismiss_plan,
     query_visible_on_look,
     search_box_point,
+    shop_home_url,
     web_look_pause_s,
     web_search_query,
 )
@@ -2325,9 +2329,6 @@ def _speak_web_job(
         or look_is_captcha(looked)
         or look_is_retailer_block(looked)
     )
-    shows_ask = query_visible_on_look(looked, query) or look_has_hotel_results(
-        looked
-    )
     hotel = ask_wants_hotel(asked)
     unfinished = hotel and look_is_unfinished_hotel_search(looked)
     overlay = look_has_blocking_overlay(looked, goal=asked)
@@ -2371,11 +2372,15 @@ def _speak_web_job(
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
-    elif leftover and not shows_ask:
-        # Never speak leftover / 403 / extensions as success. After type,
-        # speak only from a look that shows THIS ask's query or results.
+    elif leftover and not (
+        look_has_hotel_results(looked) or look_has_cart_results(looked)
+    ):
+        # Never speak leftover / 403 / Google-of-the-ask as success.
+        # A cart SERP that repeats the essay is leftover, not typed-success.
         reply = _WEB_STUCK
-    elif look_is_pay_control(blob) and "hotel" not in blob.lower():
+    elif ask_wants_payment(asked):
+        reply = "I stopped. I will not pay or check out."
+    elif look_is_pay_control(blob, asked) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
     elif look_has_hotel_results(looked):
         options = " ".join(hotel_option_lines(looked)).strip()
@@ -4483,6 +4488,10 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
         if wants_web_job and wants_web_job(asked):
             if ask_wants_hotel(asked):
                 url = hotel_travel_url(asked)
+            elif ask_wants_cart(asked) or (
+                ask_wants_shop(asked) and shop_home_url(asked)
+            ):
+                url = shop_home_url(asked) or "https://www.coolblue.nl/"
             else:
                 q = web_search_query(asked) or asked
                 url = "https://www.google.com/search?q=" + quote_plus(q)

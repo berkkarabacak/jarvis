@@ -166,7 +166,12 @@ _COOKIE_RE = re.compile(
     r"cookie\s+(?:banner|modal|consent|wall|notice)|"
     r"consent\s+(?:banner|modal|overlay)|"
     r"reject(?:\s+all)?(?:\s+cookies)?|"
-    r"accept\s+(?:all\s+)?cookies"
+    r"accept\s+(?:all\s+)?cookies|"
+    r"alles\s+accepteren|"
+    r"alles\s+weigeren|"
+    r"cookievoorkeuren|"
+    r"\bweigeren\b|"
+    r"\btoestaan\b"
     r")",
     re.I,
 )
@@ -185,15 +190,51 @@ _EMPTY_DESKTOP_RE = re.compile(
     r")",
     re.I,
 )
+# Real payment UI only. "Add to cart" / a shop checkout button is the
+# cart job — not a reason to abort. Constraint phrases are stripped
+# before this runs.
 _PAY_RE = re.compile(
     r"("
-    r"\b(buy|pay|checkout|purchase)\b|"
-    r"add to cart|"
+    r"\bpay now\b|"
+    r"place (?:the )?order|"
+    r"complete (?:the )?(?:booking|purchase|payment|order)|"
+    r"enter (?:your )?(?:card|credit card|payment)|"
     r"book now|"
-    r"complete (?:the )?booking|"
-    r"place order|"
-    r"pay now"
+    r"\bproceed to (?:checkout|payment)\b"
     r")",
+    re.I,
+)
+_ASK_PAY_RE = re.compile(
+    r"("
+    r"\b(?:please\s+)?(?:check\s*out|checkout)\b|"
+    r"\b(?:please\s+)?(?:pay|purchase)\b|"
+    r"enter (?:your )?(?:card|credit card)|"
+    r"complete (?:the )?(?:checkout|payment|purchase|order)|"
+    r"place (?:the )?order|"
+    r"pay (?:now|for|with)|"
+    r"\bbuy (?:it|this|now|with)\b"
+    r")",
+    re.I,
+)
+_CART_JOB_RE = re.compile(
+    r"("
+    r"\badd\b.{0,80}\b(?:cart|basket)\b|"
+    r"\bto\s+(?:the\s+)?(?:cart|basket)\b|"
+    r"\bin-stock\b|"
+    r"\bcart confirmation\b"
+    r")",
+    re.I,
+)
+_CART_PRICE_RE = re.compile(
+    r"("
+    r"€\s*\d|"
+    r"\b\d+[.,]?\d*\s*(?:euro|eur|€)\b|"
+    r"\b(?:euro|eur)\s*\d+"
+    r")",
+    re.I,
+)
+_CART_CONFIRM_RE = re.compile(
+    r"\b(cart|basket|winkelwagen|mandje|two items)\b",
     re.I,
 )
 _DISMISS_LABEL_RE = re.compile(
@@ -204,6 +245,8 @@ _DISMISS_LABEL_RE = re.compile(
     r"\breject(?:\s+all)?(?:\s+cookies)?\b|"
     r"\bdismiss\b|"
     r"\bclose\b|"
+    r"\bweigeren\b|"
+    r"alles\s+weigeren|"
     r"(?:the\s+)?(?:x|×)\s+(?:button|control)?"
     r")",
     re.I,
@@ -211,14 +254,14 @@ _DISMISS_LABEL_RE = re.compile(
 _DISMISS_XY_RE = re.compile(
     r"(?:"
     r"no thanks|not now|cancel|reject(?:\s+all)?(?:\s+cookies)?|"
-    r"dismiss|close|(?:the\s+)?(?:x|×)"
+    r"dismiss|close|weigeren|alles weigeren|(?:the\s+)?(?:x|×)"
     r")"
     r"(?:\s+button|\s+control)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
 )
 _COOKIE_ACCEPT_XY_RE = re.compile(
-    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue)"
+    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s+accepteren)"
     r"(?:\s+button|\s+and\s+continue)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
@@ -379,8 +422,18 @@ _GENIUS_BANNER_RE = re.compile(
     r")",
     re.I,
 )
+# "Do not check out / pay / invent" and "no checkout" are constraints,
+# not a payment UI and not a reason to abort a cart job.
 _PAY_COACHING_RE = re.compile(
-    r"do\s+not\s+(?:book|pay)|never\s+(?:book|pay)|do\s+not\s+invent",
+    r"("
+    r"do\s+not\s+invent(?:,\s*check[\s-]?out,\s*or\s*pay)?"
+    r"|do\s+not\s+(?:book|pay|check[\s-]?out)"
+    r"(?:\s+or\s+(?:book|pay|check[\s-]?out))*"
+    r"|don['’]?t\s+(?:book|pay|check[\s-]?out)"
+    r"|never\s+(?:book|pay|check[\s-]?out)"
+    r"|no\s+check[\s-]?out"
+    r"|stop\s+before\s+(?:the\s+)?(?:payment|check[\s-]?out|checkout)"
+    r")",
     re.I,
 )
 _HOTEL_DEST_IN_RE = re.compile(
@@ -417,9 +470,17 @@ _COACHING_PHRASE_RE = re.compile(
     r"open\s+a\s+real\s+(?:travel\s+)?site|"
     r"search\s+real\s+dates?(?:\s+and\s+prices?)?|"
     r"dismiss(?:\s+the)?\s+(?:popups?|overlays?|cookies?|modals?)|"
-    r"do\s+not\s+invent|"
+    r"do\s+not\s+invent(?:,\s*check[\s-]?out,\s*or\s*pay)?|"
     r"do\s+not\s+book(?:\s+or\s+pay)?|"
-    r"do\s+not\s+pay|"
+    r"do\s+not\s+(?:check[\s-]?out|pay)(?:\s+or\s+(?:check[\s-]?out|pay))?|"
+    r"no\s+check[\s-]?out|"
+    r"stop\s+before\s+(?:the\s+)?(?:payment|check[\s-]?out)|"
+    r"reply\s+with\s+both\s+names|"
+    r"names?,?\s*euro prices|"
+    r"euro prices|"
+    r"cart confirmation|"
+    r"if\s+(?:coolblue|bol|amazon)(?:\s+or\s+(?:coolblue|bol|amazon))?"
+    r"\s+is\s+blocked|"
     r"reply\s+with(?:\s+\d+)?\s+concrete\s+options|"
     r"concrete\s+options:?|"
     r"hotel\s+name,?\s*city|"
@@ -670,10 +731,58 @@ def look_is_empty_desktop(looked: dict[str, Any] | None) -> bool:
     return bool(_EMPTY_DESKTOP_RE.search(blob))
 
 
-def look_is_pay_control(text: str) -> bool:
-    raw = text or ""
-    cleaned = _PAY_COACHING_RE.sub(" ", raw)
+def _strip_pay_constraints(text: str) -> str:
+    """Drop 'do not check out / pay' coaching so leftover 'pay' is not a hit."""
+    cleaned = _PAY_COACHING_RE.sub(" ", text or "")
+    cleaned = re.sub(
+        r"\b(?:do\s+not|don['’]?t|never|no)\s+"
+        r"(?:invent|book|pay|check[\s-]?out|checkout)\b",
+        " ",
+        cleaned,
+        flags=re.I,
+    )
+    return cleaned
+
+
+def look_is_pay_control(text: str, goal: str = "") -> bool:
+    """True for a real payment form — not add-to-cart, not a do-not-pay ask.
+
+    Cart / add-to-basket jobs keep going when the page says Add to cart
+    or the ask says do not check out. Only a payment UI (or an ask that
+    actually wants checkout) is this.
+    """
+    if ask_wants_cart(goal) and not ask_wants_payment(goal):
+        return False
+    cleaned = _strip_pay_constraints(text or "")
     return bool(_PAY_RE.search(cleaned))
+
+
+def ask_wants_payment(asked: str) -> bool:
+    """True only when they asked to pay / complete checkout / enter a card.
+
+    'Do not check out', 'no checkout', 'stop before payment' are
+    constraints — not this.
+    """
+    cleaned = _strip_pay_constraints(asked or "")
+    return bool(_ASK_PAY_RE.search(cleaned))
+
+
+def ask_wants_cart(asked: str) -> bool:
+    """Add two in-stock products to a cart — stay on the retailer."""
+    raw = asked or ""
+    if not _CART_JOB_RE.search(raw):
+        return False
+    return ask_wants_shop(raw) or bool(_NL_RETAILER_HOST_RE.search(raw))
+
+
+def look_has_cart_results(looked: dict[str, Any] | None) -> bool:
+    """Two euro prices plus a cart/basket — names+prices, not a Google SERP."""
+    if _look_is_search_engine(looked):
+        return False
+    blob = look_result_blob(looked)
+    return len(_CART_PRICE_RE.findall(blob)) >= 2 and bool(
+        _CART_CONFIRM_RE.search(blob)
+    )
 
 
 def _title_is_restore(looked: dict[str, Any] | None) -> bool:
@@ -807,7 +916,7 @@ def overlay_dismiss_plan(
     if found is None:
         return None
     blob = look_blob(looked)
-    if found != "cookie" and look_is_pay_control(blob) and not _DISMISS_LABEL_RE.search(
+    if found != "cookie" and look_is_pay_control(blob, goal) and not _DISMISS_LABEL_RE.search(
         blob
     ):
         # A pay wall is not a dismissable cookie — do not click Buy.
@@ -1281,6 +1390,49 @@ def ask_wants_shop(asked: str) -> bool:
     return ask_topic(asked) == "shop"
 
 
+_SHOP_HOST_URLS: tuple[tuple[str, str], ...] = (
+    ("coolblue.nl", "https://www.coolblue.nl/"),
+    ("bol.com", "https://www.bol.com/"),
+    ("amazon.nl", "https://www.amazon.nl/"),
+)
+
+
+def shop_home_url(asked: str) -> str | None:
+    """First named NL retailer homepage. Never a Google search of the ask."""
+    raw = asked or ""
+    found: list[tuple[int, str]] = []
+    for host, url in _SHOP_HOST_URLS:
+        match = re.search(re.escape(host), raw, re.I)
+        if match:
+            found.append((match.start(), url))
+    if found:
+        found.sort(key=lambda item: item[0])
+        return found[0][1]
+    return None
+
+
+def shop_typed_query(asked: str) -> str:
+    """On-shop search tokens only. Never the coaching / do-not-pay essay."""
+    raw = web_search_query(asked)
+    raw = re.sub(
+        r"\b("
+        r"check[\s-]?out|checkout|pay|purchase|buy|"
+        r"reply|names?|confirmation|blocked|cookies?|"
+        r"dismiss|invent|different|real|both|euro|prices?"
+        r")\b",
+        " ",
+        raw,
+        flags=re.I,
+    )
+    raw = re.sub(r"\s+", " ", raw).strip(" .,!?")
+    tokens = distinctive_query_tokens(raw)
+    if tokens:
+        return " ".join(tokens[:6])
+    if ask_wants_cart(asked):
+        return "in-stock"
+    return raw
+
+
 def look_is_nl_retailer(looked: dict[str, Any] | None) -> bool:
     """bol.com / coolblue.nl / amazon.nl from the title or URL."""
     item = looked or {}
@@ -1440,6 +1592,9 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     query = web_search_query(asked)
     if look_is_captcha(looked):
         return True
+    if ask_wants_cart(asked) and _look_is_search_engine(looked):
+        # Google of the cart essay is leftover — stay on / return to the shop.
+        return True
     if query_visible_on_look(looked, query):
         return False
     host = look_host_label(looked)
@@ -1569,6 +1724,8 @@ def needs_web_query(
         # Homepage / empty date form — type destination + dates.
         return True
     if look_has_hotel_results(looked):
+        return False
+    if look_has_cart_results(looked):
         return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
         return True
@@ -2027,10 +2184,17 @@ def continue_web_search(
     cart job. Speak stuck only after those fallbacks fail.
     """
     query = web_search_query(goal)
-    type_query = hotel_typed_query(goal) if ask_wants_hotel(goal) else query
+    if ask_wants_hotel(goal):
+        type_query = hotel_typed_query(goal)
+    elif ask_wants_shop(goal):
+        type_query = shop_typed_query(goal) or query
+    else:
+        type_query = query
     current = dict(looked or {})
     blob = look_blob(current)
-    if look_is_pay_control(blob) and "hotel" not in blob.lower():
+    if ask_wants_payment(goal):
+        return current
+    if look_is_pay_control(blob, goal) and "hotel" not in blob.lower():
         return current
     if not (query or type_query or "").strip():
         return current
@@ -2113,7 +2277,11 @@ def continue_web_search(
 
     for i in range(limit):
         blob = look_blob(current)
-        if look_is_pay_control(blob) and "hotel" not in blob.lower():
+        if ask_wants_payment(goal):
+            return _mark(current)
+        if look_is_pay_control(blob, goal) and "hotel" not in blob.lower():
+            return _mark(current)
+        if look_has_cart_results(current):
             return _mark(current)
         if ask_wants_shop(goal) and look_is_retailer_block(current):
             # Leave the dead shop immediately. Do not type into the
@@ -2191,6 +2359,19 @@ def continue_web_search(
             _pause_for_page_load()
             continue
         if look_is_leftover_for_ask(current, goal) and not typed_query:
+            if (
+                ask_wants_cart(goal)
+                and _look_is_search_engine(current)
+                and open_url is not None
+            ):
+                url = shop_home_url(goal)
+                if url:
+                    opened = open_url(url)
+                    if opened and opened.get("ok"):
+                        _pause_after_web_act()
+                        current = look_again() or current
+                        typed_query = False
+                        continue
             current, typed_query = _type_new_tab_or_omnibox(
                 type_query or query,
                 current,
@@ -2468,6 +2649,23 @@ def continue_web_search(
             or _deadline_passed(deadline)
             or last
         ):
+            if ask_wants_cart(goal) and look_is_nl_retailer(current):
+                # Stay on the shop. Never omnibox-Google the cart ask.
+                xy = search_box_point(current)
+                if xy is None and look_is_web_page(current):
+                    xy = SEARCH_BOX_CLICK
+                if xy is not None:
+                    current, typed_query = _type_query_at(
+                        xy,
+                        type_query or query,
+                        current,
+                        click=click,
+                        type_text=type_text,
+                        keys=keys,
+                        look_again=look_again,
+                    )
+                    continue
+                return _mark(current)
             current, typed_query = _type_query_at(
                 OMNIBOX_CLICK,
                 type_query or query,
@@ -2485,6 +2683,21 @@ def continue_web_search(
         if look_is_leftover_for_ask(current, goal) and not look_is_focused_new_tab(
             current
         ):
+            return _mark(current)
+        if ask_wants_cart(goal) and look_is_nl_retailer(current):
+            xy = search_box_point(current)
+            if xy is None and look_is_web_page(current):
+                xy = SEARCH_BOX_CLICK
+            if xy is not None:
+                current, typed_query = _type_query_at(
+                    xy,
+                    type_query or query,
+                    current,
+                    click=click,
+                    type_text=type_text,
+                    keys=keys,
+                    look_again=look_again,
+                )
             return _mark(current)
         current, typed_query = _type_query_at(
             OMNIBOX_CLICK,
