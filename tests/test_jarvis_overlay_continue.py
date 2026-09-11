@@ -19,8 +19,10 @@ from app.jarvis.overlay import (
     ask_wants_hotel,
     continue_web_search,
     dismiss_blocking_overlays,
+    hotel_destination,
     hotel_stay_dates,
     hotel_travel_url,
+    hotel_typed_query,
     look_has_blocking_overlay,
     look_has_hotel_results,
     look_is_travel_site,
@@ -36,6 +38,7 @@ from app.jarvis.overlay import (
     look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
+    look_is_travel_search_form,
     look_is_web_page,
     needs_web_query,
     overlay_dismiss_plan,
@@ -336,6 +339,192 @@ def test_speak_web_job_genius_is_not_web_stuck():
     )
     assert body["reply"] != _WEB_STUCK
     assert "i could not finish the search" not in body["reply"].lower()
+
+
+# Live 2026-09-11 SHA 8571716 / PR #35: Booking landing + Genius *banner*
+# (not the mashed Signin modal). URL leaked the ask. Vision coached
+# "enter search criteria" / "no priced hotel names". tools_used was only
+# run_app + see_screen; reply was _WEB_STUCK. "hotel names" must not
+# count as a listed property.
+LIVE_BOOKING_HOMEPAGE_BANNER = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/index.html?"
+        "ss=available+hotels+under+2000+Euro+total+in+central+Italy"
+    ),
+    "vision_description": (
+        "Booking.com official site. landing/index.html loading. "
+        "Unlock flight savings with members-only deals. "
+        "Genius promotional banner. Search in your own words. "
+        "Family-friendly apartments in Paris. Select dates. "
+        "Check-in date. Check-out date. Enter search criteria. "
+        "No priced hotel names."
+    ),
+}
+
+LIVE_BOOKING_HOMEPAGE_NO_OVERLAY = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/index.html?"
+        "ss=available hotels under 2000 Euro total in central Italy"
+    ),
+    "vision_description": (
+        "Booking.com official site. landing/index.html loading. "
+        "Search in your own words. Select dates. Check-in date. "
+        "Enter search criteria. No priced hotel names. "
+        "hotel name, city, check-in/out dates, total price in euros."
+    ),
+}
+
+
+def test_live_booking_homepage_is_form_not_hotel_results():
+    """Homepage / Genius banner / 'hotel names' coaching is not priced options."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    dest = hotel_destination(LIVE_ITALY_HOTEL)
+    typed_q = hotel_typed_query(LIVE_ITALY_HOTEL)
+    assert dest.lower() == "rome"
+    assert "rome" in typed_q.lower()
+    assert "check-in" in typed_q.lower() and "check-out" in typed_q.lower()
+    assert "use the computer" not in typed_q.lower()
+    assert "2000" not in hotel_travel_url(LIVE_ITALY_HOTEL)
+    for looked in (LIVE_BOOKING_HOMEPAGE_BANNER, LIVE_BOOKING_HOMEPAGE_NO_OVERLAY):
+        assert look_is_travel_site(looked) is True
+        assert look_is_travel_search_form(looked) is True
+        assert look_has_hotel_results(looked) is False
+        assert needs_web_query(LIVE_ITALY_HOTEL, looked, q) is True
+        assert search_box_point(looked) is not None
+        body = _speak_web_job(
+            LIVE_ITALY_HOTEL,
+            dict(looked),
+            ["run_app", "see_screen"],
+            opened=True,
+        )
+        assert body["reply"] != _WEB_STUCK
+        assert body["reply"].lower() != "i could not finish the search"
+    # Banner with Unlock-savings / Genius promo is dismissible.
+    assert overlay_kind(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL) == "signin"
+    assert overlay_dismiss_plan(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL)
+    # Coaching-only look has no overlay — still must type, not finish.
+    assert overlay_kind(LIVE_BOOKING_HOMEPAGE_NO_OVERLAY, goal=LIVE_ITALY_HOTEL) is None
+    assert overlay_dismiss_plan(LIVE_BOOKING_HOMEPAGE_NO_OVERLAY, goal=LIVE_ITALY_HOTEL) is None
+
+
+def test_continue_web_search_booking_homepage_types_dates_not_stuck():
+    """First Booking landing look must click and/or type — never stop."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    form = {
+        "ok": True,
+        "title": "Booking.com | Official site",
+        "url": "https://www.booking.com/",
+        "vision_description": (
+            "Booking.com. Where are you going? Search box is empty at (640, 320)."
+        ),
+    }
+    for start in (LIVE_BOOKING_HOMEPAGE_BANNER, LIVE_BOOKING_HOMEPAGE_NO_OVERLAY):
+        clicks: list[tuple[int, int]] = []
+        typed: list[str] = []
+        keys: list[str] = []
+
+        def click(*, x, y, **_k):
+            clicks.append((int(x), int(y)))
+            return {"ok": True}
+
+        def type_text(*, text="", **_k):
+            typed.append(str(text))
+            return {"ok": True}
+
+        def press(*, combo="", **_k):
+            keys.append(str(combo))
+            return {"ok": True}
+
+        def look_again():
+            if typed:
+                return dict(ITALY_HOTEL_RESULTS)
+            return dict(form)
+
+        out = continue_web_search(
+            dict(start),
+            goal=LIVE_ITALY_HOTEL,
+            click=click,
+            type_text=type_text,
+            keys=press,
+            look_again=look_again,
+        )
+        assert clicks or typed, "Booking homepage must click or type before return"
+        assert typed, "must type destination / dates on the Booking form"
+        assert all(_typed_is_user_query(t) for t in typed), typed
+        blob = " ".join(typed).lower()
+        assert "google.com" not in blob
+        assert "use the computer" not in blob
+        assert "available hotels under 2000" not in blob
+        assert any(
+            token in blob for token in ("rome", "italy", "hotel", "check-in", "checkin")
+        ), typed
+        assert "check-in" in blob or "checkin=" in blob
+        spoken = _speak_web_job(
+            LIVE_ITALY_HOTEL,
+            out,
+            ["run_app", "see_screen", "click", "type", "keys"],
+            opened=True,
+        )
+        assert spoken["reply"] != _WEB_STUCK
+        assert look_has_hotel_results(out) or out.get("_typed_query")
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_booking_homepage_not_web_stuck_from_see_only(
+    monkeypatch, tmp_path
+):
+    """Hotel ask that opens Booking must click/type before any _WEB_STUCK."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    for start in (LIVE_BOOKING_HOMEPAGE_BANNER, LIVE_BOOKING_HOMEPAGE_NO_OVERLAY):
+        clicks: list[tuple[int, int]] = []
+        typed: list[str] = []
+        keys: list[str] = []
+        launched: list[dict] = []
+        looks = [
+            dict(start),
+            {
+                "ok": True,
+                "title": "Booking.com | Official site",
+                "url": "https://www.booking.com/",
+                "vision_description": (
+                    "Booking.com. Where are you going? "
+                    "Search box is empty at (640, 320)."
+                ),
+            },
+            dict(ITALY_HOTEL_RESULTS),
+        ]
+        _patch_voice_ask_web(
+            monkeypatch,
+            looks,
+            clicks=clicks,
+            typed=typed,
+            keys=keys,
+            launched=launched,
+        )
+        body = await run_voice_ask(LIVE_ITALY_HOTEL)
+        tools = list(body.get("tools_used") or [])
+        assert tools != ["run_app", "see_screen"]
+        assert "click" in tools or "type" in tools or "keys" in tools
+        assert clicks or typed
+        assert typed, "must type a clean destination + dates"
+        typed_blob = " ".join(typed).lower()
+        assert "available hotels under 2000" not in typed_blob
+        assert _typed_is_user_query(typed_blob)
+        assert body["reply"] != _WEB_STUCK
+        assert "i could not finish the search" not in body["reply"].lower()
+        low = body["reply"].lower()
+        assert "eden" in low or "hotel" in low or "typed the search" in low
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():
