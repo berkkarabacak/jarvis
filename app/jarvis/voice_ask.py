@@ -26,6 +26,7 @@ from app.jarvis.realtime import openrouter_api_key
 from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     ask_wants_hotel,
+    ask_wants_shop,
     continue_web_search,
     hotel_alt_fallback_url,
     hotel_alt_travel_url,
@@ -47,11 +48,13 @@ from app.jarvis.overlay import (
     look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
+    look_is_retailer_block,
     look_is_travel_search_form,
     look_is_travel_site,
     look_is_unfinished_hotel_search,
     needs_hotel_followthrough,
     needs_web_query,
+    next_retailer_fallback_url,
     overlay_dismiss_plan,
     query_visible_on_look,
     search_box_point,
@@ -596,6 +599,11 @@ _HOTEL_ALT_FAILED = (
     "Google Hotels also did not show priced hotels. "
     "I could not finish the search."
 )
+_RETAILER_BLOCKED = (
+    "This shop blocked the computer. "
+    "Coolblue and Amazon also did not load. "
+    "I could not finish the search."
+)
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
     "Istanbul cats treat the city like they own it. "
@@ -745,6 +753,10 @@ _PAGE_FAIL_RE = re.compile(
     r"\bhttp\s*403\b|"
     r"\b403\b(?:\s+(?:forbidden|error))?|"
     r"access denied|"
+    r"temporarily blocked|"
+    r"possible abuse|"
+    r"abuse from this ip|"
+    r"automated scripts?|"
     r"page not found|"
     r"this page (?:does not|doesn't) exist"
     r")",
@@ -2311,6 +2323,7 @@ def _speak_web_job(
         look_is_leftover_for_ask(looked, asked)
         or look_is_leftover_surface(looked)
         or look_is_captcha(looked)
+        or look_is_retailer_block(looked)
     )
     shows_ask = query_visible_on_look(looked, query) or look_has_hotel_results(
         looked
@@ -2321,7 +2334,15 @@ def _speak_web_job(
     travel_form = hotel and look_is_travel_search_form(looked)
     pending = hotel and look_is_hotel_search_pending(looked)
     acted = typed or any(name in tools for name in ("click", "type", "keys"))
-    if overlay:
+    retailer_block = look_is_retailer_block(looked)
+    if retailer_block:
+        # Abuse / IP-block / 403 — never "I typed the search." Overlay
+        # (sandbox banner) on a dead shop is not typed-success.
+        if looked.get("_retailer_blocked") or looked.get("_retailer_tried"):
+            reply = _RETAILER_BLOCKED
+        else:
+            reply = _WEB_STUCK
+    elif overlay:
         # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
         reply = "I typed the search." if acted else "I opened the page."
     elif pending and looked.get("_hotel_alt"):
@@ -3090,6 +3111,80 @@ def _run_hotel_alt_search(
     return current
 
 
+def _retailer_block_needs_fallback(asked: str, looked: dict[str, Any]) -> bool:
+    """True when a shop IP-block still has an unused NL retailer URL."""
+    if not ask_wants_shop(asked) or not look_is_retailer_block(looked):
+        return False
+    if looked.get("_retailer_blocked"):
+        return False
+    tried = list(looked.get("_retailer_tried") or [])
+    return next_retailer_fallback_url(looked, tried) is not None
+
+
+def _stamp_retailer_fallback(
+    current: dict[str, Any], tried: list[str], *, blocked: bool = False
+) -> dict[str, Any]:
+    current["_retailer_tried"] = list(tried)
+    if blocked:
+        current["_retailer_blocked"] = True
+    return current
+
+
+def _ensure_retailer_fallback_after_block(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    """Ask path: after a shop abuse/403 wall, open coolblue then amazon.nl.
+
+    continue_web_search should already do this. If it returned a block
+    page without `_retailer_tried`, open the next retailer before speak.
+    Never finalize typed-search on the wall.
+    """
+    if not _retailer_block_needs_fallback(asked, looked):
+        return looked
+    return _run_retailer_fallback(asked, looked, tools, deadline=deadline)
+
+
+def _run_retailer_fallback(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    """run_app the next NL retailer and look. Repeat until a shop loads."""
+    current = dict(looked)
+    tried = list(current.get("_retailer_tried") or [])
+    while True:
+        if deadline is not None and time.monotonic() >= deadline and tried:
+            return _stamp_retailer_fallback(current, tried, blocked=True)
+        url = next_retailer_fallback_url(current, tried)
+        if not url:
+            return _stamp_retailer_fallback(current, tried, blocked=True)
+        opened = _open_chrome_url(url)
+        _note_tool(tools, "run_app")
+        tried.append(url)
+        if not opened.get("ok"):
+            current = _stamp_retailer_fallback(current, tried)
+            continue
+        _wait_after_act()
+        try:
+            _focus_now("chrome")
+            _note_tool(tools, "focus_app")
+        except Exception:
+            pass
+        current = _look_opened_site(asked)
+        _note_tool(tools, "see_screen")
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+        current = _stamp_retailer_fallback(current, tried)
+        if look_is_retailer_block(current):
+            continue
+        return current
+
+
 def _type_into_omnibox_url(
     asked: str,
     looked: dict[str, Any],
@@ -3162,19 +3257,34 @@ def _continue_web_job(
         _note_tool(tools, "focus_app")
         return _focus_now(str(app) or "chrome")
 
-    out = continue_web_search(
-        current,
-        goal=asked,
-        click=click,
-        type_text=type_text,
-        keys=keys,
-        look_again=look_again,
-        scroll=scroll,
-        open_url=open_url,
-        focus=focus,
-        deadline=deadline,
+    def _go(looked: dict[str, Any]) -> dict[str, Any]:
+        return continue_web_search(
+            looked,
+            goal=asked,
+            click=click,
+            type_text=type_text,
+            keys=keys,
+            look_again=look_again,
+            scroll=scroll,
+            open_url=open_url,
+            focus=focus,
+            deadline=deadline,
+        )
+
+    out = _go(current)
+    out = _ensure_hotel_alt_after_bounce(asked, out, tools, deadline=deadline)
+    out = _ensure_retailer_fallback_after_block(
+        asked, out, tools, deadline=deadline
     )
-    return _ensure_hotel_alt_after_bounce(asked, out, tools, deadline=deadline)
+    if (
+        ask_wants_shop(asked)
+        and out.get("_retailer_tried")
+        and not look_is_retailer_block(out)
+        and needs_web_query(asked, out, web_search_query(asked))
+    ):
+        # New shop loaded after a block — keep the same cart job.
+        out = _go(out)
+    return out
 
 
 def _leave_hotel_serp_if_needed(

@@ -53,8 +53,14 @@ from app.jarvis.overlay import (
     look_is_focused_new_tab,
     look_has_unfocused_new_tab,
     look_is_footer,
+    look_is_abuse_block,
     look_is_http_error,
     look_is_leftover_for_ask,
+    look_is_nl_retailer,
+    look_is_retailer_block,
+    ask_wants_shop,
+    next_retailer_fallback_url,
+    retailer_fallback_urls,
     look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
@@ -76,6 +82,7 @@ from app.jarvis.voice_ask import (
     ASK_WEB_REPLY_HEADROOM_S,
     _BOOKING_BOUNCED,
     _HOTEL_ALT_FAILED,
+    _RETAILER_BLOCKED,
     _WEB_STUCK,
     ask_abort_ms,
     ask_deadline_s,
@@ -92,6 +99,10 @@ from app.jarvis.virtual_pc import (
 
 ROME = "find a hotel in central Rome"
 GRINDER = "go to bol.com and find a coffee grinder"
+LIVE_CART = (
+    "go to bol.com, add two real in-stock products to cart, dismiss popups, "
+    "no checkout, reply with names+euro prices."
+)
 WEATHER = "use Chrome to look up the weather in Amsterdam"
 LIVE_WEATHER = (
     "Open Chrome. Look, click and type like a person. "
@@ -144,6 +155,7 @@ def test_rome_hotel_is_a_web_computer_job_not_look_and_tell():
     assert wants_web_job("use Chrome") is True
     assert wants_web_job(WEATHER) is True
     assert wants_web_job(GRINDER) is True
+    assert wants_web_job(LIVE_CART) is True
     assert wants_web_job(LIVE_ITALY_HOTEL) is True
     assert goal_is_computer_job(LIVE_ITALY_HOTEL) is True
     assert goal_is_simple_talk(LIVE_ITALY_HOTEL) is False
@@ -2896,6 +2908,62 @@ LEFTOVER_SHOP = {
     ),
 }
 
+# Live 2026-09-11 aicontrolroom.nl: bol.com IP-abuse wall. Vision saw the
+# block; ask finalized "I typed the search." because the --no-sandbox
+# banner counted as overlay typed-success.
+LIVE_BOL_ABUSE_BLOCK = {
+    "ok": True,
+    "title": "bol.com - Chromium",
+    "url": "https://www.bol.com/",
+    "vision_description": (
+        "You are using an unsupported command-line flag --no-sandbox. "
+        "Your access to bol.com has been temporarily blocked due to possible "
+        "abuse from this IP address. This may be caused by use of a VPN, "
+        "an outdated browser, or automated scripts. Contact "
+        "customerservice@bol.com. No products. No cart."
+    ),
+}
+
+LIVE_COOLBLUE_ABUSE_BLOCK = {
+    "ok": True,
+    "title": "Coolblue - Chromium",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "Your access to coolblue.nl has been temporarily blocked due to "
+        "possible abuse from this IP address. Automated scripts. No products."
+    ),
+}
+
+LIVE_AMAZON_NL_ABUSE_BLOCK = {
+    "ok": True,
+    "title": "Amazon.nl - Chromium",
+    "url": "https://www.amazon.nl/",
+    "vision_description": (
+        "Access denied. Your access to amazon.nl has been temporarily "
+        "blocked due to possible abuse from this IP address."
+    ),
+}
+
+COOLBLUE_TWO_PRODUCTS = {
+    "ok": True,
+    "title": "Coolblue",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "Coolblue. Two in-stock items. Philips Sonicare. 89 euro. "
+        "Bosch kettle. 49 euro. Two items in the basket."
+    ),
+}
+
+AMAZON_NL_TWO_PRODUCTS = {
+    "ok": True,
+    "title": "Amazon.nl",
+    "url": "https://www.amazon.nl/",
+    "vision_description": (
+        "Amazon.nl. Two in-stock items. Sony headphones. 79 euro. "
+        "Logitech mouse. 29 euro. Two items in the basket."
+    ),
+}
+
 LEFTOVER_WEATHER = {
     "ok": True,
     "title": "weather in Amsterdam - Google Search",
@@ -3069,6 +3137,238 @@ def test_leftover_title_is_not_a_ready_page_for_this_ask():
     )
     assert look_is_focused_new_tab(still_shop) is False
     assert wants_web_job(LIVE_WEATHER) is True
+
+
+def test_bol_abuse_block_is_not_typed_success():
+    """Live bol.com IP-abuse wall is a block, not a typed search."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    block = LIVE_BOL_ABUSE_BLOCK
+    assert ask_wants_shop(LIVE_CART) is True
+    assert ask_wants_shop(GRINDER) is True
+    assert look_is_abuse_block(block) is True
+    assert look_is_http_error(block) is True
+    assert look_is_retailer_block(block) is True
+    assert look_is_nl_retailer(block) is True
+    assert look_has_blocking_overlay(block) is True
+    assert overlay_kind(block) == "sandbox"
+    assert look_is_leftover_for_ask(block, LIVE_CART) is True
+    assert look_is_web_page(block) is False
+    assert search_box_point(block) is None
+    assert look_is_page_ready(block, LIVE_CART) is False
+    urls = retailer_fallback_urls()
+    assert urls[0] == "https://www.coolblue.nl/"
+    assert urls[1] == "https://www.amazon.nl/"
+    assert next_retailer_fallback_url(block, []) == "https://www.coolblue.nl/"
+    assert next_retailer_fallback_url(block, ["https://www.coolblue.nl/"]) == (
+        "https://www.amazon.nl/"
+    )
+    assert next_retailer_fallback_url(LIVE_AMAZON_NL_ABUSE_BLOCK, urls) is None
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    typed = dict(block)
+    typed["_typed_query"] = "two real in-stock products"
+    spoken = _speak_web_job(LIVE_CART, typed, tools, opened=True)
+    low = spoken["reply"].lower()
+    assert spoken["reply"] != "I typed the search."
+    assert "i typed the search" not in low
+    assert spoken["reply"] == _WEB_STUCK
+    overlay_only = _speak_web_job(LIVE_CART, dict(block), tools, opened=True)
+    assert "i typed the search" not in overlay_only["reply"].lower()
+    failed = dict(block)
+    failed["_typed_query"] = "two real in-stock products"
+    failed["_retailer_tried"] = list(urls)
+    failed["_retailer_blocked"] = True
+    after = _speak_web_job(LIVE_CART, failed, tools, opened=True)
+    assert after["reply"] == _RETAILER_BLOCKED
+    assert "i typed the search" not in after["reply"].lower()
+    assert "coolblue" in after["reply"].lower()
+    assert "amazon" in after["reply"].lower()
+
+
+def test_continue_web_search_retailer_block_opens_coolblue():
+    """Shop abuse wall must run_app coolblue.nl before any typed-success."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("coolblue.nl" in u for u in opened):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        return dict(LIVE_BOL_ABUSE_BLOCK)
+
+    out = continue_web_search(
+        dict(LIVE_BOL_ABUSE_BLOCK) | {"_typed_query": "two real in-stock products"},
+        goal=LIVE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert any("coolblue.nl" in u for u in opened), opened
+    assert opened[0] == "https://www.coolblue.nl/"
+    assert look_is_retailer_block(out) is False
+    spoken = _speak_web_job(
+        LIVE_CART,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+
+
+def test_continue_web_search_coolblue_block_opens_amazon_nl():
+    """If coolblue is also blocked, immediately open amazon.nl."""
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        urls = " ".join(opened)
+        if "amazon.nl" in urls:
+            return dict(AMAZON_NL_TWO_PRODUCTS)
+        if "coolblue.nl" in urls:
+            return dict(LIVE_COOLBLUE_ABUSE_BLOCK)
+        return dict(LIVE_BOL_ABUSE_BLOCK)
+
+    out = continue_web_search(
+        dict(LIVE_BOL_ABUSE_BLOCK),
+        goal=LIVE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert any("coolblue.nl" in u for u in opened), opened
+    assert any("amazon.nl" in u for u in opened), opened
+    assert look_is_retailer_block(out) is False
+    blob = str(out.get("vision_description") or "").lower()
+    assert "sony" in blob or "79" in blob
+
+
+def test_continue_web_search_all_retailer_fallbacks_blocked_is_stuck():
+    """After coolblue and amazon.nl also block, mark blocked — not typed-success."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        urls = " ".join(opened)
+        if "amazon.nl" in urls:
+            return dict(LIVE_AMAZON_NL_ABUSE_BLOCK)
+        if "coolblue.nl" in urls:
+            return dict(LIVE_COOLBLUE_ABUSE_BLOCK)
+        return dict(LIVE_BOL_ABUSE_BLOCK)
+
+    out = continue_web_search(
+        dict(LIVE_BOL_ABUSE_BLOCK) | {"_typed_query": "two real in-stock products"},
+        goal=LIVE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert any("coolblue.nl" in u for u in opened), opened
+    assert any("amazon.nl" in u for u in opened), opened
+    assert out.get("_retailer_blocked") is True
+    spoken = _speak_web_job(
+        LIVE_CART,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] == _RETAILER_BLOCKED
+    assert "i typed the search" not in spoken["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_bol_abuse_block_run_app_coolblue(monkeypatch, tmp_path):
+    """Ask path: bol.com abuse wall must run_app coolblue.nl, not typed-search."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("coolblue.nl" in u for u in urls):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        return dict(LIVE_BOL_ABUSE_BLOCK)
+
+    looks = [dict(LIVE_BOL_ABUSE_BLOCK)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_CART)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("coolblue.nl" in u for u in urls), urls
+    assert "run_app" in list(body.get("tools_used") or [])
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+    assert body["reply"] != _WEB_STUCK
+    assert body["reply"] != _RETAILER_BLOCKED
 
 
 def _run_continue(looks, goal, clicks, typed, keys):

@@ -506,6 +506,30 @@ _HTTP_ERROR_RE = re.compile(
     r")",
     re.I,
 )
+# Retailer IP / abuse walls (bol.com live 2026-09-11). Not a 403 title —
+# vision says temporarily blocked / possible abuse / automated scripts.
+_ABUSE_BLOCK_RE = re.compile(
+    r"("
+    r"temporarily blocked|"
+    r"possible abuse|"
+    r"abuse from this ip|"
+    r"blocked due to (?:possible )?abuse|"
+    r"your access to .{0,80} (?:has been )?(?:temporarily )?blocked|"
+    r"ip (?:address )?(?:has been )?(?:temporarily )?blocked|"
+    r"blocked (?:for|due to) (?:possible )?abuse|"
+    r"automated scripts?"
+    r")",
+    re.I,
+)
+# After a shop IP-block, leave the dead host. coolblue.nl then amazon.nl.
+RETAILER_FALLBACK_URLS: tuple[str, ...] = (
+    "https://www.coolblue.nl/",
+    "https://www.amazon.nl/",
+)
+_NL_RETAILER_HOST_RE = re.compile(
+    r"\b(?:www\.)?(bol\.com|coolblue\.nl|amazon\.nl)\b",
+    re.I,
+)
 # chrome://extensions / settings and leftover desktop apps. Never type THIS
 # ask here. chrome://newtab is a blank tab, not leftover.
 _CHROME_INTERNAL_RE = re.compile(r"chrome://(?!new-?tab)", re.I)
@@ -532,7 +556,7 @@ _LOOK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "shop",
         re.compile(
-            r"\b(bol\.com|amazon|ebay|zalando|webshop|add to cart|shopping)\b",
+            r"\b(bol\.com|amazon|coolblue|ebay|zalando|webshop|add to cart|shopping)\b",
             re.I,
         ),
     ),
@@ -561,7 +585,7 @@ _ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "shop",
         re.compile(
-            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon)\b",
+            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon|coolblue|products)\b",
             re.I,
         ),
     ),
@@ -1232,9 +1256,66 @@ def look_host_label(looked: dict[str, Any] | None) -> str:
     return host
 
 
+def look_is_abuse_block(looked: dict[str, Any] | None) -> bool:
+    """Retailer IP / abuse / automated-script wall from title or vision.
+
+    bol.com paints this without HTTP 403 in the title. Typing a shop
+    query here is not success. Fall back to another NL retailer.
+    """
+    return bool(_ABUSE_BLOCK_RE.search(look_blob(looked)))
+
+
 def look_is_http_error(looked: dict[str, Any] | None) -> bool:
-    """403 / unreachable leftover — not a page we type a shop query into."""
-    return bool(_HTTP_ERROR_RE.search(look_blob(looked)))
+    """403 / unreachable / abuse leftover — not a page we type a shop query into."""
+    blob = look_blob(looked)
+    return bool(_HTTP_ERROR_RE.search(blob) or _ABUSE_BLOCK_RE.search(blob))
+
+
+def look_is_retailer_block(looked: dict[str, Any] | None) -> bool:
+    """Abuse / IP block / access denied — not a shop we can type into."""
+    return look_is_http_error(looked) or look_is_abuse_block(looked)
+
+
+def ask_wants_shop(asked: str) -> bool:
+    """Find / buy / cart on a shop — not weather or a hotel search."""
+    return ask_topic(asked) == "shop"
+
+
+def look_is_nl_retailer(looked: dict[str, Any] | None) -> bool:
+    """bol.com / coolblue.nl / amazon.nl from the title or URL."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "") for key in ("url", "title", "vision_description")
+    )
+    return bool(_NL_RETAILER_HOST_RE.search(blob))
+
+
+def _url_host_label(url: str) -> str:
+    raw = re.sub(r"^https?://", "", url or "", flags=re.I).split("/")[0].lower()
+    if raw.startswith("www."):
+        raw = raw[4:]
+    return raw
+
+
+def retailer_fallback_urls() -> tuple[str, ...]:
+    """coolblue.nl first, then amazon.nl. Never the blocked host."""
+    return RETAILER_FALLBACK_URLS
+
+
+def next_retailer_fallback_url(
+    looked: dict[str, Any] | None,
+    tried: list[str] | tuple[str, ...] | None = None,
+) -> str | None:
+    """Next NL retailer after the blocked host. Skip current and already tried."""
+    skip = {_url_host_label(url) for url in (tried or ()) if url}
+    current = look_host_label(looked)
+    if current:
+        skip.add(current)
+    for url in RETAILER_FALLBACK_URLS:
+        host = _url_host_label(url)
+        if host and host not in skip:
+            return url
+    return None
 
 
 def look_is_captcha(looked: dict[str, Any] | None) -> bool:
@@ -1352,7 +1433,9 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     unrelated to THIS ask are not done. A sorry / captcha / I'm-not-a-robot
     look is not done. Untitled / blank / wallpaper are not leftover — they
     are still opening. A Booking.com homepage for a hotel ask is the same
-    job, not leftover. look_speed=off does not change this.
+    job, not leftover. An abuse / IP-block page is leftover even when the
+    host is in the ask. A coolblue / amazon.nl look for a shop ask is the
+    same cart job, not leftover. look_speed=off does not change this.
     """
     query = web_search_query(asked)
     if look_is_captcha(looked):
@@ -1365,6 +1448,9 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
         return False
     if look_is_http_error(looked):
         return True
+    if ask_wants_shop(asked) and look_is_nl_retailer(looked):
+        # coolblue / amazon after a bol.com block is the same cart job.
+        return False
     if look_is_leftover_surface(looked):
         return True
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
@@ -1420,7 +1506,11 @@ def look_is_web_page(looked: dict[str, Any] | None) -> bool:
         return False
     if look_is_loading_or_blank(looked):
         return False
-    if look_is_leftover_surface(looked) or look_is_captcha(looked):
+    if (
+        look_is_leftover_surface(looked)
+        or look_is_captcha(looked)
+        or look_is_http_error(looked)
+    ):
         return False
     item = looked or {}
     url = str(item.get("url") or "")
@@ -1504,7 +1594,7 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     airplane). Never on the footer or wallpaper.
     Never the I'm-not-a-robot checkbox.
     """
-    if look_is_captcha(looked):
+    if look_is_captcha(looked) or look_is_http_error(looked):
         return None
     blob = look_blob(looked)
     named = _search_field_xy(blob)
@@ -1932,6 +2022,9 @@ def continue_web_search(
     finalize typed-search. If Google Travel stays blank, open the
     DuckDuckGo HTML hotels list (the URL that paints on this host).
     Do not spend the whole first-attempt budget on Booking alone.
+    A shop IP-block / abuse / access-denied look is not typed-success —
+    immediately run_app coolblue.nl, then amazon.nl, and keep the same
+    cart job. Speak stuck only after those fallbacks fail.
     """
     query = web_search_query(goal)
     type_query = hotel_typed_query(goal) if ask_wants_hotel(goal) else query
@@ -1948,6 +2041,8 @@ def continue_web_search(
     saw_searchresults = bool(current.get("_saw_searchresults"))
     hotel_alt = bool(current.get("_hotel_alt"))
     hotel_alt_fallback = bool(current.get("_hotel_alt_fallback"))
+    retailer_tried = list(current.get("_retailer_tried") or [])
+    retailer_blocked = bool(current.get("_retailer_blocked"))
     captcha_focus_started: float | None = None
     blank_looks = 0
     overlay_dismisses = 0
@@ -1989,12 +2084,46 @@ def continue_web_search(
             item["_hotel_alt_looks"] = hotel_alt_looks
         if hotel_alt_fallback:
             item["_hotel_alt_fallback"] = True
+        if retailer_tried:
+            item["_retailer_tried"] = list(retailer_tried)
+        if retailer_blocked:
+            item["_retailer_blocked"] = True
         return item
+
+    def _open_retailer_fallback() -> bool:
+        nonlocal current, retailer_tried, typed_query
+        if not ask_wants_shop(goal) or not look_is_retailer_block(current):
+            return False
+        if open_url is None:
+            return False
+        while True:
+            url = next_retailer_fallback_url(current, retailer_tried)
+            if not url:
+                return False
+            opened = open_url(url)
+            retailer_tried.append(url)
+            if opened and opened.get("ok"):
+                break
+        _pause_after_web_act()
+        nxt = look_again() or current
+        nxt["_retailer_tried"] = list(retailer_tried)
+        current = nxt
+        typed_query = False
+        return True
 
     for i in range(limit):
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
+        if ask_wants_shop(goal) and look_is_retailer_block(current):
+            # Leave the dead shop immediately. Do not type into the
+            # block page. Do not dismiss overlays on a wall.
+            if _open_retailer_fallback():
+                continue
+            if open_url is not None:
+                retailer_blocked = True
+                current["_retailer_blocked"] = True
+                return _mark(current)
         plan = overlay_dismiss_plan(current, goal=goal)
         memory_toast = plan is not None and plan.kind == "memory_saver"
         if memory_toast and memory_dismisses >= MEMORY_SAVER_DISMISS_MAX:

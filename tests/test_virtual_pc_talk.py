@@ -56,6 +56,8 @@ def test_any_site_or_app_is_a_virtual_pc_job():
         "show my gmail",
         "show my inbox",
         "go to bol.com and find a coffee grinder",
+        "go to bol.com, add two real in-stock products to cart, dismiss popups, "
+        "no checkout, reply with names+euro prices.",
         "open notepad++",
         "open https://example.org",
         "find me a kettle on amazon.com",
