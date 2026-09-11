@@ -12,6 +12,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.jarvis.model_router import apply_model_speed, route_model
+from app.jarvis.openrouter_leaders import PREFERRED_FLASH_ID
 from app.jarvis.realtime import resolve_realtime_voice
 from app.jarvis.screen_loop import normalize_look_speed
 
@@ -53,7 +54,7 @@ def jarvis_env(tmp_path, monkeypatch):
     monkeypatch.setenv("JARVIS_WORKSPACE", str(ws))
     monkeypatch.setenv("JARVIS_ENABLED", "true")
     monkeypatch.setenv("JARVIS_PERMISSION_PROFILE", "personal")
-    monkeypatch.setenv("JARVIS_MODEL", "deepseek/deepseek-v4-flash-0731")
+    monkeypatch.setenv("JARVIS_MODEL", PREFERRED_FLASH_ID)
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
     monkeypatch.setenv("OPENAI_REALTIME_VOICE", "marin")
     monkeypatch.setenv("API_SECRET", SECRET)
@@ -231,7 +232,7 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
     assert speed.status_code == 200, speed.text
     assert speed.json()["model_speed"] == "fast"
 
-    helper = "deepseek/deepseek-v4-flash-0731"
+    helper = PREFERRED_FLASH_ID
     model = await public_client.put(
         "/api/jarvis/settings",
         json={"model": helper, "model_lock": True},
@@ -308,7 +309,7 @@ async def test_quality_card_unlocks_after_helper_lock(public_client, jarvis_env)
         re.S,
     )
 
-    helper = "deepseek/deepseek-v4-flash-0731"
+    helper = PREFERRED_FLASH_ID
     locked = await public_client.put(
         "/api/jarvis/settings",
         json={"model": helper, "model_lock": True},

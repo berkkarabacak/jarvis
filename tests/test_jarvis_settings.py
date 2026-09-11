@@ -366,6 +366,22 @@ async def test_public_view_redacts_even_if_store_poisoned(jarvis_env, monkeypatc
     assert "sk-proj-should-not-leak-abcdefghijklmnop" not in blob
 
 
+def test_fresh_settings_default_helper_is_v41_flash(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path / "Jarvis"))
+    monkeypatch.setenv("JARVIS_LEADERBOARD_LIVE", "0")
+    monkeypatch.delenv("JARVIS_MODEL", raising=False)
+    monkeypatch.delenv("DEFAULT_MODEL", raising=False)
+    from app.jarvis import settings_store
+    from app.jarvis.openrouter_leaders import PREFERRED_FLASH_ID
+
+    settings_store.reset_cache()
+    assert settings_store.get_model() == PREFERRED_FLASH_ID
+    view = settings_store.public_view()
+    assert view["model"] == PREFERRED_FLASH_ID
+    assert view["model_suggestions"][0] == PREFERRED_FLASH_ID
+    settings_store.reset_cache()
+
+
 def test_model_suggestions_are_current_catalog_ids(jarvis_env):
     from app.jarvis import settings_store
 

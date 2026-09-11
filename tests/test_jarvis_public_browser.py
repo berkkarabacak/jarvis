@@ -816,7 +816,7 @@ def test_health_sheet_matches_public_view_ledger(tmp_path, monkeypatch):
     settings_store.reset_cache()
     (tmp_path / "Memory").mkdir(parents=True, exist_ok=True)
     settings_store.save(
-        {"model": "deepseek/deepseek-v4-flash-0731", "quality_vs_price": "fast"},
+        {"model": "deepseek/deepseek-v4.1-flash", "quality_vs_price": "fast"},
         root=tmp_path,
     )
     settings_store.reset_cache()
@@ -824,7 +824,7 @@ def test_health_sheet_matches_public_view_ledger(tmp_path, monkeypatch):
     view = settings_store.public_view()
     sheet = public_talk_sheet()
     health = listen_health()
-    assert sheet["model"] == view["model"] == "deepseek/deepseek-v4-flash-0731"
+    assert sheet["model"] == view["model"] == "deepseek/deepseek-v4.1-flash"
     assert sheet["spent_today_usd"] == view["spent_today_usd"] == pytest.approx(0.42)
     assert sheet["spent_month_usd"] == view["spent_month_usd"]
     assert sheet["remaining_budget_usd"] == view["remaining_budget_usd"]

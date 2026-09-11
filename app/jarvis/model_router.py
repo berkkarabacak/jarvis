@@ -31,6 +31,7 @@ from typing import Any, Literal, Sequence
 
 import httpx
 
+from app.jarvis.openrouter_leaders import PREFERRED_FLASH_ID
 from app.jarvis.workspace import default_workspace
 
 Preference = Literal["cheap_fast", "fast", "balanced", "quality"]
@@ -43,7 +44,7 @@ BENCH_LATEST = Path("benchmarks") / "jarvis-tetris-latest.json"
 # Tool-capable ladder (cheapest -> stronger). openrouter/auto omitted (weak tools).
 # Verified OpenRouter /models ids only — not gpt-4.1. V4.1 Flash is the
 # everyday cheap/fast helper; older V4 Flash stays on the ladder.
-_CHEAP_FALLBACK = "deepseek/deepseek-v4.1-flash"
+_CHEAP_FALLBACK = PREFERRED_FLASH_ID
 _DEFAULT_LADDER: tuple[str, ...] = (
     _CHEAP_FALLBACK,
     "deepseek/deepseek-v4-flash-0731",

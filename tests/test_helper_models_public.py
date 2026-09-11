@@ -41,8 +41,8 @@ def jarvis_env(tmp_path, monkeypatch):
     monkeypatch.setenv("TOKEN_PROVIDER", "api_key")
     monkeypatch.setenv("XAI_API_KEY", "xai-test-key")
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
-    monkeypatch.setenv("DEFAULT_MODEL", "deepseek/deepseek-v4-flash-0731")
-    monkeypatch.setenv("JARVIS_MODEL", "deepseek/deepseek-v4-flash-0731")
+    monkeypatch.setenv("DEFAULT_MODEL", PREFERRED_FLASH_ID)
+    monkeypatch.setenv("JARVIS_MODEL", PREFERRED_FLASH_ID)
     monkeypatch.delenv("JARVIS_MODEL_PIN", raising=False)
     monkeypatch.delenv("JARVIS_DISABLE_MODEL_ROUTER", raising=False)
     from app.config import get_settings
