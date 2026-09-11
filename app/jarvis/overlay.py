@@ -57,6 +57,20 @@ COOLBLUE_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
     COOLBLUE_COOKIE_ACCEPT_CLICK,
     COOLBLUE_COOKIE_REJECT_CLICK,
 )
+# Coolblue / amazon.nl / bol.com cart job on 1280×720 after cookies.
+# Header search — not mid-page categories. Product tiles on zoeken.
+# PDP In winkelwagen is the right column. Basket icon is top-right.
+# Never the cookie-man / footer / checkout.
+COOLBLUE_SEARCH_CLICK = (520, 72)
+COOLBLUE_PRODUCT_CLICKS: tuple[tuple[int, int], ...] = (
+    (320, 380),
+    (720, 380),
+)
+COOLBLUE_ADD_BASKET_CLICK = (1040, 400)
+COOLBLUE_BASKET_CLICK = (1188, 72)
+# Two different in-stock electronics. Never the coaching essay / "in-stock".
+CART_PRODUCT_QUERIES: tuple[str, ...] = ("usb-c kabel", "hdmi kabel")
+CART_ADD_TARGET = 2
 # searchresults.html briefly loaded then bounced to index: one dated
 # Booking reopen, then immediately the hotel alt host. After that alt
 # run_app, keep looking on that tab — do not switch back to Booking.
@@ -201,6 +215,16 @@ _COOLBLUE_COOKIE_RE = re.compile(
     r")",
     re.I,
 )
+# "No cookie modal" / "cookie modal gone" is a cleared homepage, not CMP.
+_COOKIE_ABSENT_RE = re.compile(
+    r"("
+    r"(?:^|[.\s])(?:no|without|not a)\s+"
+    r"cookie(?:s)?(?:\s+(?:banner|modal|consent|wall|notice|card))?|"
+    r"cookie(?:s)?(?:\s+(?:banner|modal|consent|wall|notice|card))?\s+"
+    r"(?:gone|cleared|dismissed|closed|accepted)"
+    r")",
+    re.I,
+)
 _EMPTY_DESKTOP_RE = re.compile(
     r"("
     r"\bturquoise\b|"
@@ -260,7 +284,115 @@ _CART_PRICE_RE = re.compile(
     re.I,
 )
 _CART_CONFIRM_RE = re.compile(
-    r"\b(cart|basket|winkelwagen|mandje|two items)\b",
+    r"("
+    r"\btwo items\b|"
+    r"\b(?:\d+|two|2)\s+items?\s+in\s+(?:the\s+)?(?:cart|basket|winkelwagen|mandje)\b|"
+    r"\bin (?:the |your )?(?:cart|basket)\b|"
+    r"\bin (?:de )?(?:winkelwagen|mandje)\b"
+    r")",
+    re.I,
+)
+_CART_EMPTY_RE = re.compile(
+    r"("
+    r"\bno (?:items? )?in (?:the )?(?:cart|basket|winkelwagen|mandje)\b|"
+    r"\bno basket\b|"
+    r"\bbasket (?:is )?empty\b|"
+    r"\bempty basket\b|"
+    r"\bnot in the basket\b|"
+    r"\bbasket yet\b|"
+    r"\b0 items?\s+in\s+(?:the\s+)?(?:cart|basket)\b"
+    r")",
+    re.I,
+)
+_SHOP_HOME_URL_RE = re.compile(
+    r"https?://(?:www\.)?(?:coolblue\.nl|amazon\.nl|bol\.com)/?(?:\?|#|$)",
+    re.I,
+)
+_SHOP_HOME_RE = re.compile(
+    r"("
+    r"\bhomepage\b|"
+    r"\bnieuwsbrief\b|"
+    r"\bnewsletter\b|"
+    r"\bklantenservice\b|"
+    r"\bcategorie(?:ën|en)?\b|"
+    r"\bcategories\b|"
+    r"zoeken naar"
+    r")",
+    re.I,
+)
+_SHOP_SEARCH_URL_RE = re.compile(
+    r"("
+    r"coolblue\.nl/zoeken|"
+    r"amazon\.nl/s\?|"
+    r"bol\.com/.*/s(?:/|\?)|"
+    r"[?&](?:query|k|searchtext)="
+    r")",
+    re.I,
+)
+_SHOP_SEARCH_RE = re.compile(
+    r"("
+    r"search results|"
+    r"zoekresultaten|"
+    r"product tiles|"
+    r"results for"
+    r")",
+    re.I,
+)
+_SHOP_PDP_URL_RE = re.compile(
+    r"("
+    r"coolblue\.nl/product|"
+    r"amazon\.nl/(?:dp|gp/product)/|"
+    r"bol\.com/.*/p/"
+    r")",
+    re.I,
+)
+_SHOP_PDP_RE = re.compile(
+    r"("
+    r"\bproduct(?:pagina| page)\b|"
+    r"in winkelwagen|"
+    r"in mandje|"
+    r"add to (?:the )?(?:cart|basket)"
+    r")",
+    re.I,
+)
+_SHOP_BASKET_URL_RE = re.compile(
+    r"("
+    r"coolblue\.nl/winkelwagen|"
+    r"amazon\.nl/gp/cart|"
+    r"bol\.com/.*/(?:basket|winkelwagen)"
+    r")",
+    re.I,
+)
+_ADD_BASKET_XY_RE = re.compile(
+    r"(?:"
+    r"in winkelwagen|in mandje|add to (?:the )?(?:cart|basket)"
+    r")"
+    r"(?:[^.\n()]{0,80})?"
+    r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
+    re.I,
+)
+_PRODUCT_TILE_XY_RE = re.compile(
+    r"(?:"
+    r"first product|second product|product tile|product card|"
+    r"search result"
+    r")"
+    r"(?:[^.\n()]{0,80})?"
+    r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
+    re.I,
+)
+_BASKET_ICON_XY_RE = re.compile(
+    r"(?:"
+    r"winkelwagen|basket|cart"
+    r")(?:\s+icon)?"
+    r"(?:[^.\n()]{0,40})?"
+    r"\((\d{2,4})\s*,\s*(\d{2,4})\)",
+    re.I,
+)
+_CART_FILLER_RE = re.compile(
+    r"\b("
+    r"add|two|products?|items?|basket|cart|only|confirm|"
+    r"they|are|in-stock|stock|winkelwagen|mandje"
+    r")\b",
     re.I,
 )
 _DISMISS_LABEL_RE = re.compile(
@@ -806,6 +938,8 @@ def look_has_cart_results(looked: dict[str, Any] | None) -> bool:
     if _look_is_search_engine(looked):
         return False
     blob = look_result_blob(looked)
+    if _CART_EMPTY_RE.search(blob):
+        return False
     return len(_CART_PRICE_RE.findall(blob)) >= 2 and bool(
         _CART_CONFIRM_RE.search(blob)
     )
@@ -884,7 +1018,8 @@ def overlay_kind(
                 pass
             else:
                 return "signin"
-    if _COOKIE_RE.search(blob) or look_is_coolblue_cookie_modal(item):
+    cookie_blob = _COOKIE_ABSENT_RE.sub(" ", blob)
+    if _COOKIE_RE.search(cookie_blob) or look_is_coolblue_cookie_modal(item):
         return "cookie"
     return None
 
@@ -1475,13 +1610,180 @@ def shop_typed_query(asked: str) -> str:
         raw,
         flags=re.I,
     )
+    raw = _CART_FILLER_RE.sub(" ", raw)
     raw = re.sub(r"\s+", " ", raw).strip(" .,!?")
     tokens = distinctive_query_tokens(raw)
     if tokens:
         return " ".join(tokens[:6])
     if ask_wants_cart(asked):
-        return "in-stock"
+        return shop_cart_queries(asked)[0]
     return raw
+
+
+def shop_cart_queries(asked: str) -> tuple[str, ...]:
+    """Two different in-stock searches. Never 'in-stock' or the essay."""
+    return CART_PRODUCT_QUERIES
+
+
+def look_is_shop_homepage(looked: dict[str, Any] | None) -> bool:
+    """Coolblue / amazon / bol root — categories / newsletter, not a basket."""
+    if not look_is_nl_retailer(looked):
+        return False
+    if look_is_coolblue_cookie_modal(looked):
+        return False
+    url = str((looked or {}).get("url") or "")
+    if _SHOP_BASKET_URL_RE.search(url) or _SHOP_PDP_URL_RE.search(url):
+        return False
+    if _SHOP_SEARCH_URL_RE.search(url):
+        return False
+    blob = look_result_blob(looked)
+    if (
+        len(_CART_PRICE_RE.findall(blob)) >= 2
+        and _CART_CONFIRM_RE.search(blob)
+        and not _CART_EMPTY_RE.search(blob)
+    ):
+        return False
+    if _SHOP_HOME_URL_RE.search(url):
+        return True
+    return bool(_SHOP_HOME_RE.search(blob))
+
+
+def look_is_shop_search(looked: dict[str, Any] | None) -> bool:
+    """Product list after a shop search — not the homepage and not the basket."""
+    if look_has_cart_results(looked) or look_is_shop_homepage(looked):
+        return False
+    url = str((looked or {}).get("url") or "")
+    if _SHOP_PDP_URL_RE.search(url) or _SHOP_BASKET_URL_RE.search(url):
+        return False
+    if _SHOP_SEARCH_URL_RE.search(url):
+        return True
+    return bool(_SHOP_SEARCH_RE.search(look_result_blob(looked)))
+
+
+def look_is_shop_pdp(looked: dict[str, Any] | None) -> bool:
+    """One product page with add-to-basket — not the cart itself."""
+    if look_has_cart_results(looked):
+        return False
+    url = str((looked or {}).get("url") or "")
+    if _SHOP_BASKET_URL_RE.search(url):
+        return False
+    if _SHOP_PDP_URL_RE.search(url):
+        return True
+    blob = look_result_blob(looked)
+    if _SHOP_SEARCH_RE.search(blob) or look_is_shop_homepage(looked):
+        return False
+    return bool(_SHOP_PDP_RE.search(blob))
+
+
+def look_is_unfinished_cart(looked: dict[str, Any] | None) -> bool:
+    """Shop is open but two priced basket lines are not on screen."""
+    if look_has_cart_results(looked):
+        return False
+    if look_is_retailer_block(looked) or look_is_captcha(looked):
+        return False
+    if look_is_coolblue_cookie_modal(looked):
+        return False
+    return look_is_nl_retailer(looked)
+
+
+def needs_cart_followthrough(asked: str, looked: dict[str, Any] | None) -> bool:
+    """Cart job still on the shop homepage / search / PDP — not done."""
+    if not ask_wants_cart(asked):
+        return False
+    if look_has_cart_results(looked):
+        return False
+    return look_is_unfinished_cart(looked)
+
+
+def cart_option_lines(looked: dict[str, Any] | None) -> list[str]:
+    """Vision sentences that name a product or a euro price. Never invent."""
+    if not look_has_cart_results(looked):
+        return []
+    text = look_result_blob(looked)
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
+    kept: list[str] = []
+    for i, part in enumerate(parts):
+        if not (_CART_PRICE_RE.search(part) or _CART_CONFIRM_RE.search(part)):
+            continue
+        if i and parts[i - 1] not in kept:
+            prev = parts[i - 1]
+            if len(prev.split()) <= 6 and not _CART_EMPTY_RE.search(prev):
+                kept.append(prev)
+        kept.append(part)
+    return kept[:6]
+
+
+def shop_basket_url(looked: dict[str, Any] | None, asked: str = "") -> str:
+    """winkelwagen / cart URL for the focused shop. Never Google.
+
+    Use the painted host. The ask may mention amazon.nl as a fallback —
+    that must not open Amazon's cart while Coolblue is on screen.
+    """
+    host = look_host_label(looked)
+    if "amazon.nl" in host:
+        return "https://www.amazon.nl/gp/cart/view.html"
+    if "bol.com" in host:
+        return "https://www.bol.com/nl/nl/s/winkelwagen.html"
+    if "coolblue" in host:
+        return "https://www.coolblue.nl/winkelwagen"
+    raw = asked or ""
+    if re.search(r"amazon\.nl", raw, re.I) and not re.search(
+        r"coolblue", raw, re.I
+    ):
+        return "https://www.amazon.nl/gp/cart/view.html"
+    if re.search(r"bol\.com", raw, re.I) and not re.search(r"coolblue", raw, re.I):
+        return "https://www.bol.com/nl/nl/s/winkelwagen.html"
+    return "https://www.coolblue.nl/winkelwagen"
+
+
+def add_to_basket_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
+    """In winkelwagen / Add to basket. Never checkout."""
+    blob = look_blob(looked)
+    match = _ADD_BASKET_XY_RE.search(blob or "")
+    if match:
+        x, y = int(match.group(1)), int(match.group(2))
+        if _xy_in_page(x, y) or y < 720:
+            return x, y
+    if look_is_nl_retailer(looked):
+        return COOLBLUE_ADD_BASKET_CLICK
+    return None
+
+
+def product_tile_point(
+    looked: dict[str, Any] | None, *, index: int = 0
+) -> tuple[int, int] | None:
+    """A search-result / homepage product tile. Not the footer."""
+    blob = look_blob(looked)
+    found = [
+        (int(m.group(1)), int(m.group(2)))
+        for m in _PRODUCT_TILE_XY_RE.finditer(blob or "")
+        if _xy_in_page(int(m.group(1)), int(m.group(2)))
+    ]
+    if found:
+        return found[min(max(int(index), 0), len(found) - 1)]
+    clicks = COOLBLUE_PRODUCT_CLICKS
+    return clicks[min(max(int(index), 0), len(clicks) - 1)]
+
+
+def basket_icon_point(looked: dict[str, Any] | None) -> tuple[int, int]:
+    """Header basket / winkelwagen. Not a product."""
+    blob = look_blob(looked)
+    match = _BASKET_ICON_XY_RE.search(blob or "")
+    if match:
+        x, y = int(match.group(1)), int(match.group(2))
+        if 0 <= x <= 1280 and 0 <= y < 160:
+            return x, y
+    return COOLBLUE_BASKET_CLICK
+
+
+def shop_search_click(looked: dict[str, Any] | None) -> tuple[int, int]:
+    """Header search on an NL shop. Not mid-page categories."""
+    named = search_box_point(looked)
+    if named is not None:
+        return named
+    if look_is_coolblue_host(looked) or look_is_nl_retailer(looked):
+        return COOLBLUE_SEARCH_CLICK
+    return SEARCH_BOX_CLICK
 
 
 def look_is_nl_retailer(looked: dict[str, Any] | None) -> bool:
@@ -1510,7 +1812,8 @@ def look_is_coolblue_cookie_modal(looked: dict[str, Any] | None) -> bool:
     """
     if not look_is_coolblue_host(looked):
         return False
-    return bool(_COOLBLUE_COOKIE_RE.search(look_blob(looked)))
+    blob = _COOKIE_ABSENT_RE.sub(" ", look_blob(looked))
+    return bool(_COOLBLUE_COOKIE_RE.search(blob))
 
 
 def _url_host_label(url: str) -> str:
@@ -1663,8 +1966,13 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     query = web_search_query(asked)
     if look_is_captcha(looked):
         return True
-    if ask_wants_cart(asked) and _look_is_search_engine(looked):
+    if (
+        ask_wants_cart(asked)
+        and _look_is_search_engine(looked)
+        and not look_is_nl_retailer(looked)
+    ):
         # Google of the cart essay is leftover — stay on / return to the shop.
+        # A Coolblue homepage that says "no search results" is not Google.
         return True
     if query_visible_on_look(looked, query):
         return False
@@ -1798,6 +2106,10 @@ def needs_web_query(
         return False
     if look_has_cart_results(looked):
         return False
+    if ask_wants_cart(asked) and look_is_nl_retailer(looked):
+        # Homepage / PDP / search after cookies — not done until two
+        # priced basket lines. A typed query on the shop root is not done.
+        return True
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
         return True
     if look_is_empty_destination(looked) or look_is_footer(looked):
@@ -1845,6 +2157,8 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     if _SEARCH_FIELD_RE.search(blob) or look_is_web_page(looked):
         if look_is_travel_search_form(looked):
             return BOOKING_DEST_CLICK
+        if look_is_nl_retailer(looked) and not look_is_shop_pdp(looked):
+            return COOLBLUE_SEARCH_CLICK
         return SEARCH_BOX_CLICK
     return None
 
@@ -2252,9 +2566,12 @@ def continue_web_search(
     Do not spend the whole first-attempt budget on Booking alone.
     A shop IP-block / abuse / access-denied look is not typed-success —
     immediately run_app coolblue.nl, then amazon.nl, and keep the same
-    cart job. A Coolblue cookie card that survives the first dismiss
+    cart job.     A Coolblue cookie card that survives the first dismiss
     clicks is the same — fall back to amazon.nl. Never burn the nginx
-    180s on Escape / Home. Speak stuck only after those fallbacks fail.
+    180s on Escape / Home. After cookies, a cart / basket job must
+    search real products, open a PDP, add two different items, and
+    open the basket. Never finalize typed-search on the shop homepage.
+    Speak stuck only after those fallbacks fail.
     """
     query = web_search_query(goal)
     if ask_wants_hotel(goal):
@@ -2325,6 +2642,15 @@ def continue_web_search(
             item["_retailer_tried"] = list(retailer_tried)
         if retailer_blocked:
             item["_retailer_blocked"] = True
+        for key in (
+            "_cart_adds",
+            "_cart_searches",
+            "_cart_pdps",
+            "_cart_opened_basket",
+        ):
+            val = item.get(key, current.get(key))
+            if val:
+                item[key] = val
         return item
 
     def _open_retailer_fallback(*, force: bool = False) -> bool:
@@ -2349,6 +2675,9 @@ def continue_web_search(
         current = nxt
         typed_query = False
         overlay_dismisses = 0
+        current["_cart_adds"] = 0
+        current["_cart_searches"] = 0
+        current["_cart_pdps"] = []
         return True
 
     for i in range(limit):
@@ -2497,6 +2826,38 @@ def continue_web_search(
             current
         ):
             saw_searchresults = True
+        if ask_wants_cart(goal) and needs_cart_followthrough(goal, current):
+            if _deadline_passed(deadline):
+                if int(current.get("_cart_adds") or 0) >= CART_ADD_TARGET:
+                    current, _ = _advance_unfinished_cart(
+                        current,
+                        goal,
+                        click=click,
+                        type_text=type_text,
+                        keys=keys,
+                        look_again=look_again,
+                        open_url=open_url,
+                    )
+                return _mark(current)
+            current, progressed = _advance_unfinished_cart(
+                current,
+                goal,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+                open_url=open_url,
+            )
+            if look_has_cart_results(current):
+                return _mark(current)
+            if progressed:
+                typed_query = True
+                continue
+            if _deadline_passed(deadline):
+                return _mark(current)
+            _pause_for_page_load()
+            current = _mark(look_again() or current)
+            continue
         if not needs_web_query(goal, current, query):
             return _mark(current)
 
@@ -2640,6 +3001,18 @@ def continue_web_search(
             if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
                 if ask_wants_hotel(goal) and saw_searchresults and _open_hotel_alt():
                     continue
+                if ask_wants_cart(goal) and needs_cart_followthrough(goal, current):
+                    current, progressed = _advance_unfinished_cart(
+                        current,
+                        goal,
+                        click=click,
+                        type_text=type_text,
+                        keys=keys,
+                        look_again=look_again,
+                        open_url=open_url,
+                    )
+                    if look_has_cart_results(current) or progressed:
+                        continue
                 return _mark(current)
             _pause_for_page_load()
             current = _mark(look_again() or current)
@@ -2834,6 +3207,127 @@ def alt_web_search_typed(query: str, asked: str = "") -> str:
     ):
         return f"https://duckduckgo.com/?q={encoded}"
     return f"https://www.bing.com/search?q={encoded}"
+
+
+def _click_xy(
+    xy: tuple[int, int],
+    current: dict[str, Any],
+    *,
+    click: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    clicked = click(x=xy[0], y=xy[1])
+    if not _ok_act(clicked):
+        return current, False
+    _pause_after_web_act()
+    return look_again() or current, True
+
+
+def _advance_unfinished_cart(
+    current: dict[str, Any],
+    goal: str,
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+    open_url: Callable[[str], dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], bool]:
+    """Search → PDP → add → other item → basket. Never typed-search-and-quit.
+
+    One action per call. Two different in-stock products, then open the
+    basket. Stop before payment — do not click checkout.
+    """
+    added = int(current.get("_cart_adds") or 0)
+    searches = int(current.get("_cart_searches") or 0)
+    pdps = list(current.get("_cart_pdps") or [])
+    queries = shop_cart_queries(goal)
+
+    def _stamp(item: dict[str, Any]) -> dict[str, Any]:
+        item["_cart_adds"] = added
+        item["_cart_searches"] = searches
+        if pdps:
+            item["_cart_pdps"] = list(pdps)
+        if current.get("_typed_query"):
+            item["_typed_query"] = current.get("_typed_query")
+        return item
+
+    if look_has_cart_results(current):
+        return _stamp(current), False
+
+    if added >= CART_ADD_TARGET:
+        url = shop_basket_url(current, goal)
+        if open_url is not None:
+            opened = open_url(url)
+            if opened and opened.get("ok"):
+                _pause_after_web_act()
+                nxt = _stamp(look_again() or current)
+                nxt["_cart_opened_basket"] = True
+                return nxt, True
+        nxt, ok = _click_xy(
+            basket_icon_point(current),
+            current,
+            click=click,
+            look_again=look_again,
+        )
+        nxt = _stamp(nxt)
+        nxt["_cart_opened_basket"] = True
+        return nxt, ok
+
+    if look_is_shop_pdp(current):
+        url = str(current.get("url") or "")
+        if url and url in pdps:
+            q = queries[min(searches, len(queries) - 1)]
+            nxt, typed = _type_query_at(
+                shop_search_click(current),
+                q,
+                current,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
+            if typed:
+                searches += 1
+                nxt["_typed_query"] = q
+            return _stamp(nxt), typed
+        xy = add_to_basket_point(current)
+        if xy is None:
+            return _stamp(current), False
+        nxt, ok = _click_xy(xy, current, click=click, look_again=look_again)
+        if ok:
+            added += 1
+            if url:
+                pdps.append(url)
+        return _stamp(nxt), ok
+
+    if look_is_shop_search(current):
+        xy = product_tile_point(current, index=added)
+        if xy is None:
+            return _stamp(current), False
+        nxt, ok = _click_xy(xy, current, click=click, look_again=look_again)
+        return _stamp(nxt), ok
+
+    if look_is_footer(current):
+        keys(combo="home")
+        _pause_after_web_act()
+        current = look_again() or current
+
+    q = queries[min(searches, len(queries) - 1)]
+    xy = shop_search_click(current)
+    nxt, typed = _type_query_at(
+        xy,
+        q,
+        current,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    if typed:
+        searches += 1
+        nxt["_typed_query"] = q
+    return _stamp(nxt), typed
 
 
 def _advance_unfinished_hotel(

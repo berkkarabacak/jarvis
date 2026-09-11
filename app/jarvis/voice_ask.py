@@ -36,6 +36,7 @@ from app.jarvis.overlay import (
     hotel_travel_url,
     hotel_typed_query,
     look_has_blocking_overlay,
+    cart_option_lines,
     look_has_cart_results,
     look_has_hotel_results,
     look_is_booking_bounce,
@@ -54,7 +55,11 @@ from app.jarvis.overlay import (
     look_is_retailer_block,
     look_is_travel_search_form,
     look_is_travel_site,
+    look_is_nl_retailer,
+    look_is_shop_homepage,
+    look_is_unfinished_cart,
     look_is_unfinished_hotel_search,
+    needs_cart_followthrough,
     needs_hotel_followthrough,
     needs_web_query,
     next_retailer_fallback_url,
@@ -607,6 +612,9 @@ _RETAILER_BLOCKED = (
     "This shop blocked the computer. "
     "Coolblue and Amazon also did not load. "
     "I could not finish the search."
+)
+_CART_UNFINISHED = (
+    "I could not add two in-stock products to the basket."
 )
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
@@ -2347,7 +2355,11 @@ def _speak_web_job(
             reply = _WEB_STUCK
     elif overlay:
         # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
-        reply = "I typed the search." if acted else "I opened the page."
+        # A cart job on a shop homepage must not die as typed-search.
+        if ask_wants_cart(asked):
+            reply = _CART_UNFINISHED if acted else "I opened the page."
+        else:
+            reply = "I typed the search." if acted else "I opened the page."
     elif pending and looked.get("_hotel_alt"):
         # Blank Google Travel / DDG after the alt run_app is not success.
         # Continue should have held the tab; speaking here is a real miss.
@@ -2392,6 +2404,23 @@ def _speak_web_job(
             reply = spoken
         else:
             reply = spoken if spoken else _WEB_STUCK
+    elif look_has_cart_results(looked):
+        options = " ".join(cart_option_lines(looked)).strip()
+        if options and _usable_tell_text(options):
+            reply = options
+        elif usable:
+            reply = spoken
+        else:
+            reply = spoken if spoken else _WEB_STUCK
+    elif ask_wants_cart(asked) and not look_has_cart_results(looked) and (
+        look_is_nl_retailer(looked)
+        or look_is_shop_homepage(looked)
+        or look_is_unfinished_cart(looked)
+        or needs_cart_followthrough(asked, looked)
+    ):
+        # Shop homepage / search / PDP after cookies. Never "I typed
+        # the search." — that is not two basket items.
+        reply = _CART_UNFINISHED if acted else "I opened the page."
     elif unfinished:
         # A Google SERP / focused-window caption is not hotel options.
         reply = (
@@ -3290,6 +3319,9 @@ def _continue_web_job(
         and needs_web_query(asked, out, web_search_query(asked))
     ):
         # New shop loaded after a block — keep the same cart job.
+        out = _go(out)
+    if ask_wants_cart(asked) and needs_cart_followthrough(asked, out):
+        # Cookie-cleared homepage / typed search is not done.
         out = _go(out)
     return out
 

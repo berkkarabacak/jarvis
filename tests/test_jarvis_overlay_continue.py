@@ -67,6 +67,16 @@ from app.jarvis.overlay import (
     ask_wants_shop,
     look_has_cart_results,
     look_is_pay_control,
+    look_is_shop_homepage,
+    look_is_shop_pdp,
+    look_is_shop_search,
+    look_is_unfinished_cart,
+    needs_cart_followthrough,
+    shop_cart_queries,
+    CART_PRODUCT_QUERIES,
+    COOLBLUE_ADD_BASKET_CLICK,
+    COOLBLUE_BASKET_CLICK,
+    COOLBLUE_PRODUCT_CLICKS,
     next_retailer_fallback_url,
     shop_home_url,
     shop_typed_query,
@@ -92,6 +102,7 @@ from app.jarvis.voice_ask import (
     ASK_WEB_REPLY_HEADROOM_S,
     _BOOKING_BOUNCED,
     _HOTEL_ALT_FAILED,
+    _CART_UNFINISHED,
     _RETAILER_BLOCKED,
     _WEB_STUCK,
     ask_abort_ms,
@@ -3039,6 +3050,60 @@ GOOGLE_CART_ASK = {
     ),
 }
 
+# Live 2026-09-11 SHA 50175ad / PR #45: cookies gone, homepage
+# footer / newsletter. Ask finalized "I typed the search."
+LIVE_COOLBLUE_HOME_FOOTER = {
+    "ok": True,
+    "title": "Coolblue - Allereerst voor een glimlach - Chromium",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "Coolblue homepage footer. Newsletter signup. "
+        "Klantenservice. Zakelijk. Onze winkels. Categories. "
+        "No cookie modal. No search results. No basket. No euro prices."
+    ),
+}
+
+COOLBLUE_SEARCH_RESULTS = {
+    "ok": True,
+    "title": "usb-c kabel - Coolblue",
+    "url": "https://www.coolblue.nl/zoeken?query=usb-c+kabel",
+    "vision_description": (
+        "Coolblue search results. First product at (300, 360). "
+        "Second product at (700, 360). Priced tiles. "
+        "No items in the basket yet."
+    ),
+}
+
+COOLBLUE_PDP_USB = {
+    "ok": True,
+    "title": "USB-C kabel - Coolblue",
+    "url": "https://www.coolblue.nl/product/123456/usb-c-kabel.html",
+    "vision_description": (
+        "Product page. USB-C kabel. 19 euro. "
+        "In winkelwagen at (1040, 420). Basket empty."
+    ),
+}
+
+COOLBLUE_PDP_HDMI = {
+    "ok": True,
+    "title": "HDMI kabel - Coolblue",
+    "url": "https://www.coolblue.nl/product/654321/hdmi-kabel.html",
+    "vision_description": (
+        "Product page. HDMI kabel. 14 euro. "
+        "In winkelwagen at (1040, 420). One item in the basket."
+    ),
+}
+
+COOLBLUE_AFTER_FIRST_ADD = {
+    "ok": True,
+    "title": "USB-C kabel - Coolblue",
+    "url": "https://www.coolblue.nl/product/123456/usb-c-kabel.html",
+    "vision_description": (
+        "Added to basket. USB-C kabel. 19 euro. "
+        "1 item in the basket. In winkelwagen at (1040, 420)."
+    ),
+}
+
 AMAZON_NL_TWO_PRODUCTS = {
     "ok": True,
     "title": "Amazon.nl",
@@ -3867,6 +3932,249 @@ async def test_voice_ask_coolblue_cookie_modal_dismisses_then_cart(
     assert "i typed the search" not in low
     assert "sonicare" in low or "philips" in low
     assert "89" in low
+
+
+def test_coolblue_homepage_after_cookie_is_unfinished_cart():
+    """Cookie-cleared Coolblue homepage is not typed-search success."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    home = COOLBLUE_HOME_AFTER_COOKIE
+    footer = LIVE_COOLBLUE_HOME_FOOTER
+    assert overlay_kind(home) is None
+    assert overlay_kind(footer) is None
+    assert look_is_shop_homepage(home) is True
+    assert look_is_shop_homepage(footer) is True
+    assert look_is_unfinished_cart(home) is True
+    assert look_is_unfinished_cart(footer) is True
+    assert needs_cart_followthrough(LIVE_COOLBLUE_BASKET, home) is True
+    assert needs_cart_followthrough(LIVE_COOLBLUE_BASKET, footer) is True
+    assert look_has_cart_results(home) is False
+    assert look_has_cart_results(footer) is False
+    assert look_has_cart_results(COOLBLUE_TWO_PRODUCTS) is True
+    assert look_is_shop_homepage(COOLBLUE_TWO_PRODUCTS) is False
+    assert needs_cart_followthrough(LIVE_COOLBLUE_BASKET, COOLBLUE_TWO_PRODUCTS) is False
+    assert look_is_shop_search(COOLBLUE_SEARCH_RESULTS) is True
+    assert look_is_shop_pdp(COOLBLUE_PDP_USB) is True
+    assert look_is_shop_pdp(COOLBLUE_HOME_AFTER_COOKIE) is False
+    queries = shop_cart_queries(LIVE_COOLBLUE_BASKET)
+    assert queries == CART_PRODUCT_QUERIES
+    assert queries[0] != queries[1]
+    assert _cart_query_is_clean(queries[0])
+    assert _cart_query_is_clean(shop_typed_query(LIVE_COOLBLUE_BASKET))
+    assert shop_typed_query(LIVE_COOLBLUE_BASKET) != "in-stock"
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    for look in (home, footer):
+        typed_home = dict(look)
+        typed_home["_typed_query"] = queries[0]
+        spoken = _speak_web_job(
+            LIVE_COOLBLUE_BASKET, typed_home, tools, opened=True
+        )
+        assert spoken["reply"] != _STOP_PAY
+        assert "i typed the search" not in spoken["reply"].lower()
+        assert spoken["reply"] == _CART_UNFINISHED
+    done = _speak_web_job(
+        LIVE_COOLBLUE_BASKET, dict(COOLBLUE_TWO_PRODUCTS), tools, opened=True
+    )
+    assert "i typed the search" not in done["reply"].lower()
+    low = done["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+
+
+def test_coolblue_homepage_after_cookie_searches_adds_opens_basket():
+    """After cookies: search, open PDP, add two items, open basket."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    state = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        state["n"] += 1
+        if any("winkelwagen" in (u or "") for u in opened):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        adds = sum(1 for c in clicks if c == COOLBLUE_ADD_BASKET_CLICK or c == (1040, 420))
+        if adds >= 2:
+            return dict(COOLBLUE_PDP_HDMI)
+        if adds == 1:
+            if any("hdmi" in (t or "").lower() for t in typed):
+                return dict(COOLBLUE_PDP_HDMI)
+            if any("zoeken" in str((t or "")).lower() for t in typed):
+                return dict(COOLBLUE_SEARCH_RESULTS)
+            return dict(COOLBLUE_AFTER_FIRST_ADD)
+        if typed:
+            if clicks and clicks[-1] in COOLBLUE_PRODUCT_CLICKS + ((300, 360), (700, 360)):
+                return dict(COOLBLUE_PDP_USB)
+            return dict(COOLBLUE_SEARCH_RESULTS)
+        if state["n"] == 1:
+            return dict(COOLBLUE_HOME_AFTER_COOKIE)
+        return dict(COOLBLUE_HOME_AFTER_COOKIE)
+
+    out = continue_web_search(
+        dict(COOLBLUE_HOME_AFTER_COOKIE),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert typed, "must search for a real product after cookies"
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert "in-stock" not in " ".join(typed).lower()
+    assert any("usb-c" in t.lower() or "hdmi" in t.lower() for t in typed), typed
+    add_clicks = [
+        c
+        for c in clicks
+        if c == COOLBLUE_ADD_BASKET_CLICK or c == (1040, 420)
+    ]
+    assert len(add_clicks) >= 2, clicks
+    assert any("winkelwagen" in (u or "") for u in opened) or (
+        COOLBLUE_BASKET_CLICK in clicks
+    ), (opened, clicks)
+    assert look_has_cart_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert "i typed the search" not in spoken["reply"].lower()
+    low = spoken["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+
+
+def test_coolblue_footer_homepage_after_type_does_not_finalize_typed_search():
+    """Live homepage footer after type must keep going, not typed-search."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("winkelwagen" in (u or "") for u in opened):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        if any(c == COOLBLUE_ADD_BASKET_CLICK or c == (1040, 420) for c in clicks):
+            if sum(1 for c in clicks if c == COOLBLUE_ADD_BASKET_CLICK or c == (1040, 420)) >= 2:
+                return dict(COOLBLUE_PDP_HDMI) | {"_cart_adds": 2}
+            return dict(COOLBLUE_PDP_USB)
+        if typed:
+            return dict(COOLBLUE_SEARCH_RESULTS)
+        return dict(LIVE_COOLBLUE_HOME_FOOTER)
+
+    out = continue_web_search(
+        dict(LIVE_COOLBLUE_HOME_FOOTER) | {"_typed_query": "usb-c kabel"},
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert "i typed the search" not in spoken["reply"].lower()
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert typed or clicks, "must search or click a product after cookies"
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_coolblue_homepage_after_cookie_continues_cart(
+    monkeypatch, tmp_path
+):
+    """Ask path: cookie-cleared homepage must search/add, not typed-search."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_COOLBLUE_COOKIE_MODAL),
+        dict(COOLBLUE_HOME_AFTER_COOKIE),
+        dict(COOLBLUE_SEARCH_RESULTS),
+        dict(COOLBLUE_PDP_USB),
+        dict(COOLBLUE_AFTER_FIRST_ADD),
+        dict(COOLBLUE_SEARCH_RESULTS),
+        dict(COOLBLUE_PDP_HDMI),
+        dict(COOLBLUE_TWO_PRODUCTS),
+    ]
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("google.com/search" in u for u in urls):
+            return dict(GOOGLE_CART_ASK)
+        if any("winkelwagen" in u for u in urls):
+            return dict(COOLBLUE_TWO_PRODUCTS)
+        if looks:
+            return dict(looks.pop(0))
+        return dict(COOLBLUE_TWO_PRODUCTS)
+
+    _patch_voice_ask_web(
+        monkeypatch,
+        [dict(LIVE_COOLBLUE_COOKIE_MODAL)],
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_COOLBLUE_BASKET)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("coolblue.nl" in u for u in urls), urls
+    assert all("google.com/search" not in u.lower() for u in urls), urls
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert "in-stock" not in " ".join(typed).lower()
+    assert body["reply"] != _STOP_PAY
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "sonicare" in low or "philips" in low or "usb" in low or "hdmi" in low
 
 
 def _run_continue(looks, goal, clicks, typed, keys):

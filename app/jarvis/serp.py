@@ -122,6 +122,15 @@ _COOKIE_OVERLAY_RE = re.compile(
     r")",
     re.I,
 )
+_COOKIE_ABSENT_RE = re.compile(
+    r"("
+    r"(?:^|[.\s])(?:no|without|not a)\s+"
+    r"cookie(?:s)?(?:\s+(?:banner|modal|consent|wall|notice|card))?|"
+    r"cookie(?:s)?(?:\s+(?:banner|modal|consent|wall|notice|card))?\s+"
+    r"(?:gone|cleared|dismissed|closed|accepted)"
+    r")",
+    re.I,
+)
 _HEADLINE_HINT_RE = re.compile(
     r"\b(headline|headlines|breaking|latest|top stories)\b",
     re.I,
@@ -332,7 +341,8 @@ def look_is_dead_page(looked: dict[str, Any] | None) -> bool:
 
 
 def look_has_cookie_overlay(looked: dict[str, Any] | None) -> bool:
-    return bool(_COOKIE_OVERLAY_RE.search(look_blob(looked)))
+    blob = _COOKIE_ABSENT_RE.sub(" ", look_blob(looked))
+    return bool(_COOKIE_OVERLAY_RE.search(blob))
 
 
 def look_is_news_page(looked: dict[str, Any] | None) -> bool:
