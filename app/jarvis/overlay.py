@@ -35,8 +35,16 @@ SANDBOX_DISMISS_CLICK = (1248, 148)
 SIGNIN_DISMISS_CLICK = (920, 170)
 # Destination / search box once the modal is gone. Mid-page on 1280x720,
 # never a footer pixel. Only used when vision names a search field and
-# does not give coordinates.
+# does not give coordinates. On Booking's homepage this hits the Genius
+# airplane — use BOOKING_* clicks for that form.
 SEARCH_BOX_CLICK = (640, 320)
+# Booking.com homepage search widget on 1280x720. The white destination /
+# dates / Search bar sits below the Genius hero, not at (640, 320).
+BOOKING_DEST_CLICK = (220, 500)
+BOOKING_DATES_CLICK = (560, 500)
+BOOKING_SEARCH_CLICK = (1148, 500)
+# Persistent hero / failed dismiss: stop clicking X and fill the form.
+OVERLAY_DISMISS_MAX = 2
 # Chromium omnibox / address bar on 1280x720 (y≈0–110 chrome, not the page).
 OMNIBOX_CLICK = (420, 52)
 # Newest tab on the tab strip (above the omnibox). keys(ctrl+t) often opens
@@ -622,7 +630,10 @@ def overlay_kind(
         return "sandbox"
     if not user_asked_sign_in(goal):
         result_blob = look_result_blob(item)
-        signin_hit = bool(_SIGNIN_RE.search(blob) or _GENIUS_BANNER_RE.search(blob))
+        # Mashed Sign-in modal / covering dialog. A Genius *homepage*
+        # promotional banner is marketing next to an empty form — not this.
+        # Treating that hero as signin loops dismiss forever and never types.
+        signin_hit = bool(_SIGNIN_RE.search(blob))
         covering = bool(_COVERING_MODAL_RE.search(blob)) and look_is_travel_site(
             item
         )
@@ -766,13 +777,19 @@ def look_is_travel_search_form(looked: dict[str, Any] | None) -> bool:
     """
     if not look_is_travel_site(looked):
         return False
+    if look_is_loading_or_blank(looked):
+        return False
     if _hotel_price_evidence(look_result_blob(looked)):
         return False
     url = str((looked or {}).get("url") or "")
     if _BOOKING_HOMEPAGE_URL_RE.search(url):
         return True
     blob = look_result_blob(looked)
-    return bool(_TRAVEL_FORM_RE.search(blob) or _EMPTY_DEST_RE.search(blob))
+    return bool(
+        _TRAVEL_FORM_RE.search(blob)
+        or _EMPTY_DEST_RE.search(blob)
+        or _GENIUS_BANNER_RE.search(blob)
+    )
 
 
 def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
@@ -1232,7 +1249,8 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     Do not click a hardcoded mid-page pixel when the look is the footer —
     on a scrolled page that pixel is copyright / legal links.
     A Booking.com homepage that never says "search box" still has a field —
-    use SEARCH_BOX_CLICK after Home, never on the footer or wallpaper.
+    use BOOKING_DEST_CLICK (not mid-page 640,320 — that is the Genius
+    airplane). Never on the footer or wallpaper.
     Never the I'm-not-a-robot checkbox.
     """
     if look_is_captcha(looked):
@@ -1256,6 +1274,8 @@ def search_box_point(looked: dict[str, Any] | None) -> tuple[int, int] | None:
     if look_is_leftover_surface(looked):
         return None
     if _SEARCH_FIELD_RE.search(blob) or look_is_web_page(looked):
+        if look_is_travel_search_form(looked):
+            return BOOKING_DEST_CLICK
         return SEARCH_BOX_CLICK
     return None
 
@@ -1313,6 +1333,66 @@ def _type_query_at(
     nxt = look_again() or current
     if ok:
         nxt["_typed_query"] = query
+    return nxt, ok
+
+
+def _ok_act(result: dict[str, Any] | None) -> bool:
+    return bool(result and result.get("ok"))
+
+
+def _fill_travel_search_form(
+    current: dict[str, Any],
+    goal: str,
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    """Click Booking destination + dates, type city and stay dates, submit.
+
+    Mid-page (640, 320) hits the Genius airplane. Tab/focus + known field
+    clicks land on Booking's React inputs. If the form is still empty after
+    that, type the dated searchresults URL in the omnibox.
+    """
+    dest = hotel_destination(goal)
+    checkin, checkout = hotel_stay_dates()
+    dest_xy = search_box_point(current) or BOOKING_DEST_CLICK
+    clicked = click(x=dest_xy[0], y=dest_xy[1])
+    if not _ok_act(clicked):
+        keys(combo="tab")
+    else:
+        _pause_after_web_act()
+        keys(combo="ctrl+a")
+    dest_typed = type_text(text=dest)
+    dest_ok = _ok_act(dest_typed)
+    click(x=BOOKING_DATES_CLICK[0], y=BOOKING_DATES_CLICK[1])
+    _pause_after_web_act()
+    in_typed = type_text(text=checkin.isoformat())
+    keys(combo="tab")
+    out_typed = type_text(text=checkout.isoformat())
+    keys(combo="enter")
+    click(x=BOOKING_SEARCH_CLICK[0], y=BOOKING_SEARCH_CLICK[1])
+    ok = dest_ok or _ok_act(in_typed) or _ok_act(out_typed)
+    query = hotel_typed_query(goal)
+    if ok:
+        current["_typed_query"] = query
+    _pause_after_web_act()
+    nxt = look_again() or current
+    if ok:
+        nxt["_typed_query"] = query
+    if look_is_travel_search_form(nxt) and not look_has_hotel_results(nxt):
+        # Clicks missed React fields — navigate with a clean dated URL.
+        nxt, url_ok = _type_query_at(
+            OMNIBOX_CLICK,
+            hotel_travel_url(goal),
+            nxt,
+            click=click,
+            type_text=type_text,
+            keys=keys,
+            look_again=look_again,
+        )
+        ok = ok or url_ok
     return nxt, ok
 
 
@@ -1447,6 +1527,7 @@ def continue_web_search(
     hotel_followed = bool(current.get("_hotel_followed"))
     captcha_focus_started: float | None = None
     blank_looks = 0
+    overlay_dismisses = 0
     if deadline is not None:
         limit = 64
     else:
@@ -1468,9 +1549,14 @@ def continue_web_search(
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
         plan = overlay_dismiss_plan(current, goal=goal)
-        if plan is not None:
-            # Dismiss Genius / cookie / Restore / --no-sandbox before
-            # treating a search-results URL as done. Never Sign in.
+        if (
+            plan is not None
+            and overlay_dismisses < OVERLAY_DISMISS_MAX
+            and not (_deadline_passed(deadline) and not typed_query)
+        ):
+            # Real Sign-in / cookie / Restore. A Genius homepage banner is
+            # not this — overlay_kind skips it so we reach the form.
+            overlay_dismisses += 1
             if plan.click is not None:
                 click(x=plan.click[0], y=plan.click[1])
             if plan.keys:
@@ -1569,6 +1655,16 @@ def continue_web_search(
                     scroll(dy=5)
                     _pause_after_web_act()
                     current = look_again() or current
+            if ask_wants_hotel(goal) and look_is_travel_search_form(current):
+                current, typed_query = _fill_travel_search_form(
+                    current,
+                    goal,
+                    click=click,
+                    type_text=type_text,
+                    keys=keys,
+                    look_again=look_again,
+                )
+                continue
             xy = search_box_point(current)
             if xy is not None:
                 current, typed_query = _type_query_at(
@@ -1580,6 +1676,17 @@ def continue_web_search(
                     keys=keys,
                     look_again=look_again,
                 )
+            continue
+
+        if ask_wants_hotel(goal) and look_is_travel_search_form(current):
+            current, typed_query = _fill_travel_search_form(
+                current,
+                goal,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
             continue
 
         xy = search_box_point(current)
