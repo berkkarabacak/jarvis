@@ -12,6 +12,7 @@ from app.jarvis.overlay import (
     BOOKING_DATES_CLICK,
     BOOKING_DEST_CLICK,
     BOOKING_SEARCH_CLICK,
+    HOTEL_SEARCH_REOPEN_MAX,
     NEW_TAB_CLICK,
     NEW_TAB_FOCUS_CLICKS,
     OMNIBOX_CLICK,
@@ -27,11 +28,14 @@ from app.jarvis.overlay import (
     continue_web_search,
     dismiss_blocking_overlays,
     hotel_destination,
+    hotel_option_lines,
     hotel_stay_dates,
     hotel_travel_url,
     hotel_typed_query,
     look_has_blocking_overlay,
     look_has_hotel_results,
+    look_is_booking_searchresults,
+    look_is_hotel_search_pending,
     look_is_travel_site,
     look_is_unfinished_hotel_search,
     needs_hotel_followthrough,
@@ -632,7 +636,7 @@ def test_continue_web_search_persistent_genius_banner_types_form():
         deadline=time.monotonic() + 30,
     )
     assert OVERLAY_DISMISS_MAX <= 2
-    assert looks["n"] < 12, f"dismiss-looped instead of typing; looks={looks['n']}"
+    assert HOTEL_SEARCH_REOPEN_MAX <= 2
     assert typed, "Genius homepage must type destination / dates"
     assert BOOKING_DEST_CLICK in clicks
     assert BOOKING_DATES_CLICK in clicks
@@ -652,6 +656,8 @@ def test_continue_web_search_persistent_genius_banner_types_form():
     assert spoken["reply"] != _WEB_STUCK
     assert "i could not finish the search" not in spoken["reply"].lower()
     assert look_has_hotel_results(out) is False
+    assert look_is_travel_search_form(out) is True
+    assert "i typed the search" not in spoken["reply"].lower()
     assert out.get("_typed_query")
 
 
@@ -687,8 +693,175 @@ async def test_voice_ask_painted_booking_homepage_uses_click_and_type(
     assert "rome" in blob
     assert "use the computer" not in blob
     assert body["reply"] != _WEB_STUCK
-    assert "typed the search" in body["reply"].lower()
+    assert "i typed the search" not in body["reply"].lower()
     assert "180" not in body["reply"]
+    assert any("searchresults.html" in t for t in typed)
+
+
+# Live 2026-09-11 SHA 9a483b4 / PR #37: typed dest/dates (and a dated
+# searchresults URL) then finalized "I typed the search." noVNC briefly
+# showed searchresults.html?ss=Rome&checkin=… then bounced to index
+# with blank dest/dates. Vision on the ask reply was the homepage.
+LIVE_BOOKING_SEARCHRESULTS_LOADING = {
+    "ok": True,
+    "title": "Booking.com",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=Rome&checkin=2026-10-02&checkout=2026-10-05"
+    ),
+    "vision_description": (
+        "Booking.com search results. The page is still loading. "
+        "A white loading screen. No priced hotel names."
+    ),
+}
+
+PRICED_ROME_HOTELS = {
+    "ok": True,
+    "title": "Hotels in Rome — Booking.com",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=Rome&checkin=2026-10-02&checkout=2026-10-05"
+    ),
+    "vision_description": (
+        "Hotels in Rome. Hotel Eden. From 180 EUR. "
+        "Hotel Artemide. From 210 EUR. "
+        "Hotel Forum. From 165 EUR."
+    ),
+}
+
+
+def test_live_searchresults_loading_is_pending_not_homepage():
+    """Dated searchresults URL that is still loading is in-progress."""
+    loading = LIVE_BOOKING_SEARCHRESULTS_LOADING
+    home = LIVE_BOOKING_HOMEPAGE_PAINTED
+    assert look_is_booking_searchresults(loading) is True
+    assert look_is_hotel_search_pending(loading) is True
+    assert look_is_travel_search_form(loading) is False
+    assert look_has_hotel_results(loading) is False
+    assert look_is_booking_searchresults(home) is False
+    assert look_is_hotel_search_pending(home) is False
+    assert look_is_travel_search_form(home) is True
+    assert look_has_hotel_results(PRICED_ROME_HOTELS) is True
+    assert look_is_hotel_search_pending(PRICED_ROME_HOTELS) is False
+    lines = hotel_option_lines(PRICED_ROME_HOTELS)
+    blob = " ".join(lines).lower()
+    assert "eden" in blob
+    assert "180" in blob
+    assert hotel_option_lines(home) == []
+
+
+def test_speak_web_job_homepage_after_type_is_not_typed_success():
+    """Homepage + empty dest/dates after type is not 'I typed the search.'"""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    tools = ["run_app", "see_screen", "click", "type", "keys"]
+    home = dict(LIVE_BOOKING_HOMEPAGE_PAINTED)
+    home["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    bounced = _speak_web_job(LIVE_ITALY_HOTEL, home, tools, opened=True)
+    assert bounced["reply"] != _WEB_STUCK
+    assert "i typed the search" not in bounced["reply"].lower()
+    loading = dict(LIVE_BOOKING_SEARCHRESULTS_LOADING)
+    loading["_typed_query"] = hotel_typed_query(LIVE_ITALY_HOTEL)
+    pending = _speak_web_job(LIVE_ITALY_HOTEL, loading, tools, opened=True)
+    assert pending["reply"].lower() == "i typed the search."
+    priced = _speak_web_job(
+        LIVE_ITALY_HOTEL, dict(PRICED_ROME_HOTELS), tools, opened=True
+    )
+    low = priced["reply"].lower()
+    assert "eden" in low
+    assert "180" in low
+    assert "i typed the search" not in low
+    assert "2000" not in low
+
+
+def test_continue_web_search_homepage_bounce_reopens_searchresults():
+    """After type, empty homepage must re-run the dated URL and wait."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    urls_typed = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        if "searchresults.html" in str(text):
+            urls_typed["n"] += 1
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        if urls_typed["n"] >= 2:
+            return dict(PRICED_ROME_HOTELS)
+        return dict(LIVE_BOOKING_HOMEPAGE_PAINTED)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        deadline=time.monotonic() + 30,
+    )
+    assert urls_typed["n"] >= 2, typed
+    assert any("searchresults.html" in t for t in typed)
+    assert any("checkin=" in t for t in typed)
+    assert BOOKING_SEARCH_CLICK in clicks or OMNIBOX_CLICK in clicks
+    assert look_has_hotel_results(out) is True
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    low = spoken["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+    assert spoken["reply"] != _WEB_STUCK
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_homepage_bounce_finishes_with_priced_hotels(
+    monkeypatch, tmp_path
+):
+    """Ask path: type, bounce to empty homepage, re-run URL, then options."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        dict(LIVE_BOOKING_SEARCHRESULTS_LOADING),
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        dict(PRICED_ROME_HOTELS),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch, looks, clicks=clicks, typed=typed, keys=keys
+    )
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    assert "click" in tools
+    assert "type" in tools
+    assert any("searchresults.html" in t for t in typed)
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "eden" in low
+    assert "180" in low
+    assert body["reply"] != _WEB_STUCK
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():

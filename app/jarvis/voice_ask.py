@@ -27,6 +27,7 @@ from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     ask_wants_hotel,
     continue_web_search,
+    hotel_option_lines,
     hotel_travel_url,
     look_has_blocking_overlay,
     look_has_hotel_results,
@@ -34,6 +35,7 @@ from app.jarvis.overlay import (
     look_is_empty_desktop,
     look_is_empty_destination,
     look_is_footer,
+    look_is_hotel_search_pending,
     look_is_http_error,
     look_is_leftover_for_ask,
     look_is_leftover_surface,
@@ -2302,14 +2304,18 @@ def _speak_web_job(
     unfinished = hotel and look_is_unfinished_hotel_search(looked)
     overlay = look_has_blocking_overlay(looked, goal=asked)
     travel_form = hotel and look_is_travel_search_form(looked)
+    pending = hotel and look_is_hotel_search_pending(looked)
     acted = typed or any(name in tools for name in ("click", "type", "keys"))
     if overlay:
         # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
         reply = "I typed the search." if acted else "I opened the page."
-    elif travel_form and not look_has_hotel_results(looked):
-        # Booking landing / empty date form. After click/type, in-progress
-        # — never invent hotel prices, never _WEB_STUCK on the first look.
+    elif pending:
+        # Loading / submitting searchresults — in-progress after type.
         reply = "I typed the search." if acted else "I opened the page."
+    elif travel_form and not look_has_hotel_results(looked):
+        # Empty Booking homepage. After click/type this is a bounce, not
+        # typed-success. Never invent hotel prices.
+        reply = "I opened the page."
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
@@ -2319,8 +2325,14 @@ def _speak_web_job(
         reply = _WEB_STUCK
     elif look_is_pay_control(blob) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
-    elif look_has_hotel_results(looked) and usable:
-        reply = spoken
+    elif look_has_hotel_results(looked):
+        options = " ".join(hotel_option_lines(looked)).strip()
+        if options and _usable_tell_text(options):
+            reply = options
+        elif usable:
+            reply = spoken
+        else:
+            reply = spoken if spoken else _WEB_STUCK
     elif unfinished:
         # A Google SERP / focused-window caption is not hotel options.
         reply = (
