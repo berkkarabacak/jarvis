@@ -131,6 +131,7 @@ def test_talk_brain_computer_clicks_put_mapped_fields():
 
     computer = js.split("computerPicksEl.querySelectorAll(\"[data-computer]\")", 1)[1]
     assert "saveTalkSettings({ computer_kind: kind })" in computer
+    assert "saveTalkSettings({ talk_mode: next })" in js
     assert "saveTalkSettings({ look_speed: look })" in js
     assert "saveTalkSettings({ permission_profile: prefs.permissionProfile })" in js
 
@@ -164,6 +165,7 @@ async def test_public_talk_settings_put_get_roundtrip(public_client, jarvis_env)
         "computer_kind": "android",
         "look_speed": "10s",
         "permission_profile": "locked",
+        "talk_mode": "terminal",
     }
     for key, value in samples.items():
         saved = await public_client.put("/api/jarvis/settings", json={key: value})
@@ -184,6 +186,7 @@ async def test_public_talk_settings_put_get_roundtrip(public_client, jarvis_env)
     assert settings_store.get_computer_kind() == "android"
     assert settings_store.get_look_speed() == "10s"
     assert settings_store.get_permission_profile() == "locked"
+    assert settings_store.get_talk_mode() == "terminal"
 
     again = await public_client.get("/api/jarvis/settings")
     assert again.status_code == 200

@@ -34,6 +34,8 @@ after ``load()``; ``null`` means “unset / fall back to env or default”:
       drives. Default linux. Android is a second machine, not the Play
       Store phone app.)
 * ``talk_speed`` — slow | normal | quick | null  (public Talk playback rate)
+* ``talk_mode`` — computer | terminal | null  (Talk interaction mode.
+      Computer may use the screen. Terminal is chat/CLI only, no PC.)
 
 Router reads ``quality_vs_price`` (or the ``model_preference`` alias) and the budget caps from this object.
 A locked stored ``model`` is a hard pin. An unlocked stored ``model`` is
@@ -169,6 +171,7 @@ _STRING_KEYS = frozenset(
         "model_speed",
         "computer_kind",
         "talk_speed",
+        "talk_mode",
     }
 )
 _BOOL_KEYS = frozenset({"model_lock"})
@@ -189,6 +192,18 @@ ALLOWED_COMPUTER_KINDS = frozenset({"linux", "android"})
 DEFAULT_COMPUTER_KIND = "linux"
 ALLOWED_TALK_SPEEDS = frozenset({"slow", "normal", "quick"})
 DEFAULT_TALK_SPEED = "normal"
+ALLOWED_TALK_MODES = frozenset({"computer", "terminal"})
+DEFAULT_TALK_MODE = "computer"
+TALK_MODE_BLURBS: dict[str, dict[str, str]] = {
+    "computer": {
+        "label": "Computer",
+        "allows": "Uses the screen when he needs it.",
+    },
+    "terminal": {
+        "label": "Terminal",
+        "allows": "Chat only. No PC.",
+    },
+}
 COMPUTER_KIND_BLURBS: dict[str, dict[str, str]] = {
     "linux": {
         "label": "Linux",
@@ -238,6 +253,7 @@ def _empty() -> dict[str, Any]:
         "approve_countdown_sec": None,
         "computer_kind": None,
         "talk_speed": None,
+        "talk_mode": None,
         "spend": _empty_spend(),
     }
 
@@ -720,6 +736,36 @@ def get_talk_speed(root: Path | None = None) -> str:
     return env or DEFAULT_TALK_SPEED
 
 
+def _normalize_talk_mode(raw: str | None) -> str | None:
+    s = (raw or "").strip().lower().replace("_", "-")
+    aliases = {
+        "computer": "computer",
+        "pc": "computer",
+        "screen": "computer",
+        "desktop": "computer",
+        "terminal": "terminal",
+        "cli": "terminal",
+        "chat": "terminal",
+        "text": "terminal",
+    }
+    mapped = aliases.get(s, s)
+    return mapped if mapped in ALLOWED_TALK_MODES else None
+
+
+def get_talk_mode(root: Path | None = None) -> str:
+    """computer | terminal. Public Talk interaction mode. Default computer.
+
+    Terminal is chat/CLI only (no PC). Server-side tool blocking is a
+    follow-up; this helper is the shared read for UI + later enforcement.
+    """
+    stored = load(root).get("talk_mode")
+    parsed = _normalize_talk_mode(stored if isinstance(stored, str) else None)
+    if parsed:
+        return parsed
+    env = _normalize_talk_mode(os.environ.get("JARVIS_TALK_MODE"))
+    return env or DEFAULT_TALK_MODE
+
+
 def get_computer_kind(root: Path | None = None, env: dict[str, str] | None = None) -> str:
     """linux | android. Default linux. Android is Jarvis's other box."""
     stored = load(root).get("computer_kind")
@@ -881,6 +927,15 @@ def public_view(root: Path | None = None) -> dict[str, Any]:
         "approve_countdown_max": APPROVE_COUNTDOWN_MAX,
         "computer_kind": get_computer_kind(root),
         "talk_speed": get_talk_speed(root),
+        "talk_mode": get_talk_mode(root),
+        "talk_modes": [
+            {
+                "id": mid,
+                "label": TALK_MODE_BLURBS[mid]["label"],
+                "allows": TALK_MODE_BLURBS[mid]["allows"],
+            }
+            for mid in ("computer", "terminal")
+        ],
         "computer_kinds": [
             {
                 "id": kid,
@@ -972,6 +1027,11 @@ def validate_update(body: dict[str, Any], *, require_unlock: bool = True) -> dic
         if not parsed:
             raise ValueError("talk_speed must be slow, normal, or quick")
         updates["talk_speed"] = parsed
+    if "talk_mode" in body and body["talk_mode"] is not None:
+        parsed = _normalize_talk_mode(str(body["talk_mode"]))
+        if not parsed:
+            raise ValueError("talk_mode must be computer or terminal")
+        updates["talk_mode"] = parsed
     if "approve_countdown_sec" in body:
         raw = body["approve_countdown_sec"]
         if raw is None or raw == "":

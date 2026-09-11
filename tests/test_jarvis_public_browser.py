@@ -834,6 +834,7 @@ def test_health_sheet_matches_public_view_ledger(tmp_path, monkeypatch):
     assert sheet["look_speed"] == view["look_speed"]
     assert sheet["permission_profile"] == view["permission_profile"]
     assert sheet["talk_speed"] == view["talk_speed"]
+    assert sheet["talk_mode"] == view["talk_mode"]
     assert sheet["monthly_budget_usd"] == view["monthly_budget_usd"]
     assert health["model"] == view["model"]
     assert health["spent_today_usd"] == view["spent_today_usd"]
@@ -905,6 +906,7 @@ async def test_talk_apis_exist_under_jarvis_prefix(client):
     assert "look_speed" in body
     assert "permission_profile" in body
     assert "talk_speed" in body
+    assert "talk_mode" in body
     assert "helper_models" in body
     assert 1 <= len(body["helper_models"]) <= 21
     assert all("gpt-realtime" not in str(row.get("id") or "") for row in body["helper_models"])

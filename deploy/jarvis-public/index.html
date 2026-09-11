@@ -221,7 +221,35 @@
       inset: 0;
       background: #111;
     }
+    #pc[hidden] { display: none; }
     #pc iframe { width: 100%; height: 100%; border: 0; background: #000; display: block; }
+    #pc-hide, #pc-show {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(26, 26, 26, 0.78);
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+    }
+    #pc-hide svg, #pc-show svg { display: block; width: 18px; height: 18px; }
+    #pc-hide {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 3;
+    }
+    #pc-show {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 4;
+    }
+    #pc-hide[hidden], #pc-show[hidden] { display: none; }
     #talk-catch {
       position: absolute;
       inset: 0;
@@ -701,6 +729,7 @@
     }
     .panel[hidden] { display: none; }
     #mic:focus-visible, #more:focus-visible, #go:focus-visible, .bar-btn:focus-visible,
+    #pc-hide:focus-visible, #pc-show:focus-visible,
     #settings-close:focus-visible, #settings-back:focus-visible,
     #chat-hide:focus-visible, #settings-rail button:focus-visible,
     #quality button:focus-visible, #model-picks button:focus-visible,
@@ -775,7 +804,18 @@
     <section id="pc" aria-label="Screen">
       <iframe id="pc-frame" title="Jarvis's screen" src=""></iframe>
       <div id="talk-catch" hidden aria-hidden="true"></div>
+      <button type="button" id="pc-hide" title="Hide" aria-label="Hide screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
     </section>
+    <button type="button" id="pc-show" hidden title="Screen" aria-label="Show screen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <rect x="3" y="5" width="18" height="12" rx="2"/>
+        <path d="M8 21h8M12 17v4"/>
+      </svg>
+    </button>
     <aside id="chat" hidden>
       <div class="chat-head">
         <button type="button" id="chat-hide" title="Hide" aria-label="Hide">
@@ -871,7 +911,13 @@
           <span id="model"></span>
         </div>
         <div class="panel" id="tab-computer" role="tabpanel" data-settings-panel="computer" hidden>
-          <p class="lead">Which computer he uses.</p>
+          <p class="lead">How he works with you.</p>
+          <p class="choice-label">Mode</p>
+          <div class="picks" id="talk-mode-picks">
+            <button type="button" data-talk-mode="computer">Computer<span class="pick-note">Uses the screen when he needs it.</span></button>
+            <button type="button" data-talk-mode="terminal">Terminal<span class="pick-note">Chat only. No PC.</span></button>
+          </div>
+          <p class="choice-label">Which computer he uses</p>
           <p class="choice-note">Same Jarvis. Same memory. Different box. Android is not the phone app.</p>
           <div class="picks" id="computer-picks">
             <button type="button" data-computer="linux">Linux<span class="pick-note">The usual desktop. This is the default.</span></button>
@@ -893,6 +939,10 @@
         </div>
         <div class="panel" id="tab-about" role="tabpanel" data-settings-panel="about" hidden>
           <p class="lead">This app and where to get help.</p>
+          <div class="row">
+            <span class="row-label">Mode</span>
+            <span class="row-value" id="talk-mode-label">Computer</span>
+          </div>
           <div class="row">
             <span class="row-label">His computer</span>
             <span class="row-value" id="computer-kind-label">Linux</span>
@@ -958,6 +1008,7 @@
       ];
       const MODEL_NAMES = { fast: "Quick", balanced: "Everyday", smart: "Deep" };
       const PREFS_KEY = "jarvis.talk.prefs";
+      const PC_SESSION_KEY = "jarvis.talk.pcVisible";
       const MIC_OK_KEY = "jarvis.talk.micOk";
       const ALLOW_DEFAULTS = {
         apps: "ask",
@@ -1035,6 +1086,8 @@
           computerKind: "linux",
           lookSpeed: "off",
           permissionProfile: "personal",
+          talkMode: "computer",
+          pcVisible: true,
           orbPos: null,
           morePos: null,
         };
@@ -1069,6 +1122,16 @@
           if (data.permissionProfile === "locked" || data.permissionProfile === "personal" || data.permissionProfile === "power") {
             out.permissionProfile = data.permissionProfile;
           }
+          if (data.talkMode === "computer" || data.talkMode === "terminal") {
+            out.talkMode = data.talkMode;
+          }
+          if (typeof data.pcVisible === "boolean") {
+            out.pcVisible = data.pcVisible;
+          }
+          try {
+            const session = sessionStorage.getItem(PC_SESSION_KEY);
+            if (session === "0" || session === "1") out.pcVisible = session === "1";
+          } catch (_) {}
           const scale = Number(data.textScale);
           if (isFinite(scale)) {
             out.textScale = Math.max(0.9, Math.min(1.4, Math.round(scale * 10) / 10));
@@ -1116,13 +1179,98 @@
         if (label) label.textContent = Math.round(prefs.textScale * 100) + "%";
       }
 
-      function applyPicture() {
-        document.documentElement.setAttribute("data-picture", prefs.picture || "clear");
+      function talkIsTerminal() {
+        return prefs.talkMode === "terminal";
+      }
+
+      function pcShouldShow() {
+        return !talkIsTerminal() && prefs.pcVisible !== false;
+      }
+
+      function persistPcVisible() {
+        try {
+          sessionStorage.setItem(PC_SESSION_KEY, prefs.pcVisible ? "1" : "0");
+        } catch (_) {}
+        savePrefs();
+      }
+
+      function pcScreenSrc() {
+        return "/screen?picture=" + encodeURIComponent(prefs.picture || "clear");
+      }
+
+      function pcFrameIsLive(frame) {
+        const src = (frame && frame.getAttribute("src")) || "";
+        return !!src && src !== "about:blank";
+      }
+
+      function clearPcFrame() {
         const frame = document.getElementById("pc-frame");
         if (!frame) return;
-        const src = frame.getAttribute("src") || "/screen";
+        try { frame.setAttribute("src", "about:blank"); } catch (_) {}
+        try { frame.removeAttribute("src"); } catch (_) {}
+        try { frame.setAttribute("src", ""); } catch (_) {}
+      }
+
+      function loadPcScreen() {
+        if (!pcShouldShow()) return;
+        const frame = document.getElementById("pc-frame");
+        if (!frame) return;
+        if (pcFrameIsLive(frame)) return;
+        frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
+      }
+
+      function paintTalkMode() {
+        paintPicks(document.getElementById("talk-mode-picks"), "data-talk-mode", prefs.talkMode || "computer");
+        const live = document.getElementById("talk-mode-label");
+        if (live) live.textContent = talkIsTerminal() ? "Terminal" : "Computer";
+      }
+
+      function applyPcView() {
+        const show = pcShouldShow();
+        const pcEl = document.getElementById("pc");
+        const hideBtn = document.getElementById("pc-hide");
+        const showBtn = document.getElementById("pc-show");
+        if (pcEl) {
+          pcEl.hidden = !show;
+          pcEl.setAttribute("aria-hidden", show ? "false" : "true");
+        }
+        if (hideBtn) hideBtn.hidden = !show;
+        if (showBtn) {
+          showBtn.hidden = show || talkIsTerminal();
+          showBtn.setAttribute("aria-expanded", show ? "true" : "false");
+        }
+        document.documentElement.setAttribute("data-talk-mode", prefs.talkMode || "computer");
+        document.documentElement.setAttribute("data-pc", show ? "on" : "off");
+        if (show) loadPcScreen();
+        else clearPcFrame();
+      }
+
+      function setPcVisible(on) {
+        prefs.pcVisible = !!on;
+        persistPcVisible();
+        applyPcView();
+      }
+
+      function applyTalkMode(mode, persist) {
+        const next = mode === "terminal" ? "terminal" : "computer";
+        prefs.talkMode = next;
+        if (next === "terminal") prefs.pcVisible = false;
+        persistPcVisible();
+        paintTalkMode();
+        applyPcView();
+        if (persist) void saveTalkSettings({ talk_mode: next });
+      }
+
+      function applyPicture() {
+        document.documentElement.setAttribute("data-picture", prefs.picture || "clear");
+        if (!pcShouldShow()) {
+          clearPcFrame();
+          return;
+        }
+        const frame = document.getElementById("pc-frame");
+        if (!frame) return;
         try {
-          const url = new URL(src, location.href);
+          const url = new URL(pcFrameIsLive(frame) ? (frame.getAttribute("src") || pcScreenSrc()) : pcScreenSrc(), location.href);
           url.searchParams.set("picture", prefs.picture || "clear");
           url.searchParams.set("t", String(Date.now()));
           frame.setAttribute("src", url.pathname + url.search);
@@ -1442,6 +1590,10 @@
         if (next.permission_profile === "locked" || next.permission_profile === "personal" || next.permission_profile === "power") {
           applyPermissionProfile(next.permission_profile);
         }
+        if (next.talk_mode === "computer" || next.talk_mode === "terminal") {
+          prefs.talkMode = next.talk_mode;
+          if (next.talk_mode === "terminal") prefs.pcVisible = false;
+        }
         savePrefs();
       }
 
@@ -1576,6 +1728,13 @@
           }
           paintPicks(document.getElementById("permission-picks"), "data-permission", prefs.permissionProfile);
         }
+        if ("talk_mode" in data) {
+          const mode = String(data.talk_mode || "computer").toLowerCase();
+          if (mode === "computer" || mode === "terminal") prefs.talkMode = mode;
+          if (prefs.talkMode === "terminal") prefs.pcVisible = false;
+          paintTalkMode();
+          applyPcView();
+        }
         savePrefs();
       }
 
@@ -1672,8 +1831,9 @@
         paintPicks(document.getElementById("computer-picks"), "data-computer", prefs.computerKind || "linux");
         const live = document.getElementById("computer-kind-label");
         if (live) live.textContent = prefs.computerKind === "android" ? "Android" : "Linux";
+        paintTalkMode();
         applyTextScale();
-        applyPicture();
+        applyPcView();
       }
 
       function paintBadge() {
@@ -3483,6 +3643,35 @@
           });
         });
       }
+      const talkModePicksEl = document.getElementById("talk-mode-picks");
+      if (talkModePicksEl) {
+        talkModePicksEl.querySelectorAll("[data-talk-mode]").forEach(function (el) {
+          el.addEventListener("click", function () {
+            const mode = el.getAttribute("data-talk-mode") || "computer";
+            applyTalkMode(mode, true);
+          });
+        });
+      }
+      const pcHide = document.getElementById("pc-hide");
+      if (pcHide) {
+        pcHide.addEventListener("pointerdown", function (e) {
+          e.stopPropagation();
+        });
+        pcHide.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          setPcVisible(false);
+        });
+      }
+      const pcShow = document.getElementById("pc-show");
+      if (pcShow) {
+        pcShow.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (talkIsTerminal()) return;
+          setPcVisible(true);
+        });
+      }
 
       const voicePicksEl = document.getElementById("voice-picks");
       if (voicePicksEl) {
@@ -3559,13 +3748,6 @@
       });
       applyChromePos();
       addEventListener("resize", applyChromePos);
-
-      function loadPcScreen() {
-        const frame = document.getElementById("pc-frame");
-        if (!frame) return;
-        if (frame.getAttribute("src")) return;
-        frame.setAttribute("src", "/screen?picture=" + encodeURIComponent(prefs.picture || "clear"));
-      }
 
       function whenIdle(fn) {
         if (typeof requestIdleCallback === "function") {
