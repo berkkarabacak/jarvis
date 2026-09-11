@@ -18,6 +18,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any, Callable, Literal
 from urllib.parse import quote_plus
 
@@ -243,7 +244,9 @@ _GENERIC_QUERY_WORD_RE = re.compile(
     r"person|like|see_screen|keys)$",
     re.I,
 )
-# "Look, click and type like a person" / Open Chrome — coaching, not the ask.
+# "Look, click and type like a person" / Open Chrome / Use the computer —
+# coaching, not the search. Also the live hotel-ask tail: dismiss popups,
+# reply with N options, Do not invent / book / pay.
 _COACHING_PHRASE_RE = re.compile(
     r"("
     r"look\s*,?\s*click\s+(?:and\s+)?type(?:\s+like\s+a\s+person)?|"
@@ -251,6 +254,20 @@ _COACHING_PHRASE_RE = re.compile(
     r"type\s+like\s+a\s+person|"
     r"like\s+a\s+person|"
     r"open\s+(?:google\s+)?(?:chrome|chromium)|"
+    r"use(?:\s+the)?\s+computer|"
+    r"using(?:\s+the)?\s+computer|"
+    r"open\s+a\s+real\s+(?:travel\s+)?site|"
+    r"search\s+real\s+dates?(?:\s+and\s+prices?)?|"
+    r"dismiss(?:\s+the)?\s+(?:popups?|overlays?|cookies?|modals?)|"
+    r"do\s+not\s+invent|"
+    r"do\s+not\s+book(?:\s+or\s+pay)?|"
+    r"do\s+not\s+pay|"
+    r"reply\s+with(?:\s+\d+)?\s+concrete\s+options|"
+    r"concrete\s+options:?|"
+    r"hotel\s+name,?\s*city|"
+    r"check-in/?out\s+dates|"
+    r"nights,?\s+(?:and\s+)?total\s+price(?:\s+in\s+euros?)?|"
+    r"total\s+price\s+in\s+euros?|"
     r"see[_ ]screen|"
     r"\btools_used\b"
     r")",
@@ -258,6 +275,28 @@ _COACHING_PHRASE_RE = re.compile(
 )
 _COACHING_LEFTOVER_RE = re.compile(
     r"\b(?:google\s+)?(?:chrome|chromium)\b",
+    re.I,
+)
+# Vision dump / "Searching…" on a Google SERP is not hotel results.
+_SEARCHING_CAPTION_RE = re.compile(
+    r"("
+    r"the focused window is|"
+    r"the search query reads|"
+    r"\bsearching\b|"
+    r"ai overview (?:is )?unavailable|"
+    r"can['’]?t generate an ai overview"
+    r")",
+    re.I,
+)
+_TRAVEL_SITE_RE = re.compile(
+    r"("
+    r"booking\.com|"
+    r"hotels\.com|"
+    r"\bexpedia\b|"
+    r"kayak\.com|"
+    r"\bairbnb\b|"
+    r"google\.[^/\s]+/travel"
+    r")",
     re.I,
 )
 # Google /sorry, I'm not a robot, unusual traffic — any find/search job.
@@ -607,6 +646,77 @@ def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
     if _look_is_search_engine(looked) and not _HOTEL_RESULT_EVIDENCE_RE.search(blob):
         return False
     return True
+
+
+def ask_wants_hotel(asked: str) -> bool:
+    """Find / book a hotel — not weather or a shop search."""
+    return ask_topic(asked) == "hotel"
+
+
+def look_is_travel_site(looked: dict[str, Any] | None) -> bool:
+    """Booking / Hotels.com / Google Hotels — a place to gather prices."""
+    item = looked or {}
+    blob = " ".join(
+        str(item.get(key) or "")
+        for key in ("url", "title", "vision_description")
+    )
+    return bool(_TRAVEL_SITE_RE.search(blob))
+
+
+def look_is_unfinished_hotel_search(looked: dict[str, Any] | None) -> bool:
+    """True for a Google/DDG SERP or Searching/focused-window caption.
+
+    Concrete hotel name + price on a travel site is done. A leftover New
+    Tab that only mentions the ask is not this — that still needs the
+    query typed first.
+    """
+    if look_has_hotel_results(looked) or look_is_travel_site(looked):
+        return False
+    if _SEARCHING_CAPTION_RE.search(look_blob(looked)):
+        return True
+    return bool(_look_is_search_engine(looked))
+
+
+def hotel_stay_dates(today: date | None = None) -> tuple[date, date]:
+    """A real 3-night stay about three weeks out — next-3-months window."""
+    start = (today or date.today()) + timedelta(days=21)
+    return start, start + timedelta(days=3)
+
+
+def hotel_date_query(today: date | None = None) -> str:
+    checkin, checkout = hotel_stay_dates(today)
+    return f"check-in {checkin.isoformat()} check-out {checkout.isoformat()}"
+
+
+def hotel_travel_url(asked: str, today: date | None = None) -> str:
+    """Booking.com search with destination + real check-in/out dates."""
+    dest = web_search_query(asked) or "hotel"
+    checkin, checkout = hotel_stay_dates(today)
+    return (
+        "https://www.booking.com/searchresults.html?"
+        f"ss={quote_plus(dest)}"
+        f"&checkin={checkin.isoformat()}"
+        f"&checkout={checkout.isoformat()}"
+    )
+
+
+def needs_hotel_followthrough(
+    asked: str, looked: dict[str, Any] | None, query: str
+) -> bool:
+    """True when a hotel job is still on a SERP / caption with no prices.
+
+    Query text visible on Google is not done. Speaking a focused-window
+    caption is not done. look_speed=off does not change this.
+    """
+    if not ask_wants_hotel(asked):
+        return False
+    if look_has_hotel_results(looked) or look_is_travel_site(looked):
+        return False
+    if not look_is_unfinished_hotel_search(looked):
+        return False
+    if query_visible_on_look(looked, query) or (looked or {}).get("_typed_query"):
+        return True
+    return bool(_SEARCHING_CAPTION_RE.search(look_blob(looked)))
 
 
 def look_is_empty_destination(looked: dict[str, Any] | None) -> bool:
@@ -1123,6 +1233,7 @@ def continue_web_search(
     typed_query = bool(current.get("_typed_query"))
     opened_new_tab = bool(current.get("_opened_new_tab"))
     captcha_retried = bool(current.get("_captcha_retried"))
+    hotel_followed = bool(current.get("_hotel_followed"))
     captcha_focus_started: float | None = None
     blank_looks = 0
     if deadline is not None:
@@ -1137,6 +1248,8 @@ def continue_web_search(
             item["_opened_new_tab"] = True
         if captcha_retried:
             item["_captcha_retried"] = True
+        if hotel_followed:
+            item["_hotel_followed"] = True
         return item
 
     for i in range(limit):
@@ -1196,9 +1309,23 @@ def continue_web_search(
             )
             opened_new_tab = True
             continue
-        if look_has_hotel_results(current) or not needs_web_query(
-            goal, current, query
-        ):
+        if look_has_hotel_results(current):
+            return _mark(current)
+        if needs_hotel_followthrough(goal, current, query) and not hotel_followed:
+            # First Google SERP / focused-window caption is not done.
+            # Type a Booking URL with real dates (or dates on the SERP).
+            current, typed_query = _advance_unfinished_hotel(
+                current,
+                goal,
+                query,
+                click=click,
+                type_text=type_text,
+                keys=keys,
+                look_again=look_again,
+            )
+            hotel_followed = True
+            continue
+        if not needs_web_query(goal, current, query):
             return _mark(current)
         if typed_query:
             if _deadline_passed(deadline) or i >= BLANK_LOOKS_BEFORE_OMNIBOX:
@@ -1315,17 +1442,70 @@ def alt_web_search_typed(query: str, asked: str = "") -> str:
     return f"https://www.bing.com/search?q={encoded}"
 
 
-def web_search_query(asked: str) -> str:
-    """User query tokens only: 'weather in Amsterdam', never coaching.
+def _advance_unfinished_hotel(
+    current: dict[str, Any],
+    goal: str,
+    query: str,
+    *,
+    click: Callable[..., dict[str, Any]],
+    type_text: Callable[..., dict[str, Any]],
+    keys: Callable[..., dict[str, Any]],
+    look_again: Callable[[], dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    """Leave a hotel-less Google SERP: Booking URL with dates, or type dates."""
+    url = hotel_travel_url(goal)
+    nxt, typed = _type_query_at(
+        OMNIBOX_CLICK,
+        url,
+        current,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    if typed:
+        nxt["_hotel_followed"] = True
+        return nxt, True
+    dates = hotel_date_query()
+    refined = f"{query} {dates}".strip()
+    xy = search_box_point(current) or OMNIBOX_CLICK
+    nxt, typed = _type_query_at(
+        xy,
+        refined,
+        current,
+        click=click,
+        type_text=type_text,
+        keys=keys,
+        look_again=look_again,
+    )
+    if typed:
+        nxt["_hotel_followed"] = True
+    return nxt, typed
 
-    'Look, click and type like a person' / Open Chrome are coaching, not
-    the search. Any find / search / use-Chrome job.
+
+def _clauses_with_search_tokens(text: str) -> str:
+    """Drop coaching-only sentences. Keep destination / budget / dates."""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    if len(parts) <= 1:
+        return text
+    kept = [part for part in parts if distinctive_query_tokens(part)]
+    return " ".join(kept) if kept else text
+
+
+def web_search_query(asked: str) -> str:
+    """User query tokens only: destination + budget + dates, never coaching.
+
+    'Use the computer' / 'Look, click and type like a person' / Open Chrome
+    / dismiss popups / Do not invent / reply with N options are coaching,
+    not the search. Any find / search / use-Chrome job.
     """
     raw = (asked or "").strip()
     raw = _COACHING_PHRASE_RE.sub(" ", raw)
+    raw = _clauses_with_search_tokens(raw)
     raw = re.sub(
         r"\b(please|can you|could you|on (?:the|your) (?:screen|computer)|"
-        r"using chrome|use chrome|in chrome|with chrome)\b",
+        r"using chrome|use chrome|in chrome|with chrome|"
+        r"use the computer|using the computer)\b",
         " ",
         raw,
         flags=re.I,

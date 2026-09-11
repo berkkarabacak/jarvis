@@ -16,10 +16,16 @@ from app.jarvis.overlay import (
     WEB_LOOK_PAUSE_S,
     CAPTCHA_FOCUS_MIN_S,
     alt_web_search_typed,
+    ask_wants_hotel,
     continue_web_search,
     dismiss_blocking_overlays,
+    hotel_stay_dates,
+    hotel_travel_url,
     look_has_blocking_overlay,
     look_has_hotel_results,
+    look_is_travel_site,
+    look_is_unfinished_hotel_search,
+    needs_hotel_followthrough,
     look_is_captcha,
     look_is_empty_desktop,
     look_is_focused_new_tab,
@@ -144,12 +150,19 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
 
 def _typed_is_user_query(text: str) -> bool:
     low = (text or "").lower()
-    return (
-        "like a person" not in low
-        and "open chrome" not in low
-        and "look, click" not in low
-        and "see_screen" not in low
+    banned = (
+        "like a person",
+        "open chrome",
+        "look, click",
+        "see_screen",
+        "use the computer",
+        "dismiss popups",
+        "do not invent",
+        "do not book",
+        "concrete options",
+        "reply with",
     )
+    return not any(token in low for token in banned)
 
 
 def test_web_search_query_strips_url_and_find():
@@ -184,6 +197,29 @@ def test_web_search_query_strips_coaching_keeps_ask_tokens():
     s = shop.lower()
     assert "grinder" in s
     assert _typed_is_user_query(shop)
+
+
+def test_web_search_query_strips_use_the_computer_and_option_list():
+    """Live Italy hotel ask must type destination + budget, never coaching."""
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    low = q.lower()
+    assert "hotel" in low
+    assert any(token in low for token in ("italy", "rome", "florence", "tuscany"))
+    assert "2000" in low or "euro" in low
+    assert _typed_is_user_query(q)
+    assert "use the computer" not in low
+    assert "dismiss popups" not in low
+    assert "do not invent" not in low
+    assert "do not book" not in low
+    assert "concrete options" not in low
+    assert "reply with" not in low
+    url = hotel_travel_url(LIVE_ITALY_HOTEL)
+    assert "booking.com" in url
+    assert "checkin=" in url and "checkout=" in url
+    checkin, checkout = hotel_stay_dates()
+    assert checkin.isoformat() in url
+    assert checkout.isoformat() in url
+    assert ask_wants_hotel(LIVE_ITALY_HOTEL) is True
 
 
 def test_overlay_kinds_from_live_failure():
@@ -872,7 +908,9 @@ def test_continue_web_search_waits_then_types_after_blank_look():
     assert "Eden" in str(out.get("vision_description") or "")
 
 
-def _patch_voice_ask_web(monkeypatch, looks, *, clicks, typed, keys=None):
+def _patch_voice_ask_web(
+    monkeypatch, looks, *, clicks, typed, keys=None, launched=None
+):
     from app.jarvis import computer as computer_mod
 
     n = {"i": 0}
@@ -899,6 +937,8 @@ def _patch_voice_ask_web(monkeypatch, looks, *, clicks, typed, keys=None):
         return {"ok": True, "app": app, "method": "close-all"}
 
     def capture_run(plan):
+        if launched is not None:
+            launched.append(plan)
         return {
             "ok": True,
             "started": plan.get("cmd"),
@@ -1463,6 +1503,26 @@ ITALY_HOTEL_RESULTS = {
     ),
 }
 
+# Live 2026-09-11: first look after typing is a Google SERP whose title
+# still has coaching words. No Booking, no dates, no hotel prices.
+LIVE_GOOGLE_SERP_HOTEL = {
+    "ok": True,
+    "title": (
+        "Use the computer. available hotels under 2000 Euro total in "
+        "central Italy - Google Search"
+    ),
+    "url": (
+        "https://www.google.com/search?q=Use+the+computer.+available+hotels+"
+        "under+2000+Euro+total+in+central+Italy"
+    ),
+    "vision_description": (
+        "The focused window is a web browser displaying Google. "
+        "The search query reads Use the computer. available hotels under "
+        "2000 Euro total in central Italy. AI overview unavailable. "
+        "People also ask."
+    ),
+}
+
 LEFTOVER_EXTENSIONS = {
     "ok": True,
     "title": "Extensions - Chromium",
@@ -1911,6 +1971,65 @@ def test_leftover_google_newtab_is_not_hotel_results():
     assert look_is_leftover_for_ask(LEFTOVER_GOOGLE_NEWTAB_HOTEL, LIVE_ITALY_HOTEL) is False
 
 
+def test_google_serp_without_hotel_prices_is_unfinished():
+    """A focused-window Google SERP is not hotel results and not done."""
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    assert look_has_hotel_results(LIVE_GOOGLE_SERP_HOTEL) is False
+    assert look_is_travel_site(LIVE_GOOGLE_SERP_HOTEL) is False
+    assert look_is_unfinished_hotel_search(LIVE_GOOGLE_SERP_HOTEL) is True
+    assert needs_hotel_followthrough(LIVE_ITALY_HOTEL, LIVE_GOOGLE_SERP_HOTEL, q) is True
+    assert look_is_unfinished_hotel_search(ITALY_HOTEL_RESULTS) is False
+    assert needs_hotel_followthrough(LIVE_ITALY_HOTEL, ITALY_HOTEL_RESULTS, q) is False
+
+
+def test_continue_web_search_google_serp_types_travel_url_or_dates():
+    """After the live Google SERP look, type Booking (or dates), do not stop."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        blob = " ".join(typed).lower()
+        if "booking.com" in blob or "check-in" in blob or "checkin=" in blob:
+            return dict(ITALY_HOTEL_RESULTS)
+        return dict(LIVE_GOOGLE_SERP_HOTEL)
+
+    out = continue_web_search(
+        dict(LIVE_GOOGLE_SERP_HOTEL),
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert typed, "unfinished Google SERP must type a travel URL or dates"
+    blob = " ".join(typed).lower()
+    assert all(_typed_is_user_query(t) for t in typed), typed
+    assert "use the computer" not in blob
+    assert "dismiss popups" not in blob
+    assert "do not invent" not in blob
+    continued = (
+        "booking.com" in blob
+        or "check-in" in blob
+        or "checkin=" in blob
+        or any("202" in t for t in typed)
+    )
+    assert continued, typed
+    assert out.get("_hotel_followed") or look_has_hotel_results(out)
+
+
 def test_continue_web_search_google_newtab_hotel_leak_types():
     """Google New Tab whose caption leaks 'hotels in' must still type."""
     clicks: list[tuple[int, int]] = []
@@ -1943,6 +2062,8 @@ def test_continue_web_search_google_newtab_hotel_leak_types():
         look_again=look_again,
     )
     assert typed, "leftover Google New Tab must type the hotel query"
+    assert all(_typed_is_user_query(t) for t in typed), typed
+    assert "use the computer" not in " ".join(typed).lower()
     assert any(
         token in t.lower()
         for t in typed
@@ -1989,6 +2110,10 @@ async def test_voice_ask_leftover_google_newtab_hotel_keeps_going(
     assert body["reply"] != _WEB_STUCK
     if typed:
         blob = " ".join(typed).lower()
+        assert all(_typed_is_user_query(t) for t in typed), typed
+        assert "use the computer" not in blob
+        assert "dismiss popups" not in blob
+        assert "do not invent" not in blob
         assert any(
             token in blob for token in ("hotel", "rome", "italy", "florence", "tuscany")
         ), typed
@@ -2026,6 +2151,92 @@ async def test_voice_ask_leftover_google_homepage_hotel_keeps_going(
     assert {"type", "run_app"} & set(tools)
     assert tools != ["see_screen"]
     assert body["reply"] != _WEB_STUCK
+    reset_last_look()
+
+
+def test_speak_web_job_hotel_serp_caption_is_not_the_reply():
+    """A focused-window Google SERP caption is not 3 hotel options."""
+    from app.jarvis.voice_ask import _speak_looked, _speak_web_job
+
+    looked = dict(LIVE_GOOGLE_SERP_HOTEL)
+    looked["_typed_query"] = web_search_query(LIVE_ITALY_HOTEL)
+    body = _speak_web_job(
+        LIVE_ITALY_HOTEL, looked, ["run_app", "see_screen", "type"], opened=True
+    )
+    low = body["reply"].lower()
+    assert "focused window" not in low
+    assert "the search query reads" not in low
+    assert "ai overview" not in low
+    via = _speak_looked(
+        looked, ["run_app", "see_screen", "type"], opened=True, asked=LIVE_ITALY_HOTEL
+    )
+    assert "focused window" not in via["reply"].lower()
+    assert "the search query reads" not in via["reply"].lower()
+    picked = _speak_web_job(
+        LIVE_ITALY_HOTEL, dict(ITALY_HOTEL_RESULTS), ["see_screen"], opened=True
+    )
+    assert "eden" in picked["reply"].lower() or "hotel" in picked["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_hotel_google_serp_continues_not_caption(
+    monkeypatch, tmp_path
+):
+    """Live stuck SERP: keep going (Booking URL or dates), never speak caption.
+
+    look_speed=off must not skip followthrough. Typed text must not include
+    Use the computer / dismiss popups / Do not invent.
+    """
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+    reset_last_look()
+    remember_last_look(dict(LIVE_GOOGLE_SERP_HOTEL))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_GOOGLE_SERP_HOTEL),
+        dict(LIVE_GOOGLE_SERP_HOTEL),
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    urls = " ".join(
+        str(item.get("url") or item.get("opened") or "") for item in launched
+    ).lower()
+    typed_blob = " ".join(typed).lower()
+    continued = (
+        "booking.com" in urls
+        or "booking.com" in typed_blob
+        or "check-in" in typed_blob
+        or "checkin=" in typed_blob
+        or any("202" in t for t in typed)
+    )
+    assert continued, f"tools={tools} typed={typed} urls={urls}"
+    assert all(_typed_is_user_query(t) for t in typed), typed
+    assert "use the computer" not in typed_blob
+    assert "dismiss popups" not in typed_blob
+    assert "do not invent" not in typed_blob
+    low = body["reply"].lower()
+    assert "focused window" not in low
+    assert "the search query reads" not in low
+    assert "ai overview" not in low
     reset_last_look()
 
 
