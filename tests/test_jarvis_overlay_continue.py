@@ -12,6 +12,9 @@ from app.jarvis.overlay import (
     BOOKING_DATES_CLICK,
     BOOKING_DEST_CLICK,
     BOOKING_SEARCH_CLICK,
+    COOLBLUE_COOKIE_ACCEPT_CLICK,
+    COOLBLUE_COOKIE_DISMISS_CLICKS,
+    COOLBLUE_COOKIE_REJECT_CLICK,
     HOTEL_SEARCH_ALT_MAX,
     HOTEL_BOUNCE_BOOKING_BEFORE_ALT,
     HOTEL_SEARCH_REOPEN_MAX,
@@ -56,6 +59,7 @@ from app.jarvis.overlay import (
     look_is_abuse_block,
     look_is_http_error,
     look_is_leftover_for_ask,
+    look_is_coolblue_cookie_modal,
     look_is_nl_retailer,
     look_is_retailer_block,
     ask_wants_cart,
@@ -116,6 +120,14 @@ LIVE_COOLBLUE_CART = (
     "to the cart. Dismiss cookies. Do not invent, check out, or pay. Reply "
     "with both names, euro prices, and cart confirmation. If coolblue or bol "
     "is blocked, use amazon.nl."
+)
+# Live 2026-09-11 SHA 7cd1c7c / PR #44: cookie-dismiss did not click.
+# Modal stayed up until nginx 504. This is the repro ask.
+LIVE_COOLBLUE_BASKET = (
+    "Use the computer. Open coolblue.nl. Dismiss cookies. Add two different "
+    "in-stock products to the basket only. Stop before payment. Reply with "
+    "both names and euro prices and confirm they are in the basket. If "
+    "coolblue is blocked, use amazon.nl."
 )
 WEATHER = "use Chrome to look up the weather in Amsterdam"
 LIVE_WEATHER = (
@@ -205,6 +217,8 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
     assert ASK_WEB_FIRST_ATTEMPT_S <= 120.0
     hotel_left = web_job_deadline(LIVE_ITALY_HOTEL) - time.monotonic()
     assert hotel_left <= ASK_WEB_FIRST_ATTEMPT_S + 0.5
+    cart_left = web_job_deadline(LIVE_COOLBLUE_BASKET) - time.monotonic()
+    assert cart_left <= ASK_WEB_FIRST_ATTEMPT_S + 0.5
     assert hotel_left < 180.0 - ASK_WEB_REPLY_HEADROOM_S + 0.5
 
 
@@ -2982,6 +2996,32 @@ COOLBLUE_COOKIE = {
     ),
 }
 
+# Live 2026-09-11 noVNC: Coolblue COOKIES. Smaakmakers. card. Vision
+# named no (x,y). Buttons are Alles accepteren + Zelf instellen.
+# Body mentions cookie-en privacyverklaring (must not be "footer").
+LIVE_COOLBLUE_COOKIE_MODAL = {
+    "ok": True,
+    "title": "Coolblue - Allereerst voor een glimlach - Chromium",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "COOKIES. Smaakmakers. A white cookie consent modal covers "
+        "coolblue.nl. A man in a blue Coolblue shirt holds two cookies. "
+        "Cookie-en privacyverklaring. Standaard dropdown. "
+        "Alles accepteren. Zelf instellen. No search field. "
+        "No product names. No euro prices. No basket."
+    ),
+}
+
+COOLBLUE_HOME_AFTER_COOKIE = {
+    "ok": True,
+    "title": "Coolblue - Allereerst voor een glimlach - Chromium",
+    "url": "https://www.coolblue.nl/",
+    "vision_description": (
+        "Coolblue homepage. Search box at (640, 200). Laptops. "
+        "No cookie modal. No basket. No euro prices."
+    ),
+}
+
 GOOGLE_CART_ASK = {
     "ok": True,
     "title": (
@@ -3443,6 +3483,9 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
     assert ask_wants_shop(LIVE_COOLBLUE_CART) is True
     assert ask_wants_cart(LIVE_COOLBLUE_CART) is True
     assert ask_wants_payment(LIVE_COOLBLUE_CART) is False
+    assert ask_wants_shop(LIVE_COOLBLUE_BASKET) is True
+    assert ask_wants_cart(LIVE_COOLBLUE_BASKET) is True
+    assert ask_wants_payment(LIVE_COOLBLUE_BASKET) is False
     assert ask_wants_cart(LIVE_CART) is True
     assert ask_wants_payment(LIVE_CART) is False
     assert ask_wants_payment(
@@ -3454,10 +3497,13 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
     ) is False
     assert look_is_pay_control(look_blob_title_pay(), LIVE_COOLBLUE_CART) is False
     assert shop_home_url(LIVE_COOLBLUE_CART) == "https://www.coolblue.nl/"
+    assert shop_home_url(LIVE_COOLBLUE_BASKET) == "https://www.coolblue.nl/"
     q = web_search_query(LIVE_COOLBLUE_CART)
     typed_q = shop_typed_query(LIVE_COOLBLUE_CART)
     assert _cart_query_is_clean(q)
     assert _cart_query_is_clean(typed_q)
+    assert _cart_query_is_clean(web_search_query(LIVE_COOLBLUE_BASKET))
+    assert _cart_query_is_clean(shop_typed_query(LIVE_COOLBLUE_BASKET))
     assert _typed_is_user_query(q)
     assert _typed_is_user_query(typed_q)
     assert "google.com" not in q.lower()
@@ -3465,6 +3511,11 @@ def test_do_not_checkout_is_constraint_not_cart_abort():
     assert look_has_cart_results(GOOGLE_CART_ASK) is False
     assert look_has_cart_results(COOLBLUE_TWO_PRODUCTS) is True
     assert overlay_kind(COOLBLUE_COOKIE) == "cookie"
+    assert overlay_kind(LIVE_COOLBLUE_COOKIE_MODAL) == "cookie"
+    assert overlay_kind(GOOGLE_CART_ASK, goal=LIVE_COOLBLUE_CART) is None
+    assert look_is_coolblue_cookie_modal(LIVE_COOLBLUE_COOKIE_MODAL) is True
+    assert look_is_coolblue_cookie_modal(GOOGLE_CART_ASK) is False
+    assert look_is_footer(LIVE_COOLBLUE_COOKIE_MODAL) is False
     tools = ["run_app", "see_screen", "click", "type", "keys"]
     leak = _speak_web_job(LIVE_COOLBLUE_CART, dict(GOOGLE_CART_ASK), tools, opened=True)
     assert leak["reply"] != _STOP_PAY
@@ -3547,6 +3598,130 @@ def test_continue_web_search_coolblue_cookie_then_cart_not_google():
     assert "i typed the search" not in spoken["reply"].lower()
     low = spoken["reply"].lower()
     assert "sonicare" in low or "philips" in low
+
+
+def test_coolblue_cookie_modal_clicks_dismiss_before_cart_search():
+    """Live Coolblue CMP look must click dismiss before any cart search."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    acted: list[tuple] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        acted.append(("click", int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        acted.append(("type", str(text)))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        acted.append(("keys", str(combo)))
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        if looks["n"] == 1:
+            return dict(COOLBLUE_HOME_AFTER_COOKIE)
+        return dict(COOLBLUE_TWO_PRODUCTS)
+
+    plan = overlay_dismiss_plan(LIVE_COOLBLUE_COOKIE_MODAL, goal=LIVE_COOLBLUE_BASKET)
+    assert plan is not None
+    assert plan.kind == "cookie"
+    assert plan.click == COOLBLUE_COOKIE_ACCEPT_CLICK
+    assert plan.click in COOLBLUE_COOKIE_DISMISS_CLICKS
+
+    out = continue_web_search(
+        dict(LIVE_COOLBLUE_COOKIE_MODAL),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    clicks = [a for a in acted if a[0] == "click"]
+    typed = [a[1] for a in acted if a[0] == "type"]
+    assert clicks, "must click Coolblue cookie dismiss"
+    assert clicks[0][1:] == COOLBLUE_COOKIE_ACCEPT_CLICK
+    type_idx = next((i for i, a in enumerate(acted) if a[0] == "type"), None)
+    click_idx = next(i for i, a in enumerate(acted) if a[0] == "click")
+    assert type_idx is None or click_idx < type_idx, acted
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert all("google.com/search" not in (t or "").lower() for t in typed), typed
+    assert all("google.com/search" not in (u or "").lower() for u in opened), opened
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    assert "i typed the search" not in spoken["reply"].lower()
+    low = spoken["reply"].lower()
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+
+
+def test_coolblue_cookie_modal_stuck_falls_back_to_amazon():
+    """Cookie still up after dismiss clicks — open amazon.nl, do not 504."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        if any("amazon.nl" in (u or "") for u in opened):
+            return dict(AMAZON_NL_TWO_PRODUCTS)
+        return dict(LIVE_COOLBLUE_COOKIE_MODAL)
+
+    out = continue_web_search(
+        dict(LIVE_COOLBLUE_COOKIE_MODAL),
+        goal=LIVE_COOLBLUE_BASKET,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert clicks, "must click cookie dismiss before falling back"
+    assert clicks[0] == COOLBLUE_COOKIE_ACCEPT_CLICK
+    assert COOLBLUE_COOKIE_REJECT_CLICK in clicks or len(clicks) >= OVERLAY_DISMISS_MAX
+    assert any("amazon.nl" in (u or "") for u in opened), opened
+    assert all("google.com/search" not in (t or "").lower() for t in typed), typed
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    spoken = _speak_web_job(
+        LIVE_COOLBLUE_BASKET,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _STOP_PAY
+    low = spoken["reply"].lower()
+    assert "sony" in low or "logitech" in low or "headphones" in low
 
 
 def test_continue_web_search_cart_google_leak_returns_to_coolblue():
@@ -3635,6 +3810,57 @@ async def test_voice_ask_do_not_checkout_coolblue_cart(monkeypatch, tmp_path):
     urls = [str(p.get("url") or "") for p in launched]
     assert any("coolblue.nl" in u for u in urls), urls
     assert all("google.com/search" not in u.lower() for u in urls), urls
+    assert all(_cart_query_is_clean(t) for t in typed), typed
+    assert body["reply"] != _STOP_PAY
+    low = body["reply"].lower()
+    assert "i typed the search" not in low
+    assert "sonicare" in low or "philips" in low
+    assert "89" in low
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_coolblue_cookie_modal_dismisses_then_cart(
+    monkeypatch, tmp_path
+):
+    """Ask path: live Coolblue CMP must click dismiss, then speak basket."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_COOLBLUE_COOKIE_MODAL),
+        dict(COOLBLUE_HOME_AFTER_COOKIE),
+        dict(COOLBLUE_TWO_PRODUCTS),
+    ]
+
+    def fake_see(ctx, args):
+        urls = [str(p.get("url") or "") for p in launched]
+        if any("google.com/search" in u for u in urls):
+            return dict(GOOGLE_CART_ASK)
+        if looks:
+            return dict(looks.pop(0))
+        return dict(COOLBLUE_TWO_PRODUCTS)
+
+    _patch_voice_ask_web(
+        monkeypatch,
+        [dict(LIVE_COOLBLUE_COOKIE_MODAL)],
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+    monkeypatch.setattr("app.jarvis.tools._see_screen", fake_see)
+    body = await run_voice_ask(LIVE_COOLBLUE_BASKET)
+    urls = [str(p.get("url") or "") for p in launched]
+    assert any("coolblue.nl" in u for u in urls), urls
+    assert all("google.com/search" not in u.lower() for u in urls), urls
+    assert clicks, "must click Coolblue cookie dismiss"
+    assert clicks[0] == COOLBLUE_COOKIE_ACCEPT_CLICK
     assert all(_cart_query_is_clean(t) for t in typed), typed
     assert body["reply"] != _STOP_PAY
     low = body["reply"].lower()

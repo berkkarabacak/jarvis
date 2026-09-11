@@ -112,7 +112,13 @@ _COOKIE_OVERLAY_RE = re.compile(
     r"cookie\s+(?:banner|modal|consent|wall|notice)|"
     r"consent\s+(?:banner|modal|overlay)|"
     r"terms\s+(?:of\s+use\s+)?accept|"
-    r"accept\s+(?:all\s+)?cookies"
+    r"accept\s+(?:all\s+)?cookies|"
+    r"alles\s*accepteren|"
+    r"alles\s*weigeren|"
+    r"\bweigeren\b|"
+    r"smaakmakers|"
+    r"zelf\s*instellen|"
+    r"cookievoorkeuren"
     r")",
     re.I,
 )
