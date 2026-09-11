@@ -1462,6 +1462,16 @@ def _continue_web_job_after_see(
             acted.append("keys")
         return keys(combo=combo)
 
+    def open_url(url: str = "", **_k):
+        if "run_app" not in acted:
+            acted.append("run_app")
+        try:
+            from app.jarvis.voice_ask import _open_chrome_url
+
+            return _open_chrome_url(str(url))
+        except Exception:
+            return {"ok": False}
+
     current = looked
     deadline = None
     try:
@@ -1478,6 +1488,7 @@ def _continue_web_job_after_see(
         type_text=type_now,
         keys=keys_now,
         look_again=look_again,
+        open_url=open_url,
         deadline=deadline,
     )
     if isinstance(out, dict) and out.get("_typed_query"):

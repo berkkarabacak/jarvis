@@ -581,6 +581,10 @@ _FOOTER_TALK_RE = re.compile(
 )
 _LOOK_AT_SCREEN_RE = re.compile(r"look at the screen\.?", re.I)
 _WEB_STUCK = "I could not finish the search."
+_BOOKING_BOUNCED = (
+    "Booking searchresults bounced back to the homepage. "
+    "I could not finish the search."
+)
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 _TURKEY_INTERESTING = (
     "Istanbul cats treat the city like they own it. "
@@ -2313,9 +2317,16 @@ def _speak_web_job(
         # Loading / submitting searchresults — in-progress after type.
         reply = "I typed the search." if acted else "I opened the page."
     elif travel_form and not look_has_hotel_results(looked):
-        # Empty Booking homepage. After click/type this is a bounce, not
-        # typed-success. Never invent hotel prices.
-        reply = "I opened the page."
+        # Empty Booking homepage after type / bounce. Never "I opened
+        # the page." / "I typed the search." as success. Recover should
+        # have re-opened searchresults first; this is the stuck line.
+        bounced = bool(
+            looked.get("_hotel_bounced")
+            or looked.get("_hotel_reopened")
+            or looked.get("_saw_searchresults")
+            or typed
+        )
+        reply = _BOOKING_BOUNCED if bounced or acted else "I opened the page."
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
@@ -2833,31 +2844,46 @@ def _wait_until_page_ready(
 
     look_speed=off does not skip this. Sleep seconds between looks, not 0.4s.
     """
-    from app.jarvis.overlay import BLANK_LOOKS_BEFORE_OMNIBOX
+    from app.jarvis.overlay import (
+        BLANK_LOOKS_BEFORE_OMNIBOX,
+        look_is_booking_searchresults,
+        look_is_hotel_search_pending,
+    )
 
     current = looked
     blank_looks = 0
+    saw_searchresults = bool(
+        current.get("_saw_searchresults")
+        or look_is_booking_searchresults(current)
+        or look_is_hotel_search_pending(current)
+    )
     cap = 64 if deadline is not None else max(1, int(BLANK_LOOKS_BEFORE_OMNIBOX))
     for _ in range(cap):
+        if look_is_booking_searchresults(current) or look_is_hotel_search_pending(
+            current
+        ):
+            saw_searchresults = True
         if look_is_page_ready(current, asked):
-            return current
+            break
         if look_is_leftover_for_ask(current, asked):
-            return current
+            break
         if not look_is_loading_or_blank(current) and not look_is_empty_desktop(
             current
         ):
-            return current
+            break
         blank_looks += 1
         if blank_looks >= BLANK_LOOKS_BEFORE_OMNIBOX or (
             deadline is not None and time.monotonic() >= deadline
         ):
-            return current
+            break
         wait = web_look_pause_s()
         if wait > 0:
             time.sleep(wait)
         current = _look_opened_site(asked)
         _note_tool(tools, "see_screen")
         current = _dismiss_overlays_if_needed(asked, current, tools)
+    if saw_searchresults:
+        current["_saw_searchresults"] = True
     return current
 
 
@@ -2898,6 +2924,10 @@ def _continue_web_job(
         _note_tool(tools, "scroll")
         return _scroll_now(dy=int(dy))
 
+    def open_url(url: str = "", **_k):
+        _note_tool(tools, "run_app")
+        return _open_chrome_url(str(url))
+
     return continue_web_search(
         current,
         goal=asked,
@@ -2906,6 +2936,7 @@ def _continue_web_job(
         keys=keys,
         look_again=look_again,
         scroll=scroll,
+        open_url=open_url,
         deadline=deadline,
     )
 
