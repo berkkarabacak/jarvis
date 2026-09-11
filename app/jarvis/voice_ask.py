@@ -2284,7 +2284,12 @@ def _speak_web_job(
     )
     hotel = ask_wants_hotel(asked)
     unfinished = hotel and look_is_unfinished_hotel_search(looked)
-    if look_is_captcha(looked):
+    overlay = look_has_blocking_overlay(looked, goal=asked)
+    if overlay:
+        # Genius / cookie / Restore still up — never finalize _WEB_STUCK.
+        # The ask path must dismiss, then type dates / destination.
+        reply = "I opened the page."
+    elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
     elif leftover and not shows_ask:

@@ -78,13 +78,43 @@ _SANDBOX_RE = re.compile(
     r")",
     re.I,
 )
+# Live Booking Genius OCR often concatenates the heading
+# ("Signin, savemoney") and misses spaces. "Genius" on a priced
+# hotel card is a loyalty badge, not this modal.
 _SIGNIN_RE = re.compile(
     r"("
-    r"sign in, save money|"
-    r"genius|"
-    r"sign[\s-]?in (?:modal|dialog|popup|overlay|banner)|"
+    r"sign[\s-]?in,?\s*save[\s-]?money|"
+    r"signin,?\s*savemoney|"
+    r"sign[\s-]?in\s+to\s+save|"
+    r"save\s*money\s+by\s+signing|"
+    r"\bgenius\b.{0,96}(?:sign[\s-]?in|save\s*money|savemoney|modal|dialog|popup|membership)|"
+    r"(?:sign[\s-]?in|save\s*money|savemoney|modal|dialog|popup|membership).{0,96}\bgenius\b|"
+    r"sign[\s-]?in (?:modal|dialog|popup|overlay|banner|card)|"
     r"login (?:modal|dialog|popup|overlay)|"
-    r"save money by signing"
+    r"sign[\s-]?in.{0,40}save\s*\d+\s*%|"
+    r"free(?:\s+\w+)?\s+booking\.com\s+membership"
+    r")",
+    re.I,
+)
+# Modal / dialog language — Genius badges on a result list do not have this.
+_SIGNIN_MODAL_RE = re.compile(
+    r"("
+    r"\b(?:modal|dialog|popup|overlay|banner|card)\b|"
+    r"sign[\s-]?in,?\s*save[\s-]?money|"
+    r"signin,?\s*savemoney|"
+    r"sign[\s-]?in\s+to\s+save|"
+    r"sign[\s-]?in or register|"
+    r"membership|"
+    r"(?:the\s+)?(?:x|×)\s+(?:button|control)"
+    r")",
+    re.I,
+)
+# A covering dialog on Booking with no readable prices — dismiss, do not finish.
+_COVERING_MODAL_RE = re.compile(
+    r"("
+    r"(?:modal|dialog|popup|overlay)\s+(?:covers?|covering|blocks?|blocking)|"
+    r"(?:covers?|covering|blocks?|blocking).{0,48}(?:modal|dialog|popup|overlay)|"
+    r"sign[\s-]?in (?:modal|dialog|popup|overlay|banner|card)"
     r")",
     re.I,
 )
@@ -226,13 +256,15 @@ _HOTEL_RESULT_RE = re.compile(
     r")",
     re.I,
 )
-# "hotels in" leaked from the ask on a Google New Tab is not results.
+# A search-results URL / "hotels in" caption is not priced options.
+# Need a named hotel or a visible price — not the Booking address bar.
 _HOTEL_RESULT_EVIDENCE_RE = re.compile(
     r"("
-    r"\bsearch results\b|"
     r"\bfrom \d+\s*(?:eur|usd|gbp|€|\$)\b|"
     r"\bhotel [A-Za-z]|"
-    r"\bprices? from\b"
+    r"\bprices? from\b|"
+    r"\b\d+\s*(?:eur|usd|gbp|€)\b|"
+    r"\btotal\s*(?:price|€|eur)"
     r")",
     re.I,
 )
@@ -484,12 +516,20 @@ def _title_is_restore(looked: dict[str, Any] | None) -> bool:
     return bool(_RESTORE_RE.search(title))
 
 
+def _hotel_price_evidence(blob: str) -> bool:
+    return bool(_HOTEL_RESULT_EVIDENCE_RE.search(blob or ""))
+
+
 def overlay_kind(
     looked: dict[str, Any] | None,
     *,
     goal: str = "",
 ) -> OverlayKind | None:
-    """Highest-priority blocking overlay on this look, or None."""
+    """Highest-priority blocking overlay on this look, or None.
+
+    Genius loyalty badges on a priced hotel list are not the sign-in
+    modal. A covering dialog on Booking with no readable prices is.
+    """
     if look_is_captcha(looked):
         # Never treat I'm not a robot as a cookie / sign-in dismiss.
         return None
@@ -499,8 +539,18 @@ def overlay_kind(
         return "restore"
     if _SANDBOX_RE.search(blob):
         return "sandbox"
-    if _SIGNIN_RE.search(blob) and not user_asked_sign_in(goal):
-        return "signin"
+    if not user_asked_sign_in(goal):
+        signin_hit = bool(_SIGNIN_RE.search(blob))
+        covering = bool(_COVERING_MODAL_RE.search(blob)) and look_is_travel_site(
+            item
+        )
+        if signin_hit or covering:
+            # Priced cards that mention Genius are not the modal — unless
+            # vision also names a sign-in / save-money dialog.
+            if _hotel_price_evidence(blob) and not _SIGNIN_MODAL_RE.search(blob):
+                pass
+            else:
+                return "signin"
     if _COOKIE_RE.search(blob):
         return "cookie"
     return None
@@ -627,8 +677,11 @@ def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
     """True when vision shows hotel search results, not the homepage form.
 
     A leftover Google New Tab / homepage that mentions the hotel ask
-    ("hotels in Rome") is not a result list. Untitled / blank / loading
-    is not results. look_speed=off does not change this.
+    ("hotels in Rome") is not a result list. A Booking search-results
+    URL with no readable names or prices is not results. A Genius /
+    sign-in / cookie overlay covering the list is not results.
+    Untitled / blank / loading is not results. look_speed=off does
+    not change this.
     """
     if (
         look_is_loading_or_blank(looked)
@@ -638,12 +691,14 @@ def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
         or look_is_leftover_surface(looked)
         or look_is_captcha(looked)
         or look_is_http_error(looked)
+        or look_has_blocking_overlay(looked)
     ):
         return False
     blob = look_blob(looked)
     if not _HOTEL_RESULT_RE.search(blob):
         return False
-    if _look_is_search_engine(looked) and not _HOTEL_RESULT_EVIDENCE_RE.search(blob):
+    # "hotels in" / searchresults.html in the address bar is not a list.
+    if not _hotel_price_evidence(blob):
         return False
     return True
 
@@ -1002,13 +1057,19 @@ def needs_web_query(
         return False
     if look_is_captcha(looked) or look_is_leftover_for_ask(looked, asked):
         return True
+    if look_has_blocking_overlay(looked, goal=asked):
+        # Genius / cookie / Restore still up — not done. URL tokens from
+        # searchresults.html are not priced options.
+        return True
     if look_has_hotel_results(looked):
         return False
     if look_is_loading_or_blank(looked) or look_is_empty_desktop(looked):
         return True
-    if look_has_blocking_overlay(looked, goal=asked):
-        return True
     if look_is_empty_destination(looked) or look_is_footer(looked):
+        return True
+    # Hotel job on Booking whose URL repeats the ask is not done until
+    # vision shows a named hotel and a price.
+    if ask_wants_hotel(asked) and look_is_travel_site(looked):
         return True
     if query_visible_on_look(looked, query):
         return False
@@ -1256,6 +1317,17 @@ def continue_web_search(
         blob = look_blob(current)
         if look_is_pay_control(blob) and "hotel" not in blob.lower():
             return _mark(current)
+        plan = overlay_dismiss_plan(current, goal=goal)
+        if plan is not None:
+            # Dismiss Genius / cookie / Restore / --no-sandbox before
+            # treating a search-results URL as done. Never Sign in.
+            if plan.click is not None:
+                click(x=plan.click[0], y=plan.click[1])
+            if plan.keys:
+                keys(combo=plan.keys)
+            _pause_after_web_act()
+            current = _mark(look_again() or current)
+            continue
         if look_is_captcha(current):
             if captcha_focus_started is None:
                 captcha_focus_started = time.monotonic()
