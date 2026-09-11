@@ -25,6 +25,7 @@ from app.jarvis.settings_store import (
     get_provider,
     get_quality_vs_price,
     get_realtime_voice,
+    get_talk_mode,
     get_talk_speed,
     public_view,
     save,
@@ -38,7 +39,8 @@ router = APIRouter(prefix="/api/jarvis", tags=["jarvis-settings"])
 
 # Hosted public Talk may persist the five Settings tabs without an API key:
 # helper + how-he-thinks / how-fast-he-works, voice, talk speed, look,
-# computer, and what he may do. Nothing else — no keys, budget, or connectors.
+# computer, talk mode, and what he may do. Nothing else — no keys, budget,
+# or connectors.
 PUBLIC_SAFE_SETTINGS_FIELDS = frozenset(
     {
         "model",
@@ -51,6 +53,7 @@ PUBLIC_SAFE_SETTINGS_FIELDS = frozenset(
         "look_speed",
         "permission_profile",
         "talk_speed",
+        "talk_mode",
     }
 )
 
@@ -67,6 +70,7 @@ class SettingsUpdateBody(BaseModel):
     realtime_voice: str | None = Field(default=None, max_length=32)
     look_speed: str | None = Field(default=None, max_length=8)
     talk_speed: str | None = Field(default=None, max_length=16)
+    talk_mode: str | None = Field(default=None, max_length=16)
     quality_vs_price: str | None = Field(default=None, max_length=16)
     monthly_budget_usd: float | None = Field(default=None, ge=0, le=1_000_000)
     daily_budget_usd: float | None = Field(default=None, ge=0, le=1_000_000)
@@ -182,6 +186,7 @@ def _snapshot() -> dict[str, Any]:
         "realtime_voice": get_realtime_voice(),
         "look_speed": get_look_speed(),
         "talk_speed": get_talk_speed(),
+        "talk_mode": get_talk_mode(),
         "quality_vs_price": get_quality_vs_price(),
         "monthly_budget_usd": get_monthly_budget_usd(),
         "daily_budget_usd": get_daily_budget_usd(),

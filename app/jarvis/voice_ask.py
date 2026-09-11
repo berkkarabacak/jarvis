@@ -4815,6 +4815,7 @@ def public_talk_sheet() -> dict[str, Any]:
             "look_speed": None,
             "permission_profile": None,
             "talk_speed": None,
+            "talk_mode": "computer",
         }
     computer = None
     try:
@@ -4839,6 +4840,7 @@ def public_talk_sheet() -> dict[str, Any]:
         "look_speed": view.get("look_speed"),
         "permission_profile": view.get("permission_profile"),
         "talk_speed": view.get("talk_speed"),
+        "talk_mode": view.get("talk_mode") or "computer",
     }
 
 
@@ -4882,12 +4884,14 @@ def listen_health(*, lite: bool = False) -> dict[str, Any]:
     }
     try:
         from app.jarvis.computer import public_computer_status
-        from app.jarvis.settings_store import get_computer_kind
+        from app.jarvis.settings_store import get_computer_kind, get_talk_mode
 
         body["computer_kind"] = get_computer_kind()
+        body["talk_mode"] = get_talk_mode()
         body["computer"] = public_computer_status()
     except Exception:
         body["computer_kind"] = "linux"
+        body["talk_mode"] = "computer"
         body["computer"] = {
             "kind": "linux",
             "label": "Linux",
