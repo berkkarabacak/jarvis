@@ -25,7 +25,9 @@ from app.jarvis.gateway import get_gateway, model_view
 from app.jarvis.realtime import openrouter_api_key
 from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
+    ask_wants_hotel,
     continue_web_search,
+    hotel_travel_url,
     look_has_blocking_overlay,
     look_has_hotel_results,
     look_is_captcha,
@@ -37,6 +39,9 @@ from app.jarvis.overlay import (
     look_is_leftover_surface,
     look_is_loading_or_blank,
     look_is_page_ready,
+    look_is_travel_site,
+    look_is_unfinished_hotel_search,
+    needs_hotel_followthrough,
     needs_web_query,
     overlay_dismiss_plan,
     query_visible_on_look,
@@ -2238,6 +2243,12 @@ def _web_job_caption_forbidden(text: str) -> bool:
         or _ICON_CATALOG_RE.search(raw)
         or _LOOK_AT_SCREEN_RE.search(raw)
         or _BLANK_PAGE_RE.search(raw)
+        or _STALE_SCREEN_CAPTION_RE.search(raw)
+        or re.search(
+            r"the search query reads|\bsearching[.…]*",
+            raw,
+            re.I,
+        )
         or look_is_captcha({"vision_description": raw, "title": raw[:200]})
     )
 
@@ -2271,6 +2282,8 @@ def _speak_web_job(
     shows_ask = query_visible_on_look(looked, query) or look_has_hotel_results(
         looked
     )
+    hotel = ask_wants_hotel(asked)
+    unfinished = hotel and look_is_unfinished_hotel_search(looked)
     if look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
@@ -2282,6 +2295,13 @@ def _speak_web_job(
         reply = "I stopped. I will not pay or check out."
     elif look_has_hotel_results(looked) and usable:
         reply = spoken
+    elif unfinished:
+        # A Google SERP / focused-window caption is not hotel options.
+        reply = (
+            "I typed the search."
+            if typed and not leftover
+            else _WEB_STUCK
+        )
     elif query_visible_on_look(looked, query) and usable:
         reply = spoken
     elif typed and usable and not leftover:
@@ -2843,6 +2863,37 @@ def _continue_web_job(
     )
 
 
+def _leave_hotel_serp_if_needed(
+    asked: str, looked: dict[str, Any], tools: list[str]
+) -> dict[str, Any]:
+    """Hotel/find job still on a Google SERP: open Booking with real dates.
+
+    A focused-window caption or 'Searching…' look is not done. Do not
+    speak that caption. look_speed=off does not skip this.
+    """
+    query = web_search_query(asked)
+    if not needs_hotel_followthrough(asked, looked, query):
+        return looked
+    if look_is_travel_site(looked) or look_has_hotel_results(looked):
+        return looked
+    if looked.get("_hotel_followed"):
+        return looked
+    url = hotel_travel_url(asked)
+    opened = _open_chrome_url(url, fresh_session=True)
+    if not opened.get("ok"):
+        return looked
+    _note_tool(tools, "run_app")
+    _wait_after_act()
+    current = _look_now(asked, app="chrome", fresh=True, skip_web_type=True)
+    if "see_screen" not in tools:
+        tools.append("see_screen")
+    current["_hotel_followed"] = True
+    current = _dismiss_overlays_if_needed(asked, current, tools)
+    if look_has_hotel_results(current):
+        return current
+    return _continue_web_job(asked, current, tools)
+
+
 def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]:
     """Look, type if this is a find/search job, then speak. Never a blank caption.
 
@@ -2883,6 +2934,7 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
         # A blank / loading / failed first look is not done. Wait, look again,
         # click+type, then speak. Never return a homepage caption here.
         looked = _continue_web_job(asked, looked, tools)
+        looked = _leave_hotel_serp_if_needed(asked, looked, tools)
         return _speak_looked(looked, tools, opened=True, asked=asked)
     blob = _look_blob(looked)
     if _looks_like_ssl_or_error_page(blob) and looked.get("ok"):
@@ -2929,6 +2981,7 @@ def _tell_from_current_screen(asked: str) -> dict[str, Any]:
 
     if wants_web_job(asked):
         looked = _continue_web_job(asked, looked, tools)
+        looked = _leave_hotel_serp_if_needed(asked, looked, tools)
         return _speak_looked(looked, tools, opened=False, asked=asked)
     if wants_news_tell(asked) or look_is_news_page(looked):
         return _finish_news_tell(
@@ -4004,8 +4057,11 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
         except Exception:
             wants_web_job = None
         if wants_web_job and wants_web_job(asked):
-            q = web_search_query(asked) or asked
-            url = "https://www.google.com/search?q=" + quote_plus(q)
+            if ask_wants_hotel(asked):
+                url = hotel_travel_url(asked)
+            else:
+                q = web_search_query(asked) or asked
+                url = "https://www.google.com/search?q=" + quote_plus(q)
     if not url and not _is_computer_ask(asked):
         return None
 
