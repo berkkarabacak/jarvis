@@ -1472,6 +1472,16 @@ def _continue_web_job_after_see(
         except Exception:
             return {"ok": False}
 
+    def focus_now(*, app="chrome", **_k):
+        if "focus_app" not in acted:
+            acted.append("focus_app")
+        try:
+            from app.jarvis.desktop import focus_app
+
+            return focus_app(app=app or "chrome")
+        except Exception:
+            return {"ok": False}
+
     current = looked
     deadline = None
     try:
@@ -1489,6 +1499,7 @@ def _continue_web_job_after_see(
         keys=keys_now,
         look_again=look_again,
         open_url=open_url,
+        focus=focus_now,
         deadline=deadline,
     )
     try:
