@@ -1749,6 +1749,10 @@ def _virtual_pc_ask_text(asked: str) -> str:
         return asked + "\n\n" + HIRE_JOB_STOP_PROMPT
     if not _is_computer_ask(asked):
         return asked
+    from app.jarvis.talk_mode import talk_mode_is_terminal
+
+    if talk_mode_is_terminal():
+        return asked
     bind_job_desktop(goal=asked)
     try:
         from app.jarvis.screen_viewer import screen_status, start_computer
@@ -2037,6 +2041,9 @@ def _look_now(
     skip_web_type: bool = False,
 ) -> dict[str, Any]:
     """Look at jarvis-computer. Uses see_screen."""
+    blocked = _talk_mode_driver_refuse("see_screen")
+    if blocked is not None:
+        return blocked
     from app.jarvis.tools import _see_screen
 
     args: dict[str, Any] = {
@@ -2060,6 +2067,9 @@ def _look_opened_site(asked: str) -> dict[str, Any]:
 def _click_now(x: int, y: int) -> dict[str, Any]:
     from app.jarvis.tools import _click
 
+    blocked = _talk_mode_driver_refuse("click")
+    if blocked is not None:
+        return blocked
     # Voice-ask already does look-then-leave-SERP. Skip the click-tool wrapper
     # so we do not double-open a publisher after a planned result click.
     return _click(_tool_ctx(), {"x": int(x), "y": int(y), "skip_serp_leave": True})
@@ -2068,12 +2078,18 @@ def _click_now(x: int, y: int) -> dict[str, Any]:
 def _type_now(text: str) -> dict[str, Any]:
     from app.jarvis.tools import _type_text
 
+    blocked = _talk_mode_driver_refuse("type")
+    if blocked is not None:
+        return blocked
     return _type_text(_tool_ctx(), {"text": text})
 
 
 def _keys_now(combo: str) -> dict[str, Any]:
     from app.jarvis.tools import _keys
 
+    blocked = _talk_mode_driver_refuse("keys")
+    if blocked is not None:
+        return blocked
     return _keys(_tool_ctx(), {"combo": combo})
 
 
@@ -2081,6 +2097,9 @@ def _close_windows_now() -> dict[str, Any]:
     from app.jarvis.capture import reset_look_target
     from app.jarvis.desktop import close_windows
 
+    blocked = _talk_mode_driver_refuse("close_windows")
+    if blocked is not None:
+        return blocked
     try:
         reset_look_target()
     except Exception:
@@ -2261,6 +2280,9 @@ def _headline_from_look(looked: dict[str, Any]) -> str:
 def _open_chrome_url(url: str, *, fresh_session: bool = False) -> dict[str, Any]:
     from app.jarvis.computer import linux_run_app, plan_linux_run_app
 
+    blocked = _talk_mode_driver_refuse("run_app")
+    if blocked is not None:
+        return blocked
     if fresh_session:
         _close_windows_now()
         _wait_after_act()
@@ -3971,6 +3993,19 @@ def _talk_allow_hit(tool: str) -> dict[str, Any] | bool | None:
     return shortcut_gate(tool)
 
 
+def _talk_mode_computer_refuse() -> dict[str, Any] | None:
+    """Terminal mode: do not open/look at the PC. None = Computer mode."""
+    from app.jarvis.talk_mode import refuse_computer_ask_payload
+
+    return refuse_computer_ask_payload()
+
+
+def _talk_mode_driver_refuse(tool: str) -> dict[str, Any] | None:
+    from app.jarvis.talk_mode import refuse_computer_tool_result
+
+    return refuse_computer_tool_result(tool)
+
+
 def _install_now(asked: str) -> dict[str, Any] | None:
     """Install a listed Linux VM app, then launch it. Never dump docker/exec."""
     from app.jarvis.virtual_pc import goal_is_install_job, goal_is_simple_talk
@@ -3983,6 +4018,9 @@ def _install_now(asked: str) -> dict[str, Any] | None:
         return None
     if _COMPOUND_AND_RE.search(asked or ""):
         return None
+    blocked = _talk_mode_computer_refuse()
+    if blocked is not None:
+        return blocked
     allow_hit = _talk_allow_hit("install")
     if allow_hit is False:
         return None
@@ -4068,6 +4106,9 @@ def _open_file_now(asked: str) -> dict[str, Any] | None:
         return None
     if not _OPEN_FILE_VERB_RE.search(asked or ""):
         return None
+    blocked = _talk_mode_computer_refuse()
+    if blocked is not None:
+        return blocked
     allow_hit = _talk_allow_hit("run_app")
     if allow_hit is False:
         return None
@@ -4449,8 +4490,11 @@ def _hire_children_now(asked: str) -> dict[str, Any] | None:
             gw.run("wait_child", {"id": cid}, source="ask", confirmed=False)
             _note_tool(tools, "wait_child")
     opened: list[str] = []
-    if _goal_wants_html_open(asked) or re.search(
-        r"\b(files?|html|page)\b", asked or "", re.I
+    from app.jarvis.talk_mode import talk_mode_is_terminal
+
+    if not talk_mode_is_terminal() and (
+        _goal_wants_html_open(asked)
+        or re.search(r"\b(files?|html|page)\b", asked or "", re.I)
     ):
         host_files = _ensure_hire_html_files(asked, wanted)
         opened = _open_html_on_linux(asked, host_files)
@@ -4516,6 +4560,9 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
         return None
     if wants_news_tell(asked) or goal_is_simple_talk(asked):
         return None
+    blocked = _talk_mode_computer_refuse()
+    if blocked is not None:
+        return blocked
 
     from app.jarvis.computer import bind_job_desktop, linux_run_app, plan_linux_run_app
 
@@ -4692,6 +4739,11 @@ async def run_voice_ask(text: str) -> dict[str, Any]:
             str(hired.get("reply") or ""), hire_fallback_reply(asked)
         )
         return hired
+
+    if _is_computer_ask(asked):
+        blocked = _talk_mode_computer_refuse()
+        if blocked is not None:
+            return blocked
 
     opened = _open_site_now(asked)
     if opened is not None:
