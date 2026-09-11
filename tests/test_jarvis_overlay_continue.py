@@ -222,6 +222,43 @@ def test_web_search_query_strips_use_the_computer_and_option_list():
     assert ask_wants_hotel(LIVE_ITALY_HOTEL) is True
 
 
+# Live 2026-09-11 SHA 8de1618: Booking searchresults URL + Genius modal.
+# Vision named the address bar / "hotels in" but no readable prices.
+# OCR mashed the heading to "Signin, savemoney". Ask returned _WEB_STUCK
+# with only run_app + see_screen — no click/keys.
+LIVE_BOOKING_GENIUS = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=available+hotels+under+2000+Euro+total+in+central+Italy+"
+        "Rome+Florence+or+Tuscany&checkin=2026-10-02&checkout=2026-10-05"
+    ),
+    "vision_description": (
+        "Booking.com official site. The address bar shows a search-results URL "
+        "for hotels in central Italy, Rome, Florence, or Tuscany under 2000 Euro. "
+        "A white Genius popup: Signin, savemoney. Signin to save10% or more with "
+        "a free Booking.com membership. Signin or register. Close X at (920, 170). "
+        "No readable hotel names or prices."
+    ),
+}
+
+# Same stuck frame when vision names the URL and a covering modal, not Genius.
+LIVE_BOOKING_GENIUS_URL_ONLY = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=hotels+in+central+Italy+Rome+Florence+Tuscany"
+    ),
+    "vision_description": (
+        "Booking.com official site. Search-results URL for hotels in Rome, "
+        "Florence, or Tuscany. A sign-in modal covers the list. "
+        "No readable hotel names or prices."
+    ),
+}
+
+
 def test_overlay_kinds_from_live_failure():
     genius = {
         "ok": True,
@@ -254,6 +291,51 @@ def test_overlay_kinds_from_live_failure():
     assert look_has_blocking_overlay(genius) is True
     assert look_is_empty_desktop(desktop) is True
     assert look_is_empty_desktop(genius) is False
+
+
+def test_live_genius_mashed_ocr_is_signin_not_hotel_results():
+    """Live Booking Genius: mashed 'Signin, savemoney' must dismiss, not finish."""
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    for looked in (LIVE_BOOKING_GENIUS, LIVE_BOOKING_GENIUS_URL_ONLY):
+        assert overlay_kind(looked, goal=LIVE_ITALY_HOTEL) == "signin"
+        assert look_has_blocking_overlay(looked, goal=LIVE_ITALY_HOTEL) is True
+        assert look_has_hotel_results(looked) is False
+        assert look_is_travel_site(looked) is True
+        assert needs_web_query(LIVE_ITALY_HOTEL, looked, q) is True
+        plan = overlay_dismiss_plan(looked, goal=LIVE_ITALY_HOTEL)
+        assert plan is not None
+        assert plan.kind == "signin"
+        assert plan.click is not None
+        assert plan.keys == "escape"
+        assert plan.click != (0, 0)
+    assert overlay_dismiss_plan(LIVE_BOOKING_GENIUS).click == (920, 170)
+    # Priced Genius badges on a result list are not the sign-in modal.
+    priced = {
+        "ok": True,
+        "title": "Hotels in Rome — Booking.com",
+        "url": "https://www.booking.com/searchresults.html",
+        "vision_description": (
+            "Hotels in central Rome. Hotel Eden. Genius 10% off. "
+            "Prices from 180 EUR."
+        ),
+    }
+    assert overlay_kind(priced, goal=LIVE_ITALY_HOTEL) is None
+    assert look_has_hotel_results(priced) is True
+    assert needs_web_query(LIVE_ITALY_HOTEL, priced, q) is False
+
+
+def test_speak_web_job_genius_is_not_web_stuck():
+    """A Genius-blocked first look must not finalize as _WEB_STUCK."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    body = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        dict(LIVE_BOOKING_GENIUS),
+        ["run_app", "see_screen"],
+        opened=True,
+    )
+    assert body["reply"] != _WEB_STUCK
+    assert "i could not finish the search" not in body["reply"].lower()
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():
@@ -2152,6 +2234,120 @@ async def test_voice_ask_leftover_google_homepage_hotel_keeps_going(
     assert tools != ["see_screen"]
     assert body["reply"] != _WEB_STUCK
     reset_last_look()
+
+
+def test_continue_web_search_genius_dismisses_then_types_dates():
+    """First blocked Genius look must click/keys, then type — not stop."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LIVE_BOOKING_GENIUS),
+        {
+            "ok": True,
+            "title": "Booking.com | Official site",
+            "url": "https://www.booking.com/",
+            "vision_description": (
+                "Booking.com. Where are you going? Search box is empty at (640, 320)."
+            ),
+        },
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert clicks, "Genius modal must be dismissed with a click"
+    assert (920, 170) in clicks or SIGNIN_DISMISS_CLICK in clicks
+    assert "escape" in keys
+    assert typed, "after Genius dismiss, type destination or dates"
+    assert all(_typed_is_user_query(t) for t in typed), typed
+    blob = " ".join(typed).lower()
+    assert "google.com" not in blob
+    assert any(
+        token in blob
+        for token in ("hotel", "rome", "italy", "florence", "tuscany", "checkin")
+    ), typed
+    assert look_has_blocking_overlay(out) is False
+    assert look_has_hotel_results(out) or out.get("_typed_query")
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_live_italy_genius_dismisses_not_web_stuck(
+    monkeypatch, tmp_path
+):
+    """Live Italy hotel ask + Genius modal: click/keys, then search. Stay on Booking."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(LIVE_BOOKING_GENIUS),
+        {
+            "ok": True,
+            "title": "Booking.com | Official site",
+            "url": "https://www.booking.com/",
+            "vision_description": (
+                "Booking.com. Where are you going? Search box is empty at (640, 320)."
+            ),
+        },
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=keys,
+        launched=launched,
+    )
+
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    assert "click" in tools or clicks, f"must dismiss Genius, tools={tools}"
+    assert "keys" in tools or "escape" in keys
+    assert clicks, "first blocked Genius look must click X / dismiss"
+    assert (920, 170) in clicks or SIGNIN_DISMISS_CLICK in clicks
+    assert typed, "after dismiss, continue toward destination / dates"
+    assert all(_typed_is_user_query(t) for t in typed), typed
+    typed_blob = " ".join(typed).lower()
+    urls = " ".join(
+        str(item.get("url") or item.get("opened") or "") for item in launched
+    ).lower()
+    assert "google.com/search" not in typed_blob
+    assert "booking.com" in urls
+    assert body["reply"] != _WEB_STUCK
+    assert "i could not finish the search" not in body["reply"].lower()
+    low = body["reply"].lower()
+    assert "eden" in low or "hotel" in low or "typed the search" in low
+    assert tools != ["run_app", "see_screen"]
 
 
 def test_speak_web_job_hotel_serp_caption_is_not_the_reply():
