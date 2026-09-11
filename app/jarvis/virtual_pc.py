@@ -260,8 +260,7 @@ _WEB_JOB_RE = re.compile(
     r"\b(?:use|using)\s+chrome\b|"
     r"\badd\b.{0,80}\bcart\b|"
     r"\bto\s+cart\b|"
-    r"\bin-stock\b|"
-    r"\b(bol\.com|coolblue\.nl|amazon\.nl)\b"
+    r"\bin-stock\b"
     r")",
     re.I,
 )

@@ -3185,6 +3185,80 @@ def test_bol_abuse_block_is_not_typed_success():
     assert "amazon" in after["reply"].lower()
 
 
+def test_automated_scripts_alone_is_not_an_abuse_block():
+    """Developer-guide copy is not a retailer IP wall."""
+    guide = {
+        "ok": True,
+        "title": "Developer Guide — bol.com",
+        "url": "https://developers.bol.com/",
+        "vision_description": (
+            "If you're a developer, check developers.bol.com. "
+            "Automated scripts that collect data should use the Open API."
+        ),
+    }
+    assert look_is_abuse_block(guide) is False
+    assert look_is_http_error(guide) is False
+    assert look_is_retailer_block(guide) is False
+    assert look_is_nl_retailer(guide) is True
+
+
+def test_retailer_fallback_requires_a_retailer_host():
+    """Google / leftover 403 is leftover recovery, not Coolblue."""
+    google_403 = {
+        "ok": True,
+        "title": "Access Denied",
+        "url": "https://www.google.com/",
+        "vision_description": "Access Denied HTTP 403. Unusual leftover tab.",
+    }
+    assert look_is_http_error(google_403) is True
+    assert look_is_nl_retailer(google_403) is False
+    assert look_is_retailer_block(google_403) is False
+    opened: list[str] = []
+
+    def click(*, x, y, **_k):
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        return dict(google_403)
+
+    continue_web_search(
+        dict(google_403),
+        goal=LIVE_CART,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 5,
+    )
+    assert not any("coolblue.nl" in u or "amazon.nl" in u for u in opened), opened
+
+
+def test_hotel_bath_products_is_still_a_hotel_job():
+    """Generic 'products' must not steal hotel follow-through."""
+    asked = "find a hotel in Rome with sustainable bath products"
+    assert ask_wants_hotel(asked) is True
+    assert ask_wants_shop(asked) is False
+
+
+def test_open_amazon_look_only_is_not_a_web_search_job():
+    """A retailer hostname alone is look-and-tell, not search continuation."""
+    asked = "open amazon.nl and tell me what is on the page"
+    assert wants_web_job(asked) is False
+    assert wants_web_job(LIVE_CART) is True
+    assert wants_web_job(GRINDER) is True
+
+
 def test_continue_web_search_retailer_block_opens_coolblue():
     """Shop abuse wall must run_app coolblue.nl before any typed-success."""
     from app.jarvis.voice_ask import _speak_web_job

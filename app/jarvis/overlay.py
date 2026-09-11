@@ -507,7 +507,8 @@ _HTTP_ERROR_RE = re.compile(
     re.I,
 )
 # Retailer IP / abuse walls (bol.com live 2026-09-11). Not a 403 title —
-# vision says temporarily blocked / possible abuse / automated scripts.
+# vision says temporarily blocked / possible abuse. "automated scripts"
+# alone is developer-guide copy, not a block page.
 _ABUSE_BLOCK_RE = re.compile(
     r"("
     r"temporarily blocked|"
@@ -516,8 +517,7 @@ _ABUSE_BLOCK_RE = re.compile(
     r"blocked due to (?:possible )?abuse|"
     r"your access to .{0,80} (?:has been )?(?:temporarily )?blocked|"
     r"ip (?:address )?(?:has been )?(?:temporarily )?blocked|"
-    r"blocked (?:for|due to) (?:possible )?abuse|"
-    r"automated scripts?"
+    r"blocked (?:for|due to) (?:possible )?abuse"
     r")",
     re.I,
 )
@@ -585,7 +585,7 @@ _ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "shop",
         re.compile(
-            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon|coolblue|products)\b",
+            r"\b(buy|shop|grinder|cart|coffee grinder|bol\.com|amazon|coolblue)\b",
             re.I,
         ),
     ),
@@ -1272,8 +1272,12 @@ def look_is_http_error(looked: dict[str, Any] | None) -> bool:
 
 
 def look_is_retailer_block(looked: dict[str, Any] | None) -> bool:
-    """Abuse / IP block / access denied — not a shop we can type into."""
-    return look_is_http_error(looked) or look_is_abuse_block(looked)
+    """Abuse / IP block / access denied on bol.com / coolblue / amazon.nl.
+
+    Generic 403 / access-denied leftovers stay on the leftover new-tab
+    path. Only a supported NL retailer wall triggers Coolblue / Amazon.
+    """
+    return look_is_nl_retailer(looked) and look_is_http_error(looked)
 
 
 def ask_wants_shop(asked: str) -> bool:
