@@ -1818,11 +1818,14 @@ async def test_voice_ask_leftover_403_focuses_new_tab_then_types(
 ):
     """Live leftover 403: one Ctrl+T, focus New Tab, type weather. Never leftover speech."""
     from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
     from app.jarvis.voice_ask import run_voice_ask
 
     monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
     settings_store.save({"look_speed": "off"})
     assert settings_store.get_look_speed() == "off"
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_SHOP))
 
     clicks: list[tuple[int, int]] = []
     typed: list[str] = []
@@ -1855,6 +1858,7 @@ async def test_voice_ask_leftover_403_focuses_new_tab_then_types(
     assert "visible desktop screenshot" not in low
     assert not low.rstrip().endswith('"access')
     assert "access." not in low
+    reset_last_look()
 
 
 @pytest.mark.asyncio
@@ -1912,12 +1916,6 @@ def test_continue_web_search_google_newtab_hotel_leak_types():
     clicks: list[tuple[int, int]] = []
     typed: list[str] = []
     keys: list[str] = []
-    looks = [
-        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
-        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
-        dict(ITALY_HOTEL_RESULTS),
-    ]
-    i = {"n": 0}
 
     def click(*, x, y, **_k):
         clicks.append((int(x), int(y)))
@@ -1932,11 +1930,12 @@ def test_continue_web_search_google_newtab_hotel_leak_types():
         return {"ok": True}
 
     def look_again():
-        i["n"] += 1
-        return dict(looks[min(i["n"], len(looks) - 1)])
+        if typed:
+            return dict(ITALY_HOTEL_RESULTS)
+        return dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL)
 
     out = continue_web_search(
-        looks[0],
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
         goal=LIVE_ITALY_HOTEL,
         click=click,
         type_text=type_text,
@@ -2187,11 +2186,14 @@ async def test_voice_ask_leftover_extensions_focuses_new_tab_then_types(
 ):
     """Live leftover Extensions: New Tab + omnibox weather. Never 'I typed the search'."""
     from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
     from app.jarvis.voice_ask import run_voice_ask
 
     monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
     settings_store.save({"look_speed": "off"})
     assert settings_store.get_look_speed() == "off"
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_EXTENSIONS))
 
     clicks: list[tuple[int, int]] = []
     typed: list[str] = []
@@ -2223,6 +2225,7 @@ async def test_voice_ask_leftover_extensions_focuses_new_tab_then_types(
     assert "extensions" not in low
     assert "chrome://extensions" not in low
     assert "bol.com" not in low
+    reset_last_look()
 
 
 GOOGLE_SORRY = {
