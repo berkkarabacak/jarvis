@@ -458,7 +458,7 @@ _SHOP_PRICED_ITEM_RE = re.compile(
     r"(\$\s*\d+(?:[.,]\d{1,2})?)",
 )
 _SHOP_CLAUSE_SPLIT_RE = re.compile(
-    r"(?<=[.!?])\s+|(?:\s+[•|]\s+)|\s+and\s+(?=[A-Za-z0-9].{0,80}\$)"
+    r"(?<=[.!?…])\s+|(?:\s+[•|]\s+)|\s+and\s+(?=[A-Za-z0-9].{0,80}\$)"
 )
 _DISMISS_LABEL_RE = re.compile(
     r"("
@@ -1923,10 +1923,10 @@ def _shop_priced_items(blob: str) -> list[tuple[str, str]]:
         ):
             continue
         for raw_title, price in _SHOP_PRICED_ITEM_RE.findall(clause):
-            title = re.sub(r"\s+", " ", raw_title).strip(" .,;:-—–")
+            title = re.sub(r"\s+", " ", raw_title).strip(" .,;:-—–…")
             title = _SEARCHING_CAPTION_RE.sub(" ", title)
             title = _COACHING_PHRASE_RE.sub(" ", title)
-            title = re.sub(r"\s+", " ", title).strip(" .,;:-—–")
+            title = re.sub(r"\s+", " ", title).strip(" .,;:-—–…")
             if len(re.findall(r"[A-Za-z0-9]{2,}", title)) < 2:
                 continue
             if re.search(r"\b(do not|reply with|priced result)\b", title, re.I):

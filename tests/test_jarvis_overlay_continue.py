@@ -3733,6 +3733,8 @@ def test_speak_web_job_shopping_compare_priced_vision_not_stuck():
     assert "$19.99" in low
     assert "$24.99" in low
     assert "I could not finish the search." not in low
+    assert not low.lstrip().startswith("…")
+    assert "searching" not in low.lower()
     assert look_has_shop_results(LIVE_GOOGLE_SHOPPING_EMPTY) is False
     assert shop_option_lines(LIVE_GOOGLE_SHOPPING_EMPTY) == []
     empty = _speak_web_job(
