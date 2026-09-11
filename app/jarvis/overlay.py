@@ -453,14 +453,6 @@ _GOOGLE_SHOPPING_LOOK_RE = re.compile(
     re.I,
 )
 _SHOP_DOLLAR_RE = re.compile(r"\$\s*\d+(?:[.,]\d{1,2})?")
-_SHOP_PRICE_RE = re.compile(
-    r"("
-    r"\$\s*\d+(?:[.,]\d{1,2})?"
-    r"|€\s*\d+(?:[.,]\d{1,2})?"
-    r"|\b\d+[.,]\d{2}\s*(?:usd|eur|euro)\b"
-    r")",
-    re.I,
-)
 _SHOP_PRICED_ITEM_RE = re.compile(
     r"([A-Za-z0-9][^$€\n]{2,90}?)(?:\s*[—–\-:]\s*|\s+)"
     r"(\$\s*\d+(?:[.,]\d{1,2})?)",
