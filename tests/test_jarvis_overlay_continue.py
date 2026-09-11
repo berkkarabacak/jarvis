@@ -19,6 +19,7 @@ from app.jarvis.overlay import (
     continue_web_search,
     dismiss_blocking_overlays,
     look_has_blocking_overlay,
+    look_has_hotel_results,
     look_is_captcha,
     look_is_empty_desktop,
     look_is_focused_new_tab,
@@ -42,9 +43,11 @@ from app.jarvis.voice_ask import (
     ASK_LOOK_ABORT_MS,
     ASK_TALK_ABORT_MS,
     ASK_WEB_ABORT_MS,
+    _WEB_STUCK,
     ask_abort_ms,
     ask_deadline_s,
     remaining_ask_deadline_s,
+    wants_control_screen,
 )
 from app.jarvis.virtual_pc import (
     after_see_must_act,
@@ -59,6 +62,13 @@ WEATHER = "use Chrome to look up the weather in Amsterdam"
 LIVE_WEATHER = (
     "Open Chrome. Look, click and type like a person. "
     "Look up today's weather in Amsterdam."
+)
+LIVE_ITALY_HOTEL = (
+    "Use the computer. Find available hotels under 2000 Euro total in central Italy "
+    "(Rome, Florence, or Tuscany) for a stay sometime in the next 3 months. "
+    "Open a real travel site, search real dates and prices, dismiss popups, and reply "
+    "with 3 concrete options: hotel name, city, check-in/out dates, nights, and total "
+    "price in euros. Do not invent. Do not book or pay."
 )
 
 UNTITLED_CHROME = {
@@ -100,6 +110,11 @@ def test_rome_hotel_is_a_web_computer_job_not_look_and_tell():
     assert wants_web_job("use Chrome") is True
     assert wants_web_job(WEATHER) is True
     assert wants_web_job(GRINDER) is True
+    assert wants_web_job(LIVE_ITALY_HOTEL) is True
+    assert goal_is_computer_job(LIVE_ITALY_HOTEL) is True
+    assert goal_is_simple_talk(LIVE_ITALY_HOTEL) is False
+    assert after_see_must_act(LIVE_ITALY_HOTEL) is True
+    assert wants_control_screen(LIVE_ITALY_HOTEL) is True
     assert goal_is_simple_talk(WEATHER) is False
 
 
@@ -112,6 +127,7 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
     assert ask_abort_ms("search for a hotel in Rome") == ASK_WEB_ABORT_MS
     assert ask_abort_ms("book a hotel in central Rome") == ASK_WEB_ABORT_MS
     assert ask_abort_ms("open booking.com and look for a hotel") == ASK_WEB_ABORT_MS
+    assert ask_abort_ms(LIVE_ITALY_HOTEL) == ASK_WEB_ABORT_MS
     assert ask_abort_ms(WEATHER) == ASK_WEB_ABORT_MS
     assert ask_abort_ms(GRINDER) == ASK_WEB_ABORT_MS
     assert ask_abort_ms("what's on the screen") == ASK_LOOK_ABORT_MS
@@ -1414,6 +1430,39 @@ NEW_TAB_CHROME = {
     "vision_description": "A Chromium New Tab. The omnibox is empty.",
 }
 
+# Live leftover: Chromium New Tab on Google, vision starts on Google then
+# cuts toward the hotel ask. Must not count as hotel results.
+LEFTOVER_GOOGLE_NEWTAB_HOTEL = {
+    "ok": True,
+    "title": "New Tab - Chromium",
+    "url": "chrome://newtab",
+    "vision_description": (
+        "A Chromium New Tab showing the Google homepage. The Google logo, "
+        "a search box, Debian, Web Store. Then looking for hotels in Rome, "
+        "Florence, or Tuscany under 2000 Euro."
+    ),
+}
+
+LEFTOVER_GOOGLE_HOME_HOTEL = {
+    "ok": True,
+    "title": "Google",
+    "url": "https://www.google.com/",
+    "vision_description": (
+        "Google homepage. The Google logo and a search box. "
+        "Then the goal is to find hotels in central Italy."
+    ),
+}
+
+ITALY_HOTEL_RESULTS = {
+    "ok": True,
+    "title": "Hotels in Rome — Booking.com",
+    "url": "https://www.booking.com/searchresults.html",
+    "vision_description": (
+        "Hotels in central Rome. Hotel Eden. Prices from 180 EUR. "
+        "Check-in 12 Oct, check-out 15 Oct, 3 nights."
+    ),
+}
+
 LEFTOVER_EXTENSIONS = {
     "ok": True,
     "title": "Extensions - Chromium",
@@ -1842,6 +1891,142 @@ async def test_voice_ask_leftover_last_look_skips_run_app(monkeypatch, tmp_path)
     low = body["reply"].lower()
     assert "bol.com" not in low
     assert "403" not in low
+    reset_last_look()
+
+
+def test_leftover_google_newtab_is_not_hotel_results():
+    """Vision that names the hotel ask on a Google New Tab is not done."""
+    assert look_is_focused_new_tab(LEFTOVER_GOOGLE_NEWTAB_HOTEL) is True
+    assert look_is_loading_or_blank(LEFTOVER_GOOGLE_NEWTAB_HOTEL) is True
+    assert look_has_hotel_results(LEFTOVER_GOOGLE_NEWTAB_HOTEL) is False
+    assert look_has_hotel_results(LEFTOVER_GOOGLE_HOME_HOTEL) is False
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    assert needs_web_query(LIVE_ITALY_HOTEL, LEFTOVER_GOOGLE_NEWTAB_HOTEL, q) is True
+    assert needs_web_query(LIVE_ITALY_HOTEL, LEFTOVER_GOOGLE_HOME_HOTEL, q) is True
+    assert look_has_hotel_results(ITALY_HOTEL_RESULTS) is True
+    assert look_is_leftover_for_ask(LEFTOVER_GOOGLE_NEWTAB_HOTEL, LIVE_ITALY_HOTEL) is False
+
+
+def test_continue_web_search_google_newtab_hotel_leak_types():
+    """Google New Tab whose caption leaks 'hotels in' must still type."""
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    i = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        i["n"] += 1
+        return dict(looks[min(i["n"], len(looks) - 1)])
+
+    out = continue_web_search(
+        looks[0],
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+    )
+    assert typed, "leftover Google New Tab must type the hotel query"
+    assert any(
+        token in t.lower()
+        for t in typed
+        for token in ("hotel", "rome", "italy", "florence", "tuscany")
+    ), typed
+    assert out.get("_typed_query") or "Eden" in str(out.get("vision_description") or "")
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_google_newtab_hotel_keeps_going(
+    monkeypatch, tmp_path
+):
+    """Live Italy hotel ask + leftover Google New Tab must type or run_app.
+
+    dismiss popups must not stop after one see_screen. look_speed=off
+    must not skip wait+type. Never _WEB_STUCK after only see_screen.
+    """
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    assert settings_store.get_look_speed() == "off"
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
+        dict(LEFTOVER_GOOGLE_NEWTAB_HOTEL),
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    acted = {"type", "run_app"} & set(tools)
+    assert acted, f"must type or open a travel/search URL, got {tools}"
+    assert tools != ["see_screen"]
+    assert body["reply"] != _WEB_STUCK
+    if typed:
+        blob = " ".join(typed).lower()
+        assert any(
+            token in blob for token in ("hotel", "rome", "italy", "florence", "tuscany")
+        ), typed
+    low = body["reply"].lower()
+    assert "i could not finish the search" not in low
+    reset_last_look()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_leftover_google_homepage_hotel_keeps_going(
+    monkeypatch, tmp_path
+):
+    """Same path when last_look is the Google homepage, not chrome://newtab."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_GOOGLE_HOME_HOTEL))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LEFTOVER_GOOGLE_HOME_HOTEL),
+        dict(LEFTOVER_GOOGLE_HOME_HOTEL),
+        dict(ITALY_HOTEL_RESULTS),
+    ]
+    _patch_voice_ask_web(monkeypatch, looks, clicks=clicks, typed=typed, keys=keys)
+
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    assert {"type", "run_app"} & set(tools)
+    assert tools != ["see_screen"]
+    assert body["reply"] != _WEB_STUCK
     reset_last_look()
 
 
