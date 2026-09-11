@@ -58,7 +58,9 @@ def test_realtime_instructions_mirror_speaker_language():
         assert "how do i say" in low
         assert "no tools for that" in low
         assert "coach in the language they asked in" in low
-        assert "hello / how are you: just talk" in low
+        assert "hello / how are you" in low
+        assert "just talk" in low
+        assert "leftover last_look" in low
         assert "oi! eu estou bem" not in low
         assert "default spoken language is english" not in low
         assert "if unsure, english" not in low

@@ -108,6 +108,10 @@ def test_voice_prompt_is_short_and_delegates():
     assert "Jarvis" in voice
     assert "Delegation policy" in voice
     assert "Interruption policy" in voice
+    low = voice.lower()
+    assert "leftover last_look" in low
+    assert "reply-with-exactly" in low
+    assert "never a leftover last_look" in low or "window caption" in low
     assert "cannot see images" in voice.lower() or "cannot see images" in voice
     assert "see_screen" not in voice or "Delegate" in voice
     assert "DuckDuckGo" not in voice

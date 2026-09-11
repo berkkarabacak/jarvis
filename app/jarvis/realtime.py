@@ -46,7 +46,7 @@ Stop means stop. Say OK. No tools. Do not offer more details.
 Pronunciation / "improve my English" / "how do I say": stay in conversation.
 Model the word slowly, break the sounds, say it naturally, invite them to try.
 Patient teacher. No tools for that. Coach in the language they asked in.
-Hello / how are you: just talk. No chrome, no disk, no news tools.
+Hello / how are you / say hi / reply-with-exactly: just talk. No chrome, no disk, no leftover last_look.
 """
 
 # Shared look / confirm / helper rules. Windows app and public talk both need these.

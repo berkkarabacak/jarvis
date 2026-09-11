@@ -147,6 +147,8 @@ def test_yesterday_and_hello_are_simple_talk():
         "what did we talk about yesterday",
         "hello",
         "hi",
+        "Say hi in one short sentence.",
+        "Reply with exactly: PONG",
         "Merhaba",
         "can you hear me",
         "thanks",
@@ -2092,6 +2094,78 @@ async def test_can_you_hear_me_is_hello(open_site_now):
     assert body["tools_used"] == []
     assert "chrome" not in body["reply"].lower()
     assert "disk" not in body["reply"].lower()
+
+
+WEATHER_LAST_LOOK = (
+    "The focused window is a Google Chrome browser tab. "
+    "The page shows weather information for Amsterdam."
+)
+
+
+@pytest.mark.asyncio
+async def test_short_ask_with_leftover_last_look_does_not_speak_caption(
+    open_site_now, monkeypatch
+):
+    """Hello-style /ask must answer the text, never a stale weather last_look."""
+    planned, launched = open_site_now
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.virtual_pc import goal_is_greeting, goal_is_simple_talk
+    from app.jarvis.voice_ask import run_voice_ask
+
+    reset_last_look()
+    remember_last_look(
+        {
+            "ok": True,
+            "title": "Amsterdam Weather - Google Chrome",
+            "url": "https://www.google.com/search?q=weather+amsterdam",
+            "vision_description": WEATHER_LAST_LOOK,
+        }
+    )
+    seen: list[str] = []
+
+    def boom_see(ctx, args):
+        seen.append("see_screen")
+        raise AssertionError("simple ask must not look at leftover last_look")
+
+    async def dump_last_look(asked: str) -> str:
+        return WEATHER_LAST_LOOK
+
+    monkeypatch.setattr("app.jarvis.tools._see_screen", boom_see)
+    monkeypatch.setattr("app.jarvis.voice_ask._simple_talk_oneshot", dump_last_look)
+
+    assert goal_is_simple_talk("Say hi in one short sentence.") is True
+    assert goal_is_greeting("Say hi in one short sentence.") is True
+    assert goal_is_simple_talk("Reply with exactly: PONG") is True
+
+    hi = await run_voice_ask("Say hi in one short sentence.")
+    assert launched == []
+    assert planned == []
+    assert seen == []
+    assert hi["ok"] is True
+    assert hi["tools_used"] == []
+    assert hi["reply"] == "Hello."
+    assert "amsterdam" not in hi["reply"].lower()
+    assert "focused window" not in hi["reply"].lower()
+    assert "weather" not in hi["reply"].lower()
+
+    pong = await run_voice_ask("Reply with exactly: PONG")
+    assert launched == []
+    assert planned == []
+    assert seen == []
+    assert pong["ok"] is True
+    assert pong["tools_used"] == []
+    assert pong["reply"] == "PONG"
+    assert "amsterdam" not in pong["reply"].lower()
+    assert "focused window" not in pong["reply"].lower()
+
+    name = await run_voice_ask("what's your name")
+    assert name["ok"] is True
+    assert name["tools_used"] == []
+    assert name["reply"] != WEATHER_LAST_LOOK
+    assert "amsterdam" not in name["reply"].lower()
+    assert "focused window" not in name["reply"].lower()
+    assert seen == []
+    reset_last_look()
 
 
 @pytest.mark.asyncio

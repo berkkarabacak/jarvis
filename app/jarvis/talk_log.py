@@ -41,6 +41,18 @@ ONESHOT_TURN_CHARS = 400
 RECAP_MAX_TURNS = 8
 RECAP_MAX_CHARS = 900
 RECAP_LINE_CHARS = 360
+# Leftover see_screen / last_look captions — never feed these back as Talk.
+_STALE_SCREEN_TURN_RE = re.compile(
+    r"("
+    r"the focused window is|"
+    r"google chrome browser tab|"
+    r"the page shows weather|"
+    r"fills the screenshot|"
+    r"desktop background|"
+    r"desktop icons"
+    r")",
+    re.I,
+)
 
 # Cookies / Set-Cookie / Cookie: name=value; ...
 _COOKIE_RE = re.compile(
@@ -349,6 +361,11 @@ def recent_talk_turns(
     return chosen
 
 
+def _is_stale_screen_turn(text: str) -> bool:
+    """True for leftover last_look / see_screen captions, not chat."""
+    return bool(_STALE_SCREEN_TURN_RE.search(text or ""))
+
+
 def talk_messages_for_oneshot(
     asked: str | None = None,
     *,
@@ -360,6 +377,8 @@ def talk_messages_for_oneshot(
         role = "user" if row.get("role") == "you" else "assistant"
         text = str(row.get("text") or "").strip()
         if not text:
+            continue
+        if role == "assistant" and _is_stale_screen_turn(text):
             continue
         messages.append({"role": role, "content": text})
     return messages
@@ -384,8 +403,11 @@ def talk_recap_for_session(
     for row in turns:
         who = "You" if row.get("role") == "you" else "Jarvis"
         bit = str(row.get("text") or "").strip()[:RECAP_LINE_CHARS]
-        if bit:
-            lines.append(f"{who}: {bit}")
+        if not bit:
+            continue
+        if row.get("role") != "you" and _is_stale_screen_turn(bit):
+            continue
+        lines.append(f"{who}: {bit}")
     recap = "\n".join(lines).strip()
     cap = max(80, min(int(max_chars), 2000))
     if len(recap) > cap:
