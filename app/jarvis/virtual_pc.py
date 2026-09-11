@@ -248,7 +248,7 @@ _DESKTOP_OPERATE_RE = re.compile(
     r"\bi still see\b",
     re.I,
 )
-# Find / search / book on the web — Chrome job, not look-and-tell.
+# Find / search / book / cart on the web — Chrome job, not look-and-tell.
 _WEB_JOB_RE = re.compile(
     r"("
     r"\bfind(?:\s+me)?\b|"
@@ -257,7 +257,11 @@ _WEB_JOB_RE = re.compile(
     r"\bbook\s+(?:a\s+)?(?:hotel|flight|room|table)\b|"
     r"\bhotels?\s+in\b|"
     r"\bflights?\s+to\b|"
-    r"\b(?:use|using)\s+chrome\b"
+    r"\b(?:use|using)\s+chrome\b|"
+    r"\badd\b.{0,80}\bcart\b|"
+    r"\bto\s+cart\b|"
+    r"\bin-stock\b|"
+    r"\b(bol\.com|coolblue\.nl|amazon\.nl)\b"
     r")",
     re.I,
 )
