@@ -19,7 +19,6 @@ from app.jarvis.overlay import (
     ask_wants_hotel,
     continue_web_search,
     dismiss_blocking_overlays,
-    hotel_date_query,
     hotel_stay_dates,
     hotel_travel_url,
     look_has_blocking_overlay,
