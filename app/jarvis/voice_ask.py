@@ -27,10 +27,13 @@ from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
     ask_wants_hotel,
     continue_web_search,
+    hotel_alt_travel_url,
     hotel_option_lines,
     hotel_travel_url,
+    hotel_typed_query,
     look_has_blocking_overlay,
     look_has_hotel_results,
+    look_is_booking_bounce,
     look_is_captcha,
     look_is_empty_desktop,
     look_is_empty_destination,
@@ -583,6 +586,11 @@ _LOOK_AT_SCREEN_RE = re.compile(r"look at the screen\.?", re.I)
 _WEB_STUCK = "I could not finish the search."
 _BOOKING_BOUNCED = (
     "Booking searchresults bounced back to the homepage. "
+    "I could not finish the search."
+)
+_HOTEL_ALT_FAILED = (
+    "Booking searchresults bounced back to the homepage. "
+    "Google Hotels also did not show priced hotels. "
     "I could not finish the search."
 )
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
@@ -2326,7 +2334,12 @@ def _speak_web_job(
             or looked.get("_saw_searchresults")
             or typed
         )
-        reply = _BOOKING_BOUNCED if bounced or acted else "I opened the page."
+        if bounced or acted:
+            reply = (
+                _HOTEL_ALT_FAILED if looked.get("_hotel_alt") else _BOOKING_BOUNCED
+            )
+        else:
+            reply = "I opened the page."
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK
@@ -2887,6 +2900,83 @@ def _wait_until_page_ready(
     return current
 
 
+def _hotel_bounce_needs_alt(asked: str, looked: dict[str, Any]) -> bool:
+    """True when Booking bounced and Google Hotels has not been opened."""
+    if not ask_wants_hotel(asked) or look_has_hotel_results(looked):
+        return False
+    if looked.get("_hotel_alt"):
+        return False
+    return bool(
+        looked.get("_saw_searchresults")
+        or looked.get("_hotel_bounced")
+        or look_is_booking_bounce(looked, saw_searchresults=True)
+        or look_is_travel_search_form(looked)
+    )
+
+
+def _ensure_hotel_alt_after_bounce(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    """Ask path: after a Booking bounce, run_app Google Hotels before speak.
+
+    continue_web_search should already do this. If it returned a bounce
+    homepage without `_hotel_alt`, open the dated travel URL and look
+    until priced names appear or the budget ends. Never invent prices.
+    """
+    if not _hotel_bounce_needs_alt(asked, looked):
+        return looked
+    return _run_hotel_alt_search(asked, looked, tools, deadline=deadline)
+
+
+def _run_hotel_alt_search(
+    asked: str,
+    looked: dict[str, Any],
+    tools: list[str],
+    *,
+    deadline: float | None = None,
+) -> dict[str, Any]:
+    """run_app Google Hotels / travel search, then see_screen for prices."""
+    url = hotel_alt_travel_url(asked)
+    opened = _open_chrome_url(url)
+    _note_tool(tools, "run_app")
+    if not opened.get("ok"):
+        current = dict(looked)
+        current["_hotel_alt"] = True
+        current["_hotel_bounced"] = True
+        return current
+    _wait_after_act()
+    current = _look_opened_site(asked)
+    _note_tool(tools, "see_screen")
+    current = _dismiss_overlays_if_needed(asked, current, tools)
+    query = hotel_typed_query(asked)
+    current["_hotel_alt"] = True
+    current["_hotel_reopened"] = True
+    current["_saw_searchresults"] = True
+    current["_typed_query"] = looked.get("_typed_query") or query
+    for _ in range(4):
+        if look_has_hotel_results(current):
+            return current
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+        wait = web_look_pause_s()
+        if wait > 0:
+            time.sleep(wait)
+        current = _look_opened_site(asked)
+        _note_tool(tools, "see_screen")
+        current = _dismiss_overlays_if_needed(asked, current, tools)
+        current["_hotel_alt"] = True
+        current["_hotel_reopened"] = True
+        current["_saw_searchresults"] = True
+        current["_typed_query"] = looked.get("_typed_query") or query
+    if not look_has_hotel_results(current):
+        current["_hotel_bounced"] = True
+    return current
+
+
 def _continue_web_job(
     asked: str, looked: dict[str, Any], tools: list[str]
 ) -> dict[str, Any]:
@@ -2928,7 +3018,7 @@ def _continue_web_job(
         _note_tool(tools, "run_app")
         return _open_chrome_url(str(url))
 
-    return continue_web_search(
+    out = continue_web_search(
         current,
         goal=asked,
         click=click,
@@ -2939,6 +3029,7 @@ def _continue_web_job(
         open_url=open_url,
         deadline=deadline,
     )
+    return _ensure_hotel_alt_after_bounce(asked, out, tools, deadline=deadline)
 
 
 def _leave_hotel_serp_if_needed(

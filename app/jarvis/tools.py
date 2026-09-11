@@ -1491,6 +1491,15 @@ def _continue_web_job_after_see(
         open_url=open_url,
         deadline=deadline,
     )
+    try:
+        from app.jarvis.voice_ask import _ensure_hotel_alt_after_bounce
+
+        if isinstance(out, dict):
+            out = _ensure_hotel_alt_after_bounce(
+                goal, out, acted, deadline=deadline
+            )
+    except Exception:
+        pass
     if isinstance(out, dict) and out.get("_typed_query"):
         out["_web_typed"] = True
     if isinstance(out, dict) and acted:
