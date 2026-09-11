@@ -108,6 +108,12 @@ ASK_TALK_ABORT_MS = 12_000
 ASK_LOOK_ABORT_MS = 30_000
 ASK_WEB_ABORT_MS = 180_000
 ASK_HIRE_ABORT_MS = 180_000
+# nginx /api/jarvis/ proxy_read_timeout is 180s. Leave room to return JSON
+# before a gateway 504. Deployer owns host nginx — bump that timeout if a
+# priced hotel list must finish in one HTTP ask.
+ASK_WEB_REPLY_HEADROOM_S = 25.0
+# First Booking form-fill + look should finish well under ~120s.
+ASK_WEB_FIRST_ATTEMPT_S = 110.0
 _WEB_ABORT_RE = re.compile(
     r"("
     r"\bfind(?:\s+me)?\b|"
@@ -179,8 +185,17 @@ def remaining_ask_deadline_s(asked: str) -> float:
 
 
 def web_job_deadline(asked: str) -> float:
-    """monotonic timestamp when wait-then-type must stop looking."""
-    return time.monotonic() + remaining_ask_deadline_s(asked)
+    """monotonic timestamp when wait-then-type must stop looking.
+
+    Never consume the full nginx 180s with zero form progress. Hotel
+    first-attempt budget stays under ASK_WEB_FIRST_ATTEMPT_S and always
+    leaves ASK_WEB_REPLY_HEADROOM_S to serialize a JSON reply.
+    """
+    remaining = remaining_ask_deadline_s(asked)
+    usable = max(8.0, remaining - ASK_WEB_REPLY_HEADROOM_S)
+    if ask_wants_hotel(asked):
+        usable = min(usable, ASK_WEB_FIRST_ATTEMPT_S)
+    return time.monotonic() + usable
 
 
 _HIRE_BUDGET_S = 90.0
@@ -2289,12 +2304,12 @@ def _speak_web_job(
     travel_form = hotel and look_is_travel_search_form(looked)
     acted = typed or any(name in tools for name in ("click", "type", "keys"))
     if overlay:
-        # Genius / cookie / Restore still up — never finalize _WEB_STUCK.
-        # The ask path must dismiss, then type dates / destination.
-        reply = "I opened the page."
-    elif travel_form and not look_has_hotel_results(looked) and not typed:
-        # Booking landing / empty date form after only see_screen — keep going.
-        reply = "I opened the page."
+        # Real Sign-in / cookie / Restore still up — never finalize _WEB_STUCK.
+        reply = "I typed the search." if acted else "I opened the page."
+    elif travel_form and not look_has_hotel_results(looked):
+        # Booking landing / empty date form. After click/type, in-progress
+        # — never invent hotel prices, never _WEB_STUCK on the first look.
+        reply = "I typed the search." if acted else "I opened the page."
     elif look_is_captcha(looked):
         # Never speak I'm not a robot / unusual traffic / IP as the answer.
         reply = _WEB_STUCK

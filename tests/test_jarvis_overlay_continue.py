@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import re
+import time
+
 import pytest
 
 from app.jarvis.overlay import (
     BLANK_LOOKS_BEFORE_OMNIBOX,
+    BOOKING_DATES_CLICK,
+    BOOKING_DEST_CLICK,
+    BOOKING_SEARCH_CLICK,
     NEW_TAB_CLICK,
     NEW_TAB_FOCUS_CLICKS,
     OMNIBOX_CLICK,
+    OVERLAY_DISMISS_MAX,
     RESTORE_DISMISS_CLICK,
     SANDBOX_DISMISS_CLICK,
     SEARCH_BOX_CLICK,
@@ -52,10 +59,13 @@ from app.jarvis.voice_ask import (
     ASK_LOOK_ABORT_MS,
     ASK_TALK_ABORT_MS,
     ASK_WEB_ABORT_MS,
+    ASK_WEB_FIRST_ATTEMPT_S,
+    ASK_WEB_REPLY_HEADROOM_S,
     _WEB_STUCK,
     ask_abort_ms,
     ask_deadline_s,
     remaining_ask_deadline_s,
+    web_job_deadline,
     wants_control_screen,
 )
 from app.jarvis.virtual_pc import (
@@ -149,6 +159,15 @@ def test_ask_abort_ms_web_job_is_minutes_hello_stays_short():
     assert ask_deadline_s(ROME) == 180.0
     assert ask_deadline_s("hello") == 12.0
     assert ask_deadline_s("what's on the screen") == 30.0
+    assert ASK_WEB_REPLY_HEADROOM_S >= 20.0
+    assert ASK_WEB_FIRST_ATTEMPT_S <= 120.0
+    hotel_left = web_job_deadline(LIVE_ITALY_HOTEL) - time.monotonic()
+    assert hotel_left <= ASK_WEB_FIRST_ATTEMPT_S + 0.5
+    assert hotel_left < 180.0 - ASK_WEB_REPLY_HEADROOM_S + 0.5
+
+
+def _iso_date_in(text: str) -> bool:
+    return bool(re.search(r"20\d{2}-\d{2}-\d{2}", text or ""))
 
 
 def _typed_is_user_query(text: str) -> bool:
@@ -405,9 +424,10 @@ def test_live_booking_homepage_is_form_not_hotel_results():
         )
         assert body["reply"] != _WEB_STUCK
         assert body["reply"].lower() != "i could not finish the search"
-    # Banner with Unlock-savings / Genius promo is dismissible.
-    assert overlay_kind(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL) == "signin"
-    assert overlay_dismiss_plan(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL)
+    # Homepage Genius promo is marketing next to the form — not a modal.
+    # Treating it as signin loops dismiss and never types (live SHA bf81e28).
+    assert overlay_kind(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL) is None
+    assert overlay_dismiss_plan(LIVE_BOOKING_HOMEPAGE_BANNER, goal=LIVE_ITALY_HOTEL) is None
     # Coaching-only look has no overlay — still must type, not finish.
     assert overlay_kind(LIVE_BOOKING_HOMEPAGE_NO_OVERLAY, goal=LIVE_ITALY_HOTEL) is None
     assert overlay_dismiss_plan(LIVE_BOOKING_HOMEPAGE_NO_OVERLAY, goal=LIVE_ITALY_HOTEL) is None
@@ -457,6 +477,8 @@ def test_continue_web_search_booking_homepage_types_dates_not_stuck():
         )
         assert clicks or typed, "Booking homepage must click or type before return"
         assert typed, "must type destination / dates on the Booking form"
+        assert BOOKING_DEST_CLICK in clicks or BOOKING_DATES_CLICK in clicks
+        assert SEARCH_BOX_CLICK not in clicks or BOOKING_DEST_CLICK in clicks
         assert all(_typed_is_user_query(t) for t in typed), typed
         blob = " ".join(typed).lower()
         assert "google.com" not in blob
@@ -465,7 +487,11 @@ def test_continue_web_search_booking_homepage_types_dates_not_stuck():
         assert any(
             token in blob for token in ("rome", "italy", "hotel", "check-in", "checkin")
         ), typed
-        assert "check-in" in blob or "checkin=" in blob
+        assert (
+            "check-in" in blob
+            or "checkin=" in blob
+            or any(_iso_date_in(t) for t in typed)
+        )
         spoken = _speak_web_job(
             LIVE_ITALY_HOTEL,
             out,
@@ -525,6 +551,144 @@ async def test_voice_ask_booking_homepage_not_web_stuck_from_see_only(
         assert "i could not finish the search" not in body["reply"].lower()
         low = body["reply"].lower()
         assert "eden" in low or "hotel" in low or "typed the search" in low
+        assert "click" in tools
+        assert "type" in tools
+
+
+# Live 2026-09-11 SHA bf81e28 / PR #36: Genius *homepage* banner (not the
+# mashed Sign-in modal). Destination and dates stayed blank. continue loop
+# classified the banner as signin and dismissed until nginx 504.
+LIVE_BOOKING_HOMEPAGE_PAINTED = {
+    "ok": True,
+    "title": "Booking.com | Official site",
+    "url": (
+        "https://www.booking.com/index.html?"
+        "label=gen173nr-1FCAEoggI46AdIM1gEaDKIAQGYATG4ARfIAQzYAQHoAQGIAgGoAgG4Ag"
+    ),
+    "vision_description": (
+        "Booking.com homepage. Unlock Flight savings with members-only deals. "
+        "Genius promotional banner. Yellow airplane. Search in your own words. "
+        "Where are you going? Destination is empty. Select dates. "
+        "Check-in date. Check-out date. Search form is empty. "
+        "No priced hotel names."
+    ),
+}
+
+
+def test_live_painted_booking_homepage_is_form_not_overlay():
+    """Painted Genius hero + empty form is not a modal and not hotel results."""
+    q = web_search_query(LIVE_ITALY_HOTEL)
+    looked = LIVE_BOOKING_HOMEPAGE_PAINTED
+    assert look_is_travel_search_form(looked) is True
+    assert look_has_hotel_results(looked) is False
+    assert overlay_kind(looked, goal=LIVE_ITALY_HOTEL) is None
+    assert needs_web_query(LIVE_ITALY_HOTEL, looked, q) is True
+    assert search_box_point(looked) == BOOKING_DEST_CLICK
+    assert search_box_point(looked) != SEARCH_BOX_CLICK
+    # Coaching / budget leak still must not count as a priced list.
+    leak = {
+        "ok": True,
+        "title": "Booking.com | Official site",
+        "url": "https://www.booking.com/index.html?ss=hotels+under+2000+Euro",
+        "vision_description": (
+            "hotel names. hotel name, city. 2000 Euro. No priced hotel names."
+        ),
+    }
+    assert look_has_hotel_results(leak) is False
+
+
+def test_continue_web_search_persistent_genius_banner_types_form():
+    """Same Genius homepage every look must click+type — not dismiss-loop."""
+    from app.jarvis.voice_ask import _speak_web_job
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = {"n": 0}
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        typed.append(str(text))
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        keys.append(str(combo))
+        return {"ok": True}
+
+    def look_again():
+        looks["n"] += 1
+        return dict(LIVE_BOOKING_HOMEPAGE_PAINTED)
+
+    out = continue_web_search(
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        goal=LIVE_ITALY_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        deadline=time.monotonic() + 30,
+    )
+    assert OVERLAY_DISMISS_MAX <= 2
+    assert looks["n"] < 12, f"dismiss-looped instead of typing; looks={looks['n']}"
+    assert typed, "Genius homepage must type destination / dates"
+    assert BOOKING_DEST_CLICK in clicks
+    assert BOOKING_DATES_CLICK in clicks
+    assert BOOKING_SEARCH_CLICK in clicks or "enter" in keys
+    assert SIGNIN_DISMISS_CLICK not in clicks
+    blob = " ".join(typed).lower()
+    assert "rome" in blob
+    assert any(_iso_date_in(t) for t in typed) or "checkin=" in blob
+    assert "use the computer" not in blob
+    assert "available hotels under 2000" not in blob
+    spoken = _speak_web_job(
+        LIVE_ITALY_HOTEL,
+        out,
+        ["run_app", "see_screen", "click", "type", "keys"],
+        opened=True,
+    )
+    assert spoken["reply"] != _WEB_STUCK
+    assert "i could not finish the search" not in spoken["reply"].lower()
+    assert look_has_hotel_results(out) is False
+    assert out.get("_typed_query")
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_painted_booking_homepage_uses_click_and_type(
+    monkeypatch, tmp_path
+):
+    """Live ask path must record click+type on the empty Booking form."""
+    from app.jarvis import settings_store
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    settings_store.save({"look_speed": "off"})
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    keys: list[str] = []
+    looks = [
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+        dict(LIVE_BOOKING_HOMEPAGE_PAINTED),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch, looks, clicks=clicks, typed=typed, keys=keys
+    )
+    body = await run_voice_ask(LIVE_ITALY_HOTEL)
+    tools = list(body.get("tools_used") or [])
+    assert tools != ["run_app", "see_screen"]
+    assert "click" in tools
+    assert "type" in tools
+    assert typed
+    assert BOOKING_DEST_CLICK in clicks
+    blob = " ".join(typed).lower()
+    assert "rome" in blob
+    assert "use the computer" not in blob
+    assert body["reply"] != _WEB_STUCK
+    assert "typed the search" in body["reply"].lower()
+    assert "180" not in body["reply"]
 
 
 def test_dismiss_plan_never_clicks_sign_in_or_restore_or_pay():
@@ -651,8 +815,8 @@ def test_search_box_point_homepage_without_search_box_words():
     """Live miss: homepage look never says 'search box' — still a field."""
     assert look_is_footer(HOMEPAGE_NO_BOX) is False
     assert look_is_empty_desktop(HOMEPAGE_NO_BOX) is False
-    assert search_box_point(HOMEPAGE_NO_BOX) == SEARCH_BOX_CLICK
-    assert search_box_point(HOMEPAGE_NO_BOX) == (640, 320)
+    assert search_box_point(HOMEPAGE_NO_BOX) == BOOKING_DEST_CLICK
+    assert search_box_point(HOMEPAGE_NO_BOX) != SEARCH_BOX_CLICK
     query = web_search_query(ROME)
     assert "hotel" in query.lower()
     assert needs_web_query(ROME, HOMEPAGE_NO_BOX, query) is True
@@ -701,7 +865,8 @@ def test_continue_web_search_types_on_homepage_without_search_box():
     )
     assert typed, "homepage without 'search box' must still type the query"
     assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
-    assert (640, 320) in clicks
+    assert BOOKING_DEST_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
     assert (640, 680) not in clicks
     assert "enter" in keys
     assert "Eden" in str(out.get("vision_description") or "")
@@ -1095,7 +1260,7 @@ def test_see_again_after_overlays_types_web_query(monkeypatch):
     out = _see_again_after_overlays(ctx, {"goal": ROME}, dict(HOMEPAGE_NO_BOX))
     assert typed, "see_screen on a hotel job must type the query"
     assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
-    assert (640, 320) in clicks
+    assert BOOKING_DEST_CLICK in clicks
     assert "Eden" in str(out.get("vision_description") or "")
 
 
@@ -1173,7 +1338,7 @@ def test_continue_web_search_waits_then_types_after_blank_look():
     )
     assert typed, "blank/loading first look must wait, then type"
     assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
-    assert (640, 320) in clicks
+    assert BOOKING_DEST_CLICK in clicks
     assert "enter" in keys
     assert out.get("_typed_query")
     assert "Eden" in str(out.get("vision_description") or "")
@@ -1501,7 +1666,8 @@ def test_continue_web_search_untitled_waits_then_types_field():
     assert i["n"] >= 2, "Untitled must be looked at more than once before type"
     assert typed, "Untitled first look must wait, then type"
     assert any("Rome" in t or "rome" in t.lower() or "hotel" in t.lower() for t in typed)
-    assert SEARCH_BOX_CLICK in clicks
+    assert BOOKING_DEST_CLICK in clicks
+    assert SEARCH_BOX_CLICK not in clicks
     assert OMNIBOX_CLICK not in clicks
     assert "enter" in keys
     assert out.get("_typed_query")
