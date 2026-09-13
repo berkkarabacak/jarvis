@@ -1,4 +1,4 @@
-"""Windows 3-pane shell chrome — issues #74 / #67 / #68 / #69 / #70 / #71 (epic #66)."""
+"""Windows 3-pane shell chrome — issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73 (epic #66)."""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert "api key" not in low
     assert "openrouter" not in low
     assert 'id="voiceDock"' not in html
-    assert "Coming soon" in html
+    assert "Adding a routine comes later." in html or "No routines yet." in html
     assert 'id="new-chat"' in html
     assert "New chat" in html
     assert "nav-toggle" in html
@@ -320,6 +320,101 @@ def test_middle_pane_keeps_right_pane_live_pc():
     assert "function computerShouldShow" in js
 
 
+def test_routines_block_under_live_pc_is_honest():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+    readme = (DESKTOP / "README.md").read_text(encoding="utf-8")
+
+    assert 'id="routines-block"' in html
+    assert 'id="routines"' in html
+    assert 'id="empty-routines"' in html
+    assert 'id="routine-note"' in html
+    assert 'id="add-routine"' in html
+    assert 'aria-label="Add routine"' in html
+    assert "No routines yet." in html
+    assert "Morning briefing" not in html
+    assert "Evening wrap" not in html
+    assert 'data-source="local-schedules"' in html
+    assert "/api/jarvis/routines" in html
+    assert "function paintRoutines" in js
+    assert "function loadRoutines" in js
+    assert "function addRoutineSoon" in js
+    assert "Adding a routine comes later." in js
+    assert "routine-note" in js
+    assert "function routinesView" in shell
+    assert "function addRoutinePlan" in shell
+    assert 'ROUTINES_PATH = "/api/jarvis/routines"' in shell
+    assert "does not invent" in shell.lower() or "honest empty" in shell.lower()
+    assert "routines" in readme.lower()
+    assert "no routines yet" in readme.lower()
+
+
+def test_settings_gear_opens_ceo_settings_and_keeps_talk_mode():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    preload = (DESKTOP / "preload.js").read_text(encoding="utf-8")
+    ceo = (ROOT / "app" / "static" / "ceo.html").read_text(encoding="utf-8")
+
+    assert 'id="settings"' in html
+    assert 'aria-label="Settings"' in html
+    assert "function openSettings" in js
+    assert "jarvisDesktop.openSettings" in js
+    assert "/ceo?settings=1&desktop=1" in js
+    assert "function settingsPlan" in shell
+    assert "talk_mode" in shell
+    assert "/api/jarvis/settings" in js
+    assert "function persistTalkMode" in js
+    assert "function loadTalkMode" in js
+    assert "function openSettingsInWindow" in main
+    assert "jarvis:open-settings" in main
+    assert "openSettings" in preload
+    assert "shouldOpenSettings" in ceo
+    assert 'q.get("settings") === "1"' in ceo
+    assert 'id = "iu-talk-mode"' in ceo
+    assert 'persistJarvis({ talk_mode: selectedTalkMode })' in ceo
+    assert "Chat only" in ceo
+    assert "talk_mode: selectedTalkMode" in ceo
+
+
+def test_narrow_window_collapses_left_and_right_by_default():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+
+    assert "max-width: 899px" in html
+    assert "body:not(.left-open) #left" in html
+    assert "body:not(.right-open) #right" in html
+    assert "left-open" in js
+    assert "right-open" in js
+    assert "collapseBelow: 900" in shell
+    assert "function isNarrowWidth" in shell
+    assert "function defaultPanesForWidth" in shell
+    assert "function fitPanesToWidth" in js
+    assert "width < 900" in js
+
+
+def test_desktop_smoke_notes_cover_windows_path():
+    readme = (DESKTOP / "README.md").read_text(encoding="utf-8")
+    installer = (ROOT / "docs" / "windows-installer.md").read_text(encoding="utf-8")
+    start = (ROOT / "docs" / "START-HERE-WINDOWS.txt").read_text(encoding="utf-8")
+    low = (readme + "\n" + installer + "\n" + start).lower()
+
+    assert "npm start" in readme
+    assert "smoke" in readme.lower()
+    assert "chat is in the middle" in low or "chat is the middle" in low
+    assert "jarvis's screen" in low
+    assert "hide chats" in low or "hide computer" in low
+    assert "gear" in low
+    assert "settings" in low
+    assert "talk_mode" in readme or "chat only" in low
+    assert "api key" not in readme.lower()
+    assert "Jarvis-Setup.exe" in installer
+    assert "narrow" in readme.lower() or "small window" in low
+
+
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "t.db"))
@@ -356,6 +451,9 @@ async def test_desktop_route_serves_three_pane_shell(client):
     assert 'id="live-frame"' in r.text
     assert 'data-embed="iframe"' in r.text
     assert 'data-chat="live"' in r.text
+    assert 'id="routines-block"' in r.text
+    assert "No routines yet." in r.text
+    assert "/api/jarvis/routines" in r.text
     assert "/api/jarvis/ask" in r.text
     assert "/api/jarvis/talk/last" in r.text
     assert "API secret" not in r.text

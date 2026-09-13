@@ -13,8 +13,10 @@ shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
    **×** (and tray **Quit Jarvis**) really quits. Mute on the avatar or
    tray stops Realtime output and neural TTS until unmuted. Never Windows SAPI.
 5. **Settings** is Jarvis menu (`Ctrl+,`) or the gear on the 3-pane header.
-   That opens `/ceo?settings=1` in a Settings window (talk_mode /
-   Computer vs Chat only stay on the same `/api/jarvis/settings` store)
+   That opens `/ceo?settings=1` in a Settings window. Model, voice,
+   computer, and talk_mode / Computer vs Chat only stay on the same
+   `/api/jarvis/settings` store. Settings tabs including talk_mode keep
+   working.
 6. **Middle pane** is the live You / Jarvis chat thread. Type + send
    posts `/api/jarvis/ask`. The thread loads `/api/jarvis/talk/last`.
    Mic starts listen (browser speech, and the hidden `/ceo` talk engine
@@ -33,7 +35,14 @@ shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
    **Not connected yet**. Chats come from local talk history
    (`/api/jarvis/talk/last`) when you have one. Group chats stay empty
    until a real group list exists. No invented live teammates.
-10. Stops the backend on quit
+10. **Routines** sit under Jarvis's screen. The list is
+    `/api/jarvis/routines` (real local schedules). Empty says
+    **No routines yet.** `+` says **Adding a routine comes later.**
+    No invented Morning briefing.
+11. A **narrow window** (under 900px) hides the left and right panes
+    by default. Use the edge arrows, or Hide chats / Hide computer.
+    Chat stays in the middle.
+12. Stops the backend on quit
 
 Why a new `/desktop` route: `/ceo` is the orb Talk surface used by
 existing voice tests and Settings. Rewriting it in place would mix two
@@ -103,6 +112,7 @@ when you want a real one-file install.
 | Helpers | Local lead + documented stubs | Only Jarvis is live. Writer / Helper / Finder say **Not connected yet** |
 | Chats | `/api/jarvis/talk/last` | **No chats yet. Send a message to start.** |
 | Group chats | None yet | **No group chats yet. They come later.** |
+| Routines | `/api/jarvis/routines` (local JobStore) | **No routines yet.** `+` is **Adding a routine comes later.** |
 
 ## Surfaces
 
@@ -115,3 +125,20 @@ when you want a real one-file install.
 ## File editing
 
 Optional Prime Agent: set `PRIME_AGENT_*` in repo `.env` (see `docs/local-windows-app.md`).
+
+## Windows / desktop smoke (#73)
+
+Dev: from `desktop/`, `npm start` — 3-pane window, no key field.
+
+Installer: `Jarvis-Setup.exe` — same chrome. Family path never asks for a key.
+
+Checklist against the Grok Bot reference:
+
+1. Chat is in the middle. Type or use the mic.
+2. Jarvis's screen is the right pane. Routines sit under it (empty until a real schedule exists).
+3. Helpers and chats are on the left. Hide chats / Hide computer collapse a side.
+4. On a narrow window both sides start hidden. Use the edge arrows to show them.
+5. Gear (or Jarvis → Settings) opens Settings. Model, voice, computer, and talk_mode persist. Computer vs Chat only still works.
+6. Chat only and Hide screen blank the live PC. They do not stop the computer.
+
+Mom blurb: Chat is in the middle. Jarvis's screen is on the right. Hide chats or Hide computer when you want more room. On a small window the sides hide — click the arrows at the edges.

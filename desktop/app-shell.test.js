@@ -1,5 +1,5 @@
 /**
- * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68 / #69 / #70 / #71).
+ * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73).
  * Run: node desktop/app-shell.test.js
  */
 const assert = require("assert");
@@ -49,6 +49,17 @@ const {
   DATA_SOURCES,
   micPlan,
   chatView,
+  isNarrowWidth,
+  defaultPanesForWidth,
+  settingsPlan,
+  settingsRequest,
+  persistTalkModeRequest,
+  routinesRequest,
+  addRoutinePlan,
+  routinesFromSchedules,
+  routinesView,
+  ROUTINES_PATH,
+  SETTINGS_API_PATH,
 } = require("./app-shell");
 
 assert.strictEqual(SHELL.path, "/desktop");
@@ -59,6 +70,7 @@ assert.strictEqual(SHELL.screenEmbedRejected, "BrowserView");
 assert.ok(SHELL.leftWidth >= 240);
 assert.ok(SHELL.rightWidth >= 280);
 assert.ok(SHELL.minMiddleWidth >= 280);
+assert.strictEqual(SHELL.collapseBelow, 900);
 assert.strictEqual(SHELL_PATH, "/desktop");
 assert.strictEqual(TALK_PATH, "/ceo");
 assert.strictEqual(SCREEN_VIEWER_PATH, "/ceo/jarvis-screen");
@@ -90,7 +102,17 @@ assert.strictEqual(LABELS.nothingMatches, "Nothing matches.");
 assert.strictEqual(DATA_SOURCES.helpers, "local-lead + documented-stub");
 assert.strictEqual(DATA_SOURCES.chats, "talk-history");
 assert.strictEqual(DATA_SOURCES.groups, "none");
+assert.strictEqual(DATA_SOURCES.routines, "local-schedules");
 assert.ok(/only jarvis is a live helper/i.test(DATA_SOURCES.note));
+assert.ok(/real local schedules/i.test(DATA_SOURCES.note));
+assert.strictEqual(LABELS.emptyRoutines, "No routines yet.");
+assert.strictEqual(LABELS.addRoutine, "Add routine");
+assert.strictEqual(LABELS.addRoutineSoon, "Adding a routine comes later.");
+assert.ok(/middle/i.test(LABELS.hidePanesHint));
+assert.ok(/right/i.test(LABELS.hidePanesHint));
+assert.ok(/hide chats/i.test(LABELS.hidePanesHint));
+assert.strictEqual(ROUTINES_PATH, "/api/jarvis/routines");
+assert.strictEqual(SETTINGS_API_PATH, "/api/jarvis/settings");
 assert.ok(!/composer|transcript|nav|sidebar/i.test(Object.values(LABELS).join(" ")));
 assert.strictEqual(ASK_PATH, "/api/jarvis/ask");
 assert.strictEqual(TALK_LAST_PATH, "/api/jarvis/talk/last");
@@ -133,6 +155,19 @@ assert.deepStrictEqual(fitPanesToWidth(1400, { left: true, right: true }), {
 assert.deepStrictEqual(fitPanesToWidth(800, { left: true, right: true }), {
   left: false,
   right: false,
+});
+assert.strictEqual(isNarrowWidth(899), true);
+assert.strictEqual(isNarrowWidth(900), false);
+assert.strictEqual(isNarrowWidth(1400), false);
+assert.deepStrictEqual(defaultPanesForWidth(800), { left: false, right: false });
+assert.deepStrictEqual(defaultPanesForWidth(1200), { left: true, right: true });
+assert.deepStrictEqual(fitPanesToWidth(899, { left: true, right: true }), {
+  left: false,
+  right: false,
+});
+assert.deepStrictEqual(fitPanesToWidth(900, { left: true, right: true }), {
+  left: true,
+  right: true,
 });
 
 assert.strictEqual(normalizeTalkMode("terminal"), "terminal");
@@ -357,5 +392,58 @@ assert.strictEqual(empty.emptyLabel, LABELS.emptyChat);
 const filled = chatView(thread);
 assert.strictEqual(filled.empty, false);
 assert.strictEqual(filled.turns.length, 2);
+
+const settings = settingsPlan();
+assert.strictEqual(settings.fromChrome, true);
+assert.strictEqual(settings.via, "gear");
+assert.strictEqual(settings.path, "/ceo");
+assert.strictEqual(settings.query.settings, "1");
+assert.strictEqual(settings.query.desktop, "1");
+assert.ok(settings.href.includes("settings=1"));
+assert.ok(settings.href.includes("desktop=1"));
+assert.strictEqual(settings.persist, "/api/jarvis/settings");
+assert.ok(settings.fields.includes("talk_mode"));
+assert.ok(settings.fields.includes("model"));
+assert.ok(settings.fields.includes("realtime_voice"));
+assert.ok(settings.fields.includes("computer_kind"));
+assert.strictEqual(settings.talkMode, true);
+assert.strictEqual(settingsRequest().url, "/api/jarvis/settings");
+assert.strictEqual(settingsRequest().method, "GET");
+const savedMode = persistTalkModeRequest("terminal");
+assert.strictEqual(savedMode.method, "PUT");
+assert.deepStrictEqual(savedMode.body, { talk_mode: "terminal" });
+assert.strictEqual(persistTalkModeRequest("nope").body.talk_mode, "computer");
+
+assert.strictEqual(routinesRequest().url, "/api/jarvis/routines");
+assert.strictEqual(addRoutinePlan().ok, false);
+assert.strictEqual(addRoutinePlan().canCreate, false);
+assert.ok(/comes later/i.test(addRoutinePlan().label));
+assert.deepStrictEqual(routinesFromSchedules({}), []);
+assert.deepStrictEqual(routinesFromSchedules({ routines: [] }), []);
+assert.deepStrictEqual(routinesFromSchedules({
+  routines: [{ id: "", name: "Ghost" }, { name: "No id" }],
+}), []);
+const scheduled = routinesFromSchedules({
+  routines: [
+    { id: "job-1", name: "Inbox sort", when: "Every day at 07:00", enabled: true },
+  ],
+});
+assert.strictEqual(scheduled.length, 1);
+assert.strictEqual(scheduled[0].name, "Inbox sort");
+assert.strictEqual(scheduled[0].when, "Every day at 07:00");
+assert.strictEqual(scheduled[0].source, "local-schedules");
+const fromControlRoom = routinesFromSchedules({
+  schedules: [{ id: "job-2", name: "Weekly wrap", schedule_human: "Every Monday at 09:00" }],
+});
+assert.strictEqual(fromControlRoom[0].when, "Every Monday at 09:00");
+const none = routinesView({});
+assert.strictEqual(none.empty, true);
+assert.strictEqual(none.emptyLabel, LABELS.emptyRoutines);
+assert.strictEqual(none.canCreate, false);
+assert.strictEqual(none.plusOpens.canCreate, false);
+assert.ok(!none.items.some((row) => /morning briefing|evening wrap/i.test(row.name)));
+const some = routinesView({ routines: scheduled });
+assert.strictEqual(some.empty, false);
+assert.strictEqual(some.items[0].name, "Inbox sort");
 
 console.log("app-shell helpers ok");

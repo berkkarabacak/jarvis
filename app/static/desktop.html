@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#efece8" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <!--
-    Windows 3-pane product chrome (issues #74 / #67 / #68 / #69 / #70 / #71).
+    Windows 3-pane product chrome (issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73).
     New route on purpose: /ceo stays the orb Talk + Settings page.
     #68 embeds http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
     in #live-computer via an iframe. BrowserView is not used: it sits
@@ -19,6 +19,10 @@
     collapses on its own. Selection focuses the middle header.
     #71 light data: Jarvis is live. Other helpers are documented stubs
     (not connected). Chats come from talk history. Group chats stay empty.
+    #72 Routines under the live PC: /api/jarvis/routines. Empty when none.
+    + does not invent a create flow.
+    #73 Gear opens Settings (/ceo?settings=1). Narrow windows collapse
+    left/right by default.
   -->
   <style>
     :root {
@@ -82,6 +86,12 @@
     body.left-collapsed #left,
     body.right-collapsed #right {
       display: none;
+    }
+    @media (max-width: 899px) {
+      body:not(.left-open) #left { display: none; }
+      body:not(.right-open) #right { display: none; }
+      body:not(.left-open) #show-left { display: grid; }
+      body:not(.right-open) #show-right { display: grid; }
     }
     .pane-head, .chat-head {
       display: flex;
@@ -392,6 +402,21 @@
     .terminal-note {
       margin: 8px 14px 0;
     }
+    .routines {
+      flex: 0 1 auto;
+      max-height: 36%;
+      min-height: 88px;
+      border-top: 1px solid var(--line);
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+    .routines-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .routines-head h3 { flex: 1; margin: 0; }
     .screen-actions {
       display: flex;
       flex-wrap: wrap;
@@ -558,12 +583,14 @@
           <button type="button" class="text-btn" id="start-computer">Start Jarvis's computer</button>
         </div>
       </div>
-      <div class="section">
-        <h3>Routines</h3>
-        <div class="list" id="routines">
-          <button type="button" class="routine"><strong>Morning briefing</strong><span>Coming soon</span></button>
-          <button type="button" class="routine"><strong>Evening wrap</strong><span>Coming soon</span></button>
+      <div class="section routines" id="routines-block">
+        <div class="routines-head">
+          <h3>Routines</h3>
+          <button type="button" class="icon-btn" id="add-routine" aria-label="Add routine" title="Add routine">+</button>
         </div>
+        <div class="list" id="routines" data-source="local-schedules"></div>
+        <p class="empty-list" id="empty-routines">No routines yet.</p>
+        <p class="empty-list" id="routine-note" hidden>Adding a routine comes later.</p>
       </div>
     </aside>
   </div>
@@ -590,6 +617,8 @@
       var TALK_LAST_PATH = "/api/jarvis/talk/last";
       var TALK_LOG_PATH = "/api/jarvis/talk/log";
       var SPEAK_PATH = "/api/jarvis/speak";
+      var SETTINGS_API_PATH = "/api/jarvis/settings";
+      var ROUTINES_PATH = "/api/jarvis/routines";
       var MAX_ASK = 240;
       var turns = [];
       var sending = false;
@@ -649,6 +678,8 @@
       function paintPanes(state) {
         document.body.classList.toggle("left-collapsed", !state.left);
         document.body.classList.toggle("right-collapsed", !state.right);
+        document.body.classList.toggle("left-open", !!state.left);
+        document.body.classList.toggle("right-open", !!state.right);
         syncLiveComputer();
       }
 
@@ -781,6 +812,48 @@
         location.href = "/ceo?settings=1&desktop=1";
       }
       document.getElementById("settings").addEventListener("click", openSettings);
+
+      function paintRoutines(rows) {
+        var box = document.getElementById("routines");
+        var empty = document.getElementById("empty-routines");
+        var list = Array.isArray(rows) ? rows : [];
+        while (box.firstChild) box.removeChild(box.firstChild);
+        list.forEach(function (row) {
+          if (!row || !row.id || !row.name) return;
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "routine";
+          btn.setAttribute("data-id", row.id);
+          btn.setAttribute("data-source", row.source || "local-schedules");
+          var name = document.createElement("strong");
+          name.textContent = row.name;
+          var when = document.createElement("span");
+          when.textContent = row.when || "On the schedule";
+          btn.appendChild(name);
+          btn.appendChild(when);
+          box.appendChild(btn);
+        });
+        empty.hidden = box.childNodes.length > 0;
+        empty.textContent = "No routines yet.";
+      }
+
+      function loadRoutines() {
+        fetch(ROUTINES_PATH, { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : {}; })
+          .then(function (data) {
+            paintRoutines(data && data.routines);
+          })
+          .catch(function () { paintRoutines([]); });
+      }
+
+      function addRoutineSoon() {
+        say("Adding a routine comes later.");
+        var note = document.getElementById("routine-note");
+        if (note) {
+          note.hidden = false;
+          note.textContent = "Adding a routine comes later.";
+        }
+      }
 
       function openScreen() {
         if (window.jarvisDesktop && typeof window.jarvisDesktop.openScreen === "function") {
@@ -1351,9 +1424,12 @@
       document.getElementById("profile").addEventListener("click", function () {
         say("Your profile comes later.");
       });
-      document.getElementById("routines").addEventListener("click", function () {
-        say("This list is a placeholder.");
+      document.getElementById("routines").addEventListener("click", function (e) {
+        var btn = e.target.closest(".routine[data-id]");
+        if (!btn) return;
+        say("This routine is on the schedule. Changing it comes later.");
       });
+      document.getElementById("add-routine").addEventListener("click", addRoutineSoon);
       navSections = readNav();
       paintNavSections(navSections);
       paintLeftNav();
@@ -1368,7 +1444,7 @@
 
       function persistTalkMode(next) {
         applyTalkMode(next);
-        fetch("/api/jarvis/settings", {
+        fetch(SETTINGS_API_PATH, {
           method: "PUT",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
@@ -1378,11 +1454,18 @@
       modeComputer.addEventListener("click", function () { persistTalkMode("computer"); });
       modeTerminal.addEventListener("click", function () { persistTalkMode("terminal"); });
 
-      fetch("/api/jarvis/settings", { credentials: "same-origin" })
-        .then(function (r) { return r.ok ? r.json() : {}; })
-        .then(function (data) { applyTalkMode(data && data.talk_mode); })
-        .catch(function () { applyTalkMode("computer"); });
-
+      function loadTalkMode() {
+        fetch(SETTINGS_API_PATH, { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : {}; })
+          .then(function (data) { applyTalkMode(data && data.talk_mode); })
+          .catch(function () { applyTalkMode("computer"); });
+      }
+      loadTalkMode();
+      window.addEventListener("focus", loadTalkMode);
+      setInterval(function () {
+        if (document.visibilityState === "visible") loadTalkMode();
+      }, 4000);
+      loadRoutines();
       applyTalkMode("computer");
     })();
   </script>

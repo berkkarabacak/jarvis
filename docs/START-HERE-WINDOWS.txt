@@ -7,6 +7,10 @@ Jarvis for Windows
 4. Talk. You are on Free.
 5. Click the gear icon (top right, or Jarvis → Settings) to pick Free / $3 / $8, a budget, speed, and quality
 
+Chat is in the middle. Jarvis's screen is on the right. Hide chats or Hide
+computer when you want more room. On a small window the sides hide — click
+the arrows at the edges.
+
 That is the whole install. No unzip. No Python. No black console window.
 
 Your files stay in Documents\Jarvis

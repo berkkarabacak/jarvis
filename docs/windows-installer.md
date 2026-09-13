@@ -9,7 +9,7 @@ See [START-HERE-WINDOWS.txt](START-HERE-WINDOWS.txt).
 1. Download `Jarvis-Setup.exe`
 2. Double-click
 3. Jarvis opens the 3-pane window. Free talks now.
-4. Click the **gear icon** (the one top-right control, or Jarvis → Settings) to pick a plan (Free / $3 / $8), budget, speed, and quality vs price. Those choices persist in `Documents\Jarvis\Memory\jarvis_settings.json` — the same store as the web Settings page.
+4. Click the **gear icon** (the one top-right control, or Jarvis → Settings) to pick a plan (Free / $3 / $8), budget, speed, quality vs price, and Computer vs Chat only. Those choices persist in `Documents\Jarvis\Memory\jarvis_settings.json` — the same store as the web Settings page.
 
 Workspace is always `%USERPROFILE%\Documents\Jarvis`. The installer does not ask for a folder.
 
@@ -50,3 +50,15 @@ Packaged start **skips** any key window. Berk sets the talk secret on the hosted
 - Portable zip: `scripts/windows/build-portable.ps1`
 - Dev script + Edge: `scripts/windows/start-control-room.ps1`
 - `RUN-JARVIS.bat` for the zip
+
+## Desktop smoke (Windows)
+
+After `npm start` (dev) or `Jarvis-Setup.exe` (family):
+
+1. Chat is in the middle. Jarvis's screen is on the right. Routines sit under the screen.
+2. Gear opens Settings. talk_mode / Computer vs Chat only still persist.
+3. A narrow window hides left and right by default. Edge arrows bring them back.
+4. Hide screen and Chat only do not stop the computer.
+5. No key field. Free talks now.
+
+See [desktop/README.md](../desktop/README.md) for the full checklist.
