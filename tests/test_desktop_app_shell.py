@@ -329,6 +329,7 @@ def test_routines_block_under_live_pc_is_honest():
     assert 'id="routines-block"' in html
     assert 'id="routines"' in html
     assert 'id="empty-routines"' in html
+    assert 'id="routine-note"' in html
     assert 'id="add-routine"' in html
     assert 'aria-label="Add routine"' in html
     assert "No routines yet." in html
@@ -340,6 +341,7 @@ def test_routines_block_under_live_pc_is_honest():
     assert "function loadRoutines" in js
     assert "function addRoutineSoon" in js
     assert "Adding a routine comes later." in js
+    assert "routine-note" in js
     assert "function routinesView" in shell
     assert "function addRoutinePlan" in shell
     assert 'ROUTINES_PATH = "/api/jarvis/routines"' in shell

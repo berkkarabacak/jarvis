@@ -590,6 +590,7 @@
         </div>
         <div class="list" id="routines" data-source="local-schedules"></div>
         <p class="empty-list" id="empty-routines">No routines yet.</p>
+        <p class="empty-list" id="routine-note" hidden>Adding a routine comes later.</p>
       </div>
     </aside>
   </div>
@@ -847,6 +848,11 @@
 
       function addRoutineSoon() {
         say("Adding a routine comes later.");
+        var note = document.getElementById("routine-note");
+        if (note) {
+          note.hidden = false;
+          note.textContent = "Adding a routine comes later.";
+        }
       }
 
       function openScreen() {
