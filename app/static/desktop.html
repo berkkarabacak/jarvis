@@ -7,11 +7,12 @@
   <meta name="theme-color" content="#efece8" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <!--
-    Windows 3-pane product chrome (issues #74 / #67).
+    Windows 3-pane product chrome (issues #74 / #67 / #68).
     New route on purpose: /ceo stays the orb Talk + Settings page.
-    #68 will embed http://127.0.0.1:6080 (or /ceo/jarvis-screen) in #live-computer.
-    Prefer an iframe of that viewer. BrowserView is harder to collapse.
-    Do not kill jarvis-computer when the right pane is hidden.
+    #68 embeds http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
+    in #live-computer via an iframe. BrowserView is not used: it sits
+    above the page and would need manual bounds on collapse.
+    Hide / Chat only blanks the iframe. Do not kill jarvis-computer.
   -->
   <style>
     :root {
@@ -241,24 +242,55 @@
       border-color: var(--accent);
     }
     .screen {
+      position: relative;
       margin: 0 14px;
       border-radius: 16px;
       background: #111;
       color: #f5f5f4;
+      flex: 1 1 auto;
       min-height: 220px;
+      overflow: hidden;
       display: grid;
       place-items: center;
       text-align: center;
-      padding: 20px;
-      gap: 10px;
     }
-    html[data-talk-mode="terminal"] .screen {
+    #live-frame {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #000;
+    }
+    #screen-idle {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      justify-items: center;
+      gap: 10px;
+      padding: 20px;
+    }
+    html[data-talk-mode="terminal"] .screen,
+    html[data-pc="off"] .screen:not([hidden]) {
       background: #f6f3ef;
       color: var(--muted);
       border: 1px dashed var(--line);
     }
     .screen p { margin: 0; max-width: 16rem; }
     .screen .text-btn { color: var(--ink); }
+    .terminal-note {
+      margin: 8px 14px 0;
+    }
+    .screen-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 10px 14px 0;
+    }
+    html[data-talk-mode="terminal"] .screen-actions {
+      display: none;
+    }
+    [hidden] { display: none !important; }
     .modes {
       display: flex;
       gap: 6px;
@@ -375,9 +407,18 @@
         <button type="button" class="text-btn" id="mode-computer" data-talk-mode="computer">Computer</button>
         <button type="button" class="text-btn" id="mode-terminal" data-talk-mode="terminal">Chat only</button>
       </div>
-      <div class="screen" id="live-computer">
-        <p id="screen-copy">The live computer will show here.</p>
+      <p class="hint terminal-note" id="terminal-note" hidden>Chat only — the computer stays hidden.</p>
+      <div class="screen-actions" id="screen-actions">
+        <button type="button" class="text-btn" id="hide-screen" aria-label="Hide screen">Hide screen</button>
+        <button type="button" class="text-btn" id="show-screen" aria-label="Show screen" hidden>Show Jarvis's screen</button>
         <button type="button" class="text-btn" id="open-screen">Open Jarvis's screen</button>
+      </div>
+      <div class="screen" id="live-computer" data-embed="iframe" aria-label="Jarvis's screen">
+        <iframe id="live-frame" title="Jarvis's screen" src="" hidden></iframe>
+        <div id="screen-idle">
+          <p id="screen-copy">Checking Jarvis's screen…</p>
+          <button type="button" class="text-btn" id="start-computer">Start Jarvis's computer</button>
+        </div>
       </div>
       <div class="section">
         <h3>Routines</h3>
@@ -391,10 +432,21 @@
   <script>
     (function () {
       var STORAGE = "jarvis.shell.panes";
+      var SCREEN_STORAGE = "jarvis.shell.pcVisible";
+      var SESSION = "http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale";
       var statusEl = document.getElementById("status");
       var screenCopy = document.getElementById("screen-copy");
       var modeComputer = document.getElementById("mode-computer");
       var modeTerminal = document.getElementById("mode-terminal");
+      var liveSlot = document.getElementById("live-computer");
+      var liveFrame = document.getElementById("live-frame");
+      var screenIdle = document.getElementById("screen-idle");
+      var startBtn = document.getElementById("start-computer");
+      var hideScreenBtn = document.getElementById("hide-screen");
+      var showScreenBtn = document.getElementById("show-screen");
+      var terminalNote = document.getElementById("terminal-note");
+      var talkMode = "computer";
+      var screenShown = true;
 
       function say(text) {
         statusEl.textContent = text;
@@ -413,6 +465,19 @@
         }
       }
 
+      function readScreenShown() {
+        try {
+          var raw = sessionStorage.getItem(SCREEN_STORAGE);
+          if (raw === "0") return false;
+          if (raw === "1") return true;
+        } catch (e) {}
+        return true;
+      }
+
+      function persistScreenShown() {
+        try { sessionStorage.setItem(SCREEN_STORAGE, screenShown ? "1" : "0"); } catch (e) {}
+      }
+
       function fitPanesToWidth(width, state) {
         var next = normalizePaneState(state);
         if (width > 0 && width < 900) return { left: false, right: false };
@@ -422,6 +487,7 @@
       function paintPanes(state) {
         document.body.classList.toggle("left-collapsed", !state.left);
         document.body.classList.toggle("right-collapsed", !state.right);
+        syncLiveComputer();
       }
 
       function savePanes(state) {
@@ -429,18 +495,97 @@
         paintPanes(state);
       }
 
+      function frameIsLive() {
+        var src = (liveFrame && liveFrame.getAttribute("src")) || "";
+        return !!src && src !== "about:blank";
+      }
+
+      function clearLiveFrame() {
+        if (!liveFrame) return;
+        try { liveFrame.setAttribute("src", "about:blank"); } catch (e) {}
+        try { liveFrame.removeAttribute("src"); } catch (e) {}
+        try { liveFrame.setAttribute("src", ""); } catch (e) {}
+        liveFrame.hidden = true;
+      }
+
+      function computerShouldShow() {
+        return talkMode !== "terminal" && panes.right && screenShown;
+      }
+
+      function showLiveFrame() {
+        if (!liveFrame) return;
+        screenIdle.hidden = true;
+        liveFrame.hidden = false;
+        if (liveFrame.getAttribute("src") !== SESSION) {
+          liveFrame.setAttribute("src", SESSION);
+        }
+      }
+
+      function showIdle(message, canStart) {
+        clearLiveFrame();
+        screenIdle.hidden = false;
+        screenCopy.textContent = message || "Jarvis's computer is not running.";
+        startBtn.hidden = !canStart;
+      }
+
+      function loadLiveScreen() {
+        if (!computerShouldShow()) return;
+        if (frameIsLive()) return;
+        fetch("/api/jarvis/computer/screen", { credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!computerShouldShow()) return;
+            if (data && data.running) {
+              showLiveFrame();
+              return;
+            }
+            showIdle((data && data.error) || "Jarvis's computer is not running.", true);
+          })
+          .catch(function () {
+            if (!computerShouldShow()) return;
+            showIdle("Could not check Jarvis's computer.", true);
+          });
+      }
+
+      function syncLiveComputer() {
+        var show = computerShouldShow();
+        var terminal = talkMode === "terminal";
+        document.documentElement.setAttribute("data-talk-mode", talkMode);
+        document.documentElement.setAttribute("data-pc", show ? "on" : "off");
+        modeComputer.setAttribute("data-on", talkMode === "computer" ? "1" : "0");
+        modeTerminal.setAttribute("data-on", terminal ? "1" : "0");
+        liveSlot.hidden = !show;
+        hideScreenBtn.hidden = !show;
+        showScreenBtn.hidden = show || terminal;
+        terminalNote.hidden = !terminal;
+        if (!show) {
+          clearLiveFrame();
+          screenCopy.textContent = terminal
+            ? "Chat only — the computer stays hidden."
+            : "Jarvis's screen is hidden. The computer keeps running.";
+          startBtn.hidden = true;
+          return;
+        }
+        loadLiveScreen();
+      }
+
       function applyTalkMode(value) {
-        var mode = String(value || "").toLowerCase() === "terminal" ? "terminal" : "computer";
-        document.documentElement.setAttribute("data-talk-mode", mode);
-        modeComputer.setAttribute("data-on", mode === "computer" ? "1" : "0");
-        modeTerminal.setAttribute("data-on", mode === "terminal" ? "1" : "0");
-        screenCopy.textContent = mode === "terminal"
-          ? "Chat only — the computer stays hidden."
-          : "The live computer will show here.";
-        return mode;
+        talkMode = String(value || "").toLowerCase() === "terminal" ? "terminal" : "computer";
+        if (talkMode === "terminal") screenShown = false;
+        persistScreenShown();
+        syncLiveComputer();
+        return talkMode;
+      }
+
+      function setScreenShown(on) {
+        if (talkMode === "terminal") return;
+        screenShown = !!on;
+        persistScreenShown();
+        syncLiveComputer();
       }
 
       var panes = fitPanesToWidth(window.innerWidth, readPanes());
+      screenShown = readScreenShown();
       paintPanes(panes);
 
       document.getElementById("hide-left").addEventListener("click", function () {
@@ -483,6 +628,37 @@
         window.open("/ceo/jarvis-screen", "jarvis-screen");
       }
       document.getElementById("open-screen").addEventListener("click", openScreen);
+      hideScreenBtn.addEventListener("click", function () { setScreenShown(false); });
+      showScreenBtn.addEventListener("click", function () { setScreenShown(true); });
+      startBtn.addEventListener("click", function () {
+        startBtn.disabled = true;
+        startBtn.textContent = "Starting…";
+        screenCopy.textContent = "Starting the one existing computer. This is not a screenshot.";
+        fetch("/api/jarvis/computer/screen/start", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            var data = res.j || {};
+            startBtn.disabled = false;
+            startBtn.textContent = "Start Jarvis's computer";
+            if (!computerShouldShow()) return;
+            if (data.running) {
+              showLiveFrame();
+              return;
+            }
+            showIdle(data.error || "Jarvis's computer is not running.", true);
+          })
+          .catch(function () {
+            startBtn.disabled = false;
+            startBtn.textContent = "Start Jarvis's computer";
+            if (!computerShouldShow()) return;
+            showIdle("Could not start Jarvis's computer.", true);
+          });
+      });
 
       document.getElementById("composer").addEventListener("submit", function (e) {
         e.preventDefault();
