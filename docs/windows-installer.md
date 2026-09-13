@@ -8,7 +8,7 @@ See [START-HERE-WINDOWS.txt](START-HERE-WINDOWS.txt).
 
 1. Download `Jarvis-Setup.exe`
 2. Double-click
-3. Jarvis opens Talk. Free talks now.
+3. Jarvis opens the 3-pane window. Free talks now.
 4. Click the **gear icon** (the one top-right control, or Jarvis → Settings) to pick a plan (Free / $3 / $8), budget, speed, and quality vs price. Those choices persist in `Documents\Jarvis\Memory\jarvis_settings.json` — the same store as the web Settings page.
 
 Workspace is always `%USERPROFILE%\Documents\Jarvis`. The installer does not ask for a folder.

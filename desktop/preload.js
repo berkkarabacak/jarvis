@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
     ipcRenderer.send("jarvis:talk", payload || {});
   },
   openScreen: () => ipcRenderer.invoke("jarvis:open-screen"),
+  openSettings: () => ipcRenderer.invoke("jarvis:open-settings"),
   getMuted: () => ipcRenderer.invoke("jarvis:get-muted"),
   onMuted: (cb) => {
     if (typeof cb !== "function") return;

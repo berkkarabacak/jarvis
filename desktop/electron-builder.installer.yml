@@ -8,6 +8,7 @@ directories:
 files:
   - main.js
   - mini-avatar.js
+  - app-shell.js
   - packaged-python.js
   - talk-policy.js
   - preload.js

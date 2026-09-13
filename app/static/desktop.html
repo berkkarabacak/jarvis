@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarvis</title>
+  <meta name="theme-color" content="#efece8" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <!--
+    Windows 3-pane product chrome (issues #74 / #67).
+    New route on purpose: /ceo stays the orb Talk + Settings page.
+    #68 will embed http://127.0.0.1:6080 (or /ceo/jarvis-screen) in #live-computer.
+    Prefer an iframe of that viewer. BrowserView is harder to collapse.
+    Do not kill jarvis-computer when the right pane is hidden.
+  -->
+  <style>
+    :root {
+      --page: #efece8;
+      --panel: #ffffff;
+      --ink: #1c1917;
+      --muted: #6b6560;
+      --line: #e4dfd8;
+      --soft: #f6f3ef;
+      --accent: #1d4ed8;
+      --accent-ink: #fff;
+      --chip: #ece7e1;
+      --shadow: 0 10px 28px rgba(28, 25, 23, 0.08);
+      --radius: 20px;
+      --left: 280px;
+      --right: 340px;
+      --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--page);
+      color: var(--ink);
+      font: 15px/1.4 var(--ui);
+    }
+    body { overflow: hidden; }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .app {
+      height: 100%;
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      min-width: 0;
+    }
+    .pane {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #left {
+      flex: 0 1 var(--left);
+      width: var(--left);
+      max-width: 32%;
+    }
+    #middle {
+      flex: 1 1 360px;
+      min-width: 280px;
+    }
+    #right {
+      flex: 0 1 var(--right);
+      width: var(--right);
+      max-width: 36%;
+    }
+    body.left-collapsed #left,
+    body.right-collapsed #right {
+      display: none;
+    }
+    .pane-head, .chat-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 14px 10px;
+    }
+    .pane-head h1, .pane-head h2, .chat-head h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+      flex: 1;
+    }
+    .icon-btn, .text-btn {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 999px;
+      min-height: 32px;
+      padding: 0 10px;
+      color: var(--ink);
+    }
+    .icon-btn {
+      width: 32px;
+      padding: 0;
+      display: grid;
+      place-items: center;
+    }
+    .icon-btn:hover, .text-btn:hover { background: #fff; }
+    .search-wrap { padding: 0 14px 12px; }
+    .search-wrap input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 999px;
+      min-height: 38px;
+      padding: 0 14px 0 36px;
+      outline: none;
+    }
+    .search {
+      position: relative;
+    }
+    .search::before {
+      content: "";
+      position: absolute;
+      left: 13px;
+      top: 11px;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--muted);
+      border-radius: 50%;
+    }
+    .search::after {
+      content: "";
+      position: absolute;
+      left: 24px;
+      top: 22px;
+      width: 7px;
+      height: 2px;
+      background: var(--muted);
+      transform: rotate(45deg);
+    }
+    .section {
+      padding: 4px 14px 10px;
+      overflow: auto;
+    }
+    .section h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .agents {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .agent, .row, .routine, .footer-btn {
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 14px;
+      text-align: left;
+    }
+    .agent {
+      padding: 10px 10px 12px;
+      display: grid;
+      gap: 6px;
+      justify-items: start;
+    }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+    }
+    .agent strong, .row strong { font-size: 13px; }
+    .agent span, .row span, .hint, .routine span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .list { display: grid; gap: 6px; }
+    .row, .routine, .footer-btn {
+      width: 100%;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .row .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      flex: 0 0 auto;
+    }
+    .left-foot {
+      margin-top: auto;
+      padding: 12px 14px;
+      display: flex;
+      gap: 8px;
+      border-top: 1px solid var(--line);
+    }
+    .footer-btn { flex: 1; justify-content: center; }
+    .chat-head .who { display: grid; gap: 2px; flex: 1; }
+    .chat-head .who span { color: var(--muted); font-size: 12px; }
+    .thread {
+      flex: 1;
+      overflow: auto;
+      padding: 18px 20px 8px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .empty {
+      margin: auto;
+      text-align: center;
+      color: var(--muted);
+      max-width: 16rem;
+    }
+    .composer {
+      padding: 12px 14px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .composer input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 999px;
+      min-height: 44px;
+      padding: 0 16px;
+      outline: none;
+    }
+    .send {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+    }
+    .screen {
+      margin: 0 14px;
+      border-radius: 16px;
+      background: #111;
+      color: #f5f5f4;
+      min-height: 220px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 20px;
+      gap: 10px;
+    }
+    html[data-talk-mode="terminal"] .screen {
+      background: #f6f3ef;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+    }
+    .screen p { margin: 0; max-width: 16rem; }
+    .screen .text-btn { color: var(--ink); }
+    .modes {
+      display: flex;
+      gap: 6px;
+      padding: 10px 14px 0;
+    }
+    .modes button[data-on="1"] {
+      background: #dbeafe;
+      border-color: #93c5fd;
+    }
+    .edge {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      display: none;
+    }
+    body.left-collapsed #show-left,
+    body.right-collapsed #show-right { display: grid; }
+    #show-left { left: 8px; }
+    #show-right { right: 8px; }
+    .sr {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+  </style>
+</head>
+<body>
+  <div class="sr" id="status" aria-live="polite">Jarvis is ready</div>
+  <button type="button" class="icon-btn edge" id="show-left" aria-label="Show chats">‹</button>
+  <button type="button" class="icon-btn edge" id="show-right" aria-label="Show computer">›</button>
+  <div class="app" id="app">
+    <aside class="pane" id="left" aria-label="Chats">
+      <div class="pane-head">
+        <h1>Jarvis</h1>
+        <button type="button" class="icon-btn" id="hide-left" aria-label="Hide chats">‹</button>
+      </div>
+      <div class="search-wrap">
+        <div class="search">
+          <input id="search" type="search" placeholder="Search" aria-label="Search" autocomplete="off" />
+        </div>
+      </div>
+      <div class="section">
+        <h3>Helpers</h3>
+        <div class="agents" id="agents">
+          <button type="button" class="agent" data-id="jarvis">
+            <span class="avatar" style="background:#1d4ed8">J</span>
+            <strong>Jarvis</strong>
+            <span>Coming soon</span>
+          </button>
+          <button type="button" class="agent" data-id="writer">
+            <span class="avatar" style="background:#0f766e">W</span>
+            <strong>Writer</strong>
+            <span>Coming soon</span>
+          </button>
+          <button type="button" class="agent" data-id="helper">
+            <span class="avatar" style="background:#b45309">H</span>
+            <strong>Helper</strong>
+            <span>Coming soon</span>
+          </button>
+          <button type="button" class="agent" data-id="finder">
+            <span class="avatar" style="background:#7c3aed">F</span>
+            <strong>Finder</strong>
+            <span>Coming soon</span>
+          </button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Chats</h3>
+        <div class="list" id="chats">
+          <button type="button" class="row" data-id="buyra"><span class="dot"></span><span><strong>Buyra</strong><br /><span>Placeholder chat</span></span></button>
+          <button type="button" class="row" data-id="home"><span class="dot"></span><span><strong>Home</strong><br /><span>Placeholder chat</span></span></button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Group chats</h3>
+        <div class="list" id="groups">
+          <button type="button" class="row" data-id="family"><span class="dot"></span><span><strong>Family</strong><br /><span>Placeholder group</span></span></button>
+        </div>
+      </div>
+      <div class="left-foot">
+        <button type="button" class="footer-btn" id="plugins">Plugins</button>
+        <button type="button" class="footer-btn" id="profile">You</button>
+      </div>
+    </aside>
+
+    <main class="pane" id="middle" aria-label="Chat">
+      <div class="chat-head">
+        <div class="who">
+          <h2 id="chat-title">Jarvis</h2>
+          <span id="chat-sub">Ready when you are</span>
+        </div>
+        <button type="button" class="icon-btn" id="settings" aria-label="Settings" title="Settings">⚙</button>
+      </div>
+      <div class="thread" id="thread">
+        <p class="empty" id="empty-chat">This chat is ready. Messages will show up here.</p>
+      </div>
+      <form class="composer" id="composer">
+        <button type="button" class="icon-btn" id="add" aria-label="Add" title="Add">+</button>
+        <input id="ask" type="text" placeholder="Type a message" aria-label="Type a message" autocomplete="off" />
+        <button type="button" class="icon-btn" id="mic" aria-label="Talk" title="Talk">🎤</button>
+        <button type="submit" class="icon-btn send" id="send" aria-label="Send" title="Send">➤</button>
+      </form>
+    </main>
+
+    <aside class="pane" id="right" aria-label="Computer">
+      <div class="pane-head">
+        <h2>Jarvis's screen</h2>
+        <button type="button" class="icon-btn" id="hide-right" aria-label="Hide computer">›</button>
+      </div>
+      <div class="modes" role="group" aria-label="Computer or chat only">
+        <button type="button" class="text-btn" id="mode-computer" data-talk-mode="computer">Computer</button>
+        <button type="button" class="text-btn" id="mode-terminal" data-talk-mode="terminal">Chat only</button>
+      </div>
+      <div class="screen" id="live-computer">
+        <p id="screen-copy">The live computer will show here.</p>
+        <button type="button" class="text-btn" id="open-screen">Open Jarvis's screen</button>
+      </div>
+      <div class="section">
+        <h3>Routines</h3>
+        <div class="list" id="routines">
+          <button type="button" class="routine"><strong>Morning briefing</strong><span>Coming soon</span></button>
+          <button type="button" class="routine"><strong>Evening wrap</strong><span>Coming soon</span></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <script>
+    (function () {
+      var STORAGE = "jarvis.shell.panes";
+      var statusEl = document.getElementById("status");
+      var screenCopy = document.getElementById("screen-copy");
+      var modeComputer = document.getElementById("mode-computer");
+      var modeTerminal = document.getElementById("mode-terminal");
+
+      function say(text) {
+        statusEl.textContent = text;
+      }
+
+      function normalizePaneState(raw) {
+        var src = raw && typeof raw === "object" ? raw : {};
+        return { left: src.left !== false, right: src.right !== false };
+      }
+
+      function readPanes() {
+        try {
+          return normalizePaneState(JSON.parse(localStorage.getItem(STORAGE) || "null"));
+        } catch (e) {
+          return { left: true, right: true };
+        }
+      }
+
+      function fitPanesToWidth(width, state) {
+        var next = normalizePaneState(state);
+        if (width > 0 && width < 900) return { left: false, right: false };
+        return next;
+      }
+
+      function paintPanes(state) {
+        document.body.classList.toggle("left-collapsed", !state.left);
+        document.body.classList.toggle("right-collapsed", !state.right);
+      }
+
+      function savePanes(state) {
+        try { localStorage.setItem(STORAGE, JSON.stringify(state)); } catch (e) {}
+        paintPanes(state);
+      }
+
+      function applyTalkMode(value) {
+        var mode = String(value || "").toLowerCase() === "terminal" ? "terminal" : "computer";
+        document.documentElement.setAttribute("data-talk-mode", mode);
+        modeComputer.setAttribute("data-on", mode === "computer" ? "1" : "0");
+        modeTerminal.setAttribute("data-on", mode === "terminal" ? "1" : "0");
+        screenCopy.textContent = mode === "terminal"
+          ? "Chat only — the computer stays hidden."
+          : "The live computer will show here.";
+        return mode;
+      }
+
+      var panes = fitPanesToWidth(window.innerWidth, readPanes());
+      paintPanes(panes);
+
+      document.getElementById("hide-left").addEventListener("click", function () {
+        panes = { left: false, right: panes.right };
+        savePanes(panes);
+      });
+      document.getElementById("show-left").addEventListener("click", function () {
+        panes = { left: true, right: panes.right };
+        savePanes(panes);
+      });
+      document.getElementById("hide-right").addEventListener("click", function () {
+        panes = { left: panes.left, right: false };
+        savePanes(panes);
+      });
+      document.getElementById("show-right").addEventListener("click", function () {
+        panes = { left: panes.left, right: true };
+        savePanes(panes);
+      });
+
+      window.addEventListener("resize", function () {
+        var next = fitPanesToWidth(window.innerWidth, readPanes());
+        panes = next;
+        paintPanes(panes);
+      });
+
+      function openSettings() {
+        if (window.jarvisDesktop && typeof window.jarvisDesktop.openSettings === "function") {
+          window.jarvisDesktop.openSettings();
+          return;
+        }
+        location.href = "/ceo?settings=1&desktop=1";
+      }
+      document.getElementById("settings").addEventListener("click", openSettings);
+
+      function openScreen() {
+        if (window.jarvisDesktop && typeof window.jarvisDesktop.openScreen === "function") {
+          window.jarvisDesktop.openScreen();
+          return;
+        }
+        window.open("/ceo/jarvis-screen", "jarvis-screen");
+      }
+      document.getElementById("open-screen").addEventListener("click", openScreen);
+
+      document.getElementById("composer").addEventListener("submit", function (e) {
+        e.preventDefault();
+        say("Chat comes next.");
+      });
+      document.getElementById("mic").addEventListener("click", function () {
+        say("Talk comes next.");
+      });
+      document.getElementById("add").addEventListener("click", function () {
+        say("Add comes next.");
+      });
+      ["agents", "chats", "groups", "plugins", "profile", "routines"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("click", function () {
+          say("This list is a placeholder.");
+        });
+      });
+
+      function persistTalkMode(next) {
+        applyTalkMode(next);
+        fetch("/api/jarvis/settings", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ talk_mode: next })
+        }).catch(function () {});
+      }
+      modeComputer.addEventListener("click", function () { persistTalkMode("computer"); });
+      modeTerminal.addEventListener("click", function () { persistTalkMode("terminal"); });
+
+      fetch("/api/jarvis/settings", { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .then(function (data) { applyTalkMode(data && data.talk_mode); })
+        .catch(function () { applyTalkMode("computer"); });
+
+      applyTalkMode("computer");
+    })();
+  </script>
+</body>
+</html>

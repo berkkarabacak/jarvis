@@ -164,6 +164,7 @@ def test_installer_packs_avatar_files():
     pkg = (DESKTOP / "package.json").read_text(encoding="utf-8")
     for name in (
         "mini-avatar.js",
+        "app-shell.js",
         "avatar.html",
         "avatar-preload.js",
         "jarvis-tray.png",
@@ -186,12 +187,12 @@ def test_avatar_is_not_a_second_main_window():
     assert "raisesMainOnClick: false" in helpers
 
 
-def test_default_launch_is_avatar_only():
+def test_default_launch_shows_main_window():
     helpers = (DESKTOP / "mini-avatar.js").read_text(encoding="utf-8")
     main = (DESKTOP / "main.js").read_text(encoding="utf-8")
     html = (DESKTOP / "avatar.html").read_text(encoding="utf-8")
     preload = (DESKTOP / "avatar-preload.js").read_text(encoding="utf-8")
-    assert 'defaultLaunch: "avatar"' in helpers
+    assert 'defaultLaunch: "main"' in helpers
     assert "function shouldShowMainOnLaunch" in helpers
     assert "function shouldOpenBubbleOnLaunch" in helpers
     assert "function shouldHideMainOnClose" in helpers

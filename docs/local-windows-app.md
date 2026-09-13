@@ -55,7 +55,8 @@ npm install
 npm start
 ```
 
-The window loads **the same** `/ceo` page as the website (no separate UI).
+The window loads the 3-pane shell at `/desktop`. Settings and the hidden
+talk engine still use the same `/ceo` page as the website.
 
 Build a portable/NSIS binary: `npm run dist` inside `desktop/` (see `desktop/README.md`).
 

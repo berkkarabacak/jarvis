@@ -20,6 +20,7 @@ USER_UX_FILES = (
     DESKTOP / "electron-builder.installer.yml",
     ROOT / "docs" / "START-HERE-WINDOWS.txt",
     ROOT / "deploy" / "jarvis-public" / "index.html",
+    ROOT / "app" / "static" / "desktop.html",
 )
 
 SECRETISH = re.compile(r"sk-or-v1-[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{20,}")
