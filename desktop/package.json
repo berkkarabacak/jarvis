@@ -2,7 +2,7 @@
   "name": "ai-control-room-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Control Room desktop shell ==GRoK== — same CEO UI as the web app",
+  "description": "Jarvis Windows shell — 3-pane main window plus optional mini avatar",
   "main": "main.js",
   "author": "GRoK",
   "license": "MIT",
@@ -21,6 +21,7 @@
     "files": [
       "main.js",
       "mini-avatar.js",
+      "app-shell.js",
       "packaged-python.js",
       "talk-policy.js",
       "preload.js",

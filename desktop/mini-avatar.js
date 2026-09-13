@@ -11,7 +11,7 @@ const AVATAR = {
   dragThresholdPx: 5,
   alwaysOnTopLevel: "status",
   raisesMainOnClick: false,
-  defaultLaunch: "avatar",
+  defaultLaunch: "main",
   expandOpensMain: true,
   closeMainReturnsToAvatar: true,
   openBubbleOnLaunch: false,
@@ -62,7 +62,7 @@ function clampPosition(pos, workArea, size) {
 }
 
 function shouldShowMainOnLaunch() {
-  return false;
+  return AVATAR.defaultLaunch === "main";
 }
 
 function shouldOpenBubbleOnLaunch() {
@@ -71,8 +71,8 @@ function shouldOpenBubbleOnLaunch() {
 
 function shouldShowAvatar(state) {
   if (!state || state.shuttingDown) return false;
-  // Default surface is the mini avatar. Hide it only while the full
-  // window is up, not minimized, and focused.
+  // Main surface is the 3-pane window. The overlay is an optional
+  // helper: hide it only while that window is up, not minimized, and focused.
   if (state.mainVisible && !state.mainMinimized && state.mainFocused) {
     return false;
   }

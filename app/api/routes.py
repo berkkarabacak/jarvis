@@ -60,6 +60,7 @@ STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
 DASHBOARD_HTML = STATIC_DIR / "dashboard.html"
 HISTORY_HTML = STATIC_DIR / "history.html"
 CEO_HTML = STATIC_DIR / "ceo.html"
+DESKTOP_HTML = STATIC_DIR / "desktop.html"
 LOGO_SVG = STATIC_DIR / "logo.svg"
 FAVICON_SVG = STATIC_DIR / "favicon.svg"
 
@@ -167,6 +168,14 @@ async def ceo_home_page() -> FileResponse:
     if not CEO_HTML.is_file():
         raise HTTPException(status_code=404, detail="CEO home not found")
     return FileResponse(CEO_HTML, media_type="text/html; charset=utf-8")
+
+
+@router.get("/desktop", response_class=HTMLResponse)
+async def desktop_shell_page() -> FileResponse:
+    """Windows 3-pane product chrome. Does not replace /ceo Talk."""
+    if not DESKTOP_HTML.is_file():
+        raise HTTPException(status_code=404, detail="Desktop shell not found")
+    return FileResponse(DESKTOP_HTML, media_type="text/html; charset=utf-8")
 
 
 @router.post("/oauth/start", dependencies=[Depends(require_api_secret)])

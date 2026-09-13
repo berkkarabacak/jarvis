@@ -206,8 +206,10 @@ def test_isolated_python_runs_first_run_env_by_script_not_dash_m(tmp_path):
 def test_packaged_talk_policy_is_shipped_with_the_shell():
     pkg = json.loads((DESKTOP / "package.json").read_text(encoding="utf-8"))
     assert "talk-policy.js" in pkg["build"]["files"]
+    assert "app-shell.js" in pkg["build"]["files"]
     yml = (DESKTOP / "electron-builder.installer.yml").read_text(encoding="utf-8")
     assert "talk-policy.js" in yml
+    assert "app-shell.js" in yml
     assert (DESKTOP / "talk-policy.js").is_file()
     assert (DESKTOP / "talk-policy.test.js").is_file()
 

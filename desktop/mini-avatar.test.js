@@ -38,11 +38,11 @@ const {
 const work = { x: 0, y: 0, width: 1920, height: 1080 };
 
 assert.strictEqual(AVATAR.raisesMainOnClick, false);
-assert.strictEqual(AVATAR.defaultLaunch, "avatar");
+assert.strictEqual(AVATAR.defaultLaunch, "main");
 assert.strictEqual(AVATAR.expandOpensMain, true);
 assert.strictEqual(AVATAR.closeMainReturnsToAvatar, true);
 assert.strictEqual(AVATAR.openBubbleOnLaunch, false);
-assert.strictEqual(shouldShowMainOnLaunch(), false);
+assert.strictEqual(shouldShowMainOnLaunch(), true);
 assert.strictEqual(shouldOpenBubbleOnLaunch(), false);
 assert.strictEqual(AVATAR.alwaysOnTopLevel, "status");
 assert.ok(AVATAR.size <= 120, "avatar must stay tiny");

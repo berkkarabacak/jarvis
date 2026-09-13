@@ -1,31 +1,35 @@
-# AI Control Room — Desktop (Electron) ==GRoK==
+# Jarvis — Desktop (Electron)
 
-Native Windows window that loads the **exact same** CEO UI as the web app
-(`app/static/ceo.html` via `http://127.0.0.1:<port>/ceo`).
+Native Windows app. The **primary window** is a Grok Bot–like three-pane
+shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
 
-No duplicate frontend. The Electron shell only:
+`/ceo` is **not** rewritten. It stays the Realtime / Settings page:
 
 1. Starts local `uvicorn` from the repo
-2. Cold start shows only the small always-on-top talking avatar
-3. Expand on the avatar opens the full `/ceo` Talk window
-4. Close or minimize Talk returns to the avatar. The avatar **×** (and
-   taskbar /    tray **Quit Jarvis**) really quits. Mute on the avatar or
+2. Cold start shows the 3-pane window (Helpers / chat / Jarvis's screen)
+3. A hidden talk engine still loads `/ceo` so avatar ask, mute, and
+   Realtime keep working
+4. Close the main window returns to the optional mini avatar. The avatar
+   **×** (and tray **Quit Jarvis**) really quits. Mute on the avatar or
    tray stops Realtime output and neural TTS until unmuted. Never Windows SAPI.
-5. Exposes **Settings** in the Jarvis menu (`Ctrl+,`) and as one top-right
-   gear icon on Talk (`/ceo?settings=1`)
-6. Opens **Jarvis's screen** (ORCH-410) — a viewer window for the live
-   localhost noVNC desktop at `http://127.0.0.1:6080`
+5. **Settings** is Jarvis menu (`Ctrl+,`) or the gear on the 3-pane header.
+   That opens `/ceo?settings=1` in a Settings window (talk_mode /
+   Computer vs Chat only stay on the same `/api/jarvis/settings` store)
+6. **Jarvis's screen** still opens the noVNC viewer at
+   `http://127.0.0.1:6080`. The right pane is the slot; live embed is #68.
 7. Stops the backend on quit
 
-The mini avatar (ORCH-397 / ORCH-398) is a tiny draggable robot overlay, not a
-second main window. Cold start is the circular avatar only — not the 248×172
-talk bubble. Click opens a talk bubble, starts listening, and accepts a short
-typed question. Replies show on the bubble. The expand control opens the full
-Talk window. Close or minimize Talk returns to the avatar. The always-visible
-× quits the app; the speaker icon mutes him. Jarvis stays on the Windows
-taskbar and in the tray so Quit / Mute are a right-click away.
+Why a new `/desktop` route: `/ceo` is the orb Talk surface used by
+existing voice tests and Settings. Rewriting it in place would mix two
+layouts. The 3-pane chrome is the Windows product window; `/ceo` remains
+the talk engine.
 
-Settings (budget, speed, quality vs price) are the same `/api/jarvis/settings` contract as the web page.
+The mini avatar is an optional always-on-top helper, not the main
+product surface. Click opens a talk bubble. Expand opens the 3-pane
+window. Jarvis stays on the Windows taskbar and in the tray so Quit /
+Mute are a right-click away.
+
+Family installer path never asks for a key.
 
 ## Run (dev)
 
@@ -61,7 +65,7 @@ This is the family-PC path. It bundles Python and the app tree.
 powershell -ExecutionPolicy Bypass -File scripts\windows\build-installer.ps1
 ```
 
-Output: `dist\Jarvis-Setup.exe`. First run opens Talk. No key window.  
+Output: `dist\Jarvis-Setup.exe`. First run opens the 3-pane window. No key window.
 See [docs/windows-installer.md](../docs/windows-installer.md).
 
 ## Build shell-only installer / portable exe
@@ -76,13 +80,13 @@ Artifacts under `desktop/dist/`. This **shell-only** pack still needs the
 **repo + `.venv`** nearby, or `CONTROL_ROOM_ROOT`. Prefer `build-installer.ps1`
 when you want a real one-file install.
 
-## Same UI guarantee
+## Surfaces
 
 | Surface | UI source |
 |---------|-----------|
-| https://aicontrolroom.nl/ceo | server `app/static/ceo.html` |
-| Local browser / Edge `--app` | same |
-| This Electron app | same URL on loopback |
+| This Electron app (main window) | server `app/static/desktop.html` at `/desktop` |
+| Settings / hidden talk engine | server `app/static/ceo.html` at `/ceo` |
+| https://aicontrolroom.nl/ceo | same `/ceo` orb Talk (web later) |
 
 ## File editing
 

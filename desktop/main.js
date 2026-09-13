@@ -1,11 +1,12 @@
 /**
  * Jarvis desktop shell.
  *
- * Loads the same CEO UI as the web app from a local uvicorn process.
- * Packaged installer: bundled Python + app tree in extraResources.
- * First run: packaged users go straight to Talk. Berk sets the talk
- * secret on the hosted server or in the private build env. Users never
- * see a key field.
+ * Primary window is the Grok Bot–like 3-pane chrome at /desktop.
+ * /ceo stays loaded in a hidden talk engine so Realtime, avatar ask,
+ * and Settings keep working. Packaged installer: bundled Python + app
+ * tree in extraResources. First run: packaged users go straight to the
+ * 3-pane window. Berk sets the talk secret on the hosted server or in
+ * the private build env. Users never see a key field.
  */
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, screen } = require("electron");
 const path = require("path");
@@ -41,12 +42,15 @@ const {
   applyOperatorTalkEnv,
   shouldShowFirstRunKeyWindow,
 } = require("./talk-policy");
+const { SHELL_PATH, TALK_PATH } = require("./app-shell");
 
 const DEFAULT_PORT = 8787;
 const JARVIS_SCREEN_TITLE = "Jarvis's screen";
 const JARVIS_SCREEN_CONTROL = "Open Jarvis's screen";
 const JARVIS_NOVNC_URL = "http://127.0.0.1:6080";
 let mainWindow = null;
+let talkEngineWindow = null;
+let settingsWindow = null;
 let screenWindow = null;
 let avatarWindow = null;
 let avatarBubbleOpen = false;
@@ -62,13 +66,42 @@ let currentPort = DEFAULT_PORT;
 function ceoUrl(port, extra) {
   const q = new URLSearchParams({ autolisten: "1", handsfree: "1", desktop: "1" });
   if (extra && extra.settings) q.set("settings", "1");
-  return `http://127.0.0.1:${port}/ceo?${q.toString()}`;
+  return `http://127.0.0.1:${port}${TALK_PATH}?${q.toString()}`;
+}
+
+function desktopUrl(port, extra) {
+  const q = new URLSearchParams({ desktop: "1" });
+  if (extra && extra.settings) q.set("settings", "1");
+  return `http://127.0.0.1:${port}${SHELL_PATH}?${q.toString()}`;
 }
 
 function openSettingsInWindow() {
-  expandMainWindow();
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.loadURL(ceoUrl(currentPort, { settings: true }));
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    if (settingsWindow.isMinimized()) settingsWindow.restore();
+    settingsWindow.show();
+    settingsWindow.focus();
+    return settingsWindow;
+  }
+  settingsWindow = new BrowserWindow({
+    width: 720,
+    height: 760,
+    minWidth: 480,
+    minHeight: 480,
+    title: "Settings",
+    backgroundColor: "#1e4d7b",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  settingsWindow.on("closed", () => {
+    settingsWindow = null;
+  });
+  settingsWindow.loadURL(ceoUrl(currentPort, { settings: true }));
+  return settingsWindow;
 }
 
 function jarvisScreenUrl(port) {
@@ -126,7 +159,10 @@ function installAppMenu() {
           click: () => {
             expandMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.loadURL(ceoUrl(currentPort));
+              const url = mainWindow.webContents.getURL() || "";
+              if (!url.includes(SHELL_PATH)) {
+                mainWindow.loadURL(desktopUrl(currentPort));
+              }
             }
           },
         },
@@ -227,6 +263,12 @@ function broadcastMuted() {
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("jarvis:muted", payload);
+  }
+  if (talkEngineWindow && !talkEngineWindow.isDestroyed()) {
+    talkEngineWindow.webContents.send("jarvis:muted", payload);
+  }
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.webContents.send("jarvis:muted", payload);
   }
   refreshTrayMenu();
   installAppMenu();
@@ -645,12 +687,12 @@ async function createWindow(port) {
   });
 
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1400,
+    height: 860,
+    minWidth: 800,
+    minHeight: 560,
     title: "Jarvis",
-    backgroundColor: "#0a0f1a",
+    backgroundColor: "#ddd6cc",
     autoHideMenuBar: false,
     show: shouldShowMainOnLaunch(),
     skipTaskbar: !shouldShowMainOnLaunch(),
@@ -665,11 +707,17 @@ async function createWindow(port) {
   currentPort = port;
   installAppMenu();
   ipcMain.removeHandler("jarvis:open-screen");
+  ipcMain.removeHandler("jarvis:open-settings");
   ipcMain.handle("jarvis:open-screen", () => {
     openJarvisScreen();
     return { ok: true, title: JARVIS_SCREEN_TITLE, url: JARVIS_NOVNC_URL };
   });
-  await mainWindow.loadURL(ceoUrl(port));
+  ipcMain.handle("jarvis:open-settings", () => {
+    openSettingsInWindow();
+    return { ok: true };
+  });
+  await mainWindow.loadURL(desktopUrl(port));
+  createTalkEngineWindow(port);
   if (jarvisMuted && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("jarvis:muted", buildMuteState({ muted: true }));
   }
@@ -692,6 +740,41 @@ async function createWindow(port) {
   createTray();
   createAvatarWindow();
   syncAvatarVisibility();
+}
+
+function talkTarget() {
+  if (talkEngineWindow && !talkEngineWindow.isDestroyed()) return talkEngineWindow;
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+  return null;
+}
+
+function createTalkEngineWindow(port) {
+  if (talkEngineWindow && !talkEngineWindow.isDestroyed()) return talkEngineWindow;
+  talkEngineWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    show: false,
+    skipTaskbar: true,
+    title: "Jarvis voice",
+    backgroundColor: "#1e4d7b",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  talkEngineWindow.on("close", (e) => {
+    if (shuttingDown) return;
+    e.preventDefault();
+    if (talkEngineWindow && !talkEngineWindow.isDestroyed()) talkEngineWindow.hide();
+  });
+  talkEngineWindow.on("closed", () => {
+    talkEngineWindow = null;
+  });
+  talkEngineWindow.loadURL(ceoUrl(port));
+  return talkEngineWindow;
 }
 
 function expandMainWindow() {
@@ -781,9 +864,10 @@ function sendAvatarTalk(partial) {
 }
 
 function focusVoiceFromAvatar() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const win = talkTarget();
+  if (!win) return;
   // Hook for ORCH-398. Do not show or focus the main window.
-  mainWindow.webContents.send("jarvis:focus-voice");
+  win.webContents.send("jarvis:focus-voice");
   sendAvatarTalk({ status: "listening" });
 }
 
@@ -795,9 +879,10 @@ function askFromAvatar(text) {
     applyAvatarBounds();
   }
   sendAvatarTalk({ status: "thinking", you: asked });
-  if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, text: asked };
+  const win = talkTarget();
+  if (!win) return { ok: false, text: asked };
   // Do not show or focus the main window.
-  mainWindow.webContents.send("jarvis:avatar-ask", { text: asked });
+  win.webContents.send("jarvis:avatar-ask", { text: asked });
   return { ok: true, text: asked };
 }
 
@@ -954,8 +1039,13 @@ function createAvatarWindow() {
   });
   ipcMain.handle("jarvis:get-muted", () => buildMuteState({ muted: jarvisMuted }));
   ipcMain.on("jarvis:talk", (event, payload) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (event.sender !== mainWindow.webContents) return;
+    const fromMain = !!(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents);
+    const fromTalk = !!(
+      talkEngineWindow &&
+      !talkEngineWindow.isDestroyed() &&
+      event.sender === talkEngineWindow.webContents
+    );
+    if (!fromMain && !fromTalk) return;
     sendAvatarTalk(payload);
   });
 
@@ -973,6 +1063,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    expandMainWindow();
     if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
