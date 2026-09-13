@@ -1,5 +1,5 @@
 /**
- * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68).
+ * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68 / #69).
  * Run: node desktop/app-shell.test.js
  */
 const assert = require("assert");
@@ -11,6 +11,9 @@ const {
   SCREEN_VIEWER_PATH,
   NOVNC_URL,
   NOVNC_SESSION_URL,
+  ASK_PATH,
+  TALK_LAST_PATH,
+  TALK_LOG_PATH,
   talkQuery,
   shellQuery,
   talkHref,
@@ -25,6 +28,19 @@ const {
   liveComputerView,
   pauseLiveComputer,
   screenEmbedPlan,
+  clipAsk,
+  speechTurns,
+  appendTurn,
+  mergeHistory,
+  applyTalkEvent,
+  composerSubmit,
+  askRequest,
+  historyRequest,
+  talkLogRequest,
+  parseAskReply,
+  selectLead,
+  micPlan,
+  chatView,
 } = require("./app-shell");
 
 assert.strictEqual(SHELL.path, "/desktop");
@@ -51,7 +67,17 @@ assert.strictEqual(LABELS.hideScreen, "Hide screen");
 assert.strictEqual(LABELS.showScreen, "Show Jarvis's screen");
 assert.strictEqual(LABELS.startComputer, "Start Jarvis's computer");
 assert.ok(/keeps running/i.test(LABELS.screenHidden));
+assert.strictEqual(LABELS.you, "You");
+assert.strictEqual(LABELS.lead, "Jarvis");
+assert.strictEqual(LABELS.ready, "Ready when you are");
+assert.strictEqual(LABELS.listening, "Listening…");
+assert.strictEqual(LABELS.thinking, "Jarvis is thinking…");
+assert.strictEqual(LABELS.addSoon, "Photos and files come later.");
+assert.strictEqual(LABELS.cantTalk, "Can't talk right now");
 assert.ok(!/composer|transcript|nav|sidebar/i.test(Object.values(LABELS).join(" ")));
+assert.strictEqual(ASK_PATH, "/api/jarvis/ask");
+assert.strictEqual(TALK_LAST_PATH, "/api/jarvis/talk/last");
+assert.strictEqual(TALK_LOG_PATH, "/api/jarvis/talk/log");
 
 const talk = talkQuery();
 assert.strictEqual(talk.get("desktop"), "1");
@@ -159,5 +185,79 @@ assert.strictEqual(embed.session, NOVNC_SESSION_URL);
 assert.strictEqual(embed.viewerPath, SCREEN_VIEWER_PATH);
 assert.ok(/collapse/i.test(embed.note));
 assert.ok(/iframe/i.test(embed.note));
+
+assert.strictEqual(clipAsk("  hello there  "), "hello there");
+assert.strictEqual(composerSubmit("").ok, false);
+assert.strictEqual(composerSubmit("  hi  ").ok, true);
+assert.strictEqual(composerSubmit("  hi  ").text, "hi");
+const asked = askRequest("what's on your screen");
+assert.strictEqual(asked.ok, true);
+assert.strictEqual(asked.url, "/api/jarvis/ask");
+assert.strictEqual(asked.method, "POST");
+assert.strictEqual(asked.body.text, "what's on your screen");
+assert.strictEqual(historyRequest().url, "/api/jarvis/talk/last");
+const logged = talkLogRequest("you", "hello");
+assert.strictEqual(logged.ok, true);
+assert.strictEqual(logged.url, "/api/jarvis/talk/log");
+assert.strictEqual(logged.body.role, "you");
+
+const speech = speechTurns([
+  { role: "you", text: "hi" },
+  { role: "tool", text: "opened" },
+  { role: "jarvis", text: "Hello." },
+  { role: "jarvis", text: "   " },
+]);
+assert.deepStrictEqual(speech.map((row) => row.role), ["you", "jarvis"]);
+assert.strictEqual(speech[1].speaker, "Jarvis");
+
+let thread = mergeHistory([], [
+  { role: "you", text: "hi" },
+  { role: "jarvis", text: "Hello." },
+]);
+assert.strictEqual(thread.length, 2);
+thread = mergeHistory(thread, [{ role: "you", text: "hi" }, { role: "jarvis", text: "Hello." }]);
+assert.strictEqual(thread.length, 2);
+const twice = appendTurn(appendTurn(thread, { role: "you", text: "hi" }), { role: "you", text: "hi" });
+assert.strictEqual(twice.length, 3);
+assert.strictEqual(twice[2].text, "hi");
+
+const liveTalk = applyTalkEvent([], { status: "thinking", you: "open chrome" });
+assert.strictEqual(liveTalk.turns[0].role, "you");
+assert.strictEqual(liveTalk.turns[0].text, "open chrome");
+assert.ok(/thinking/i.test(liveTalk.subtitle));
+const replied = applyTalkEvent(liveTalk.turns, { status: "idle", reply: "Opening Chrome." });
+assert.strictEqual(replied.turns.length, 2);
+assert.strictEqual(replied.turns[1].role, "jarvis");
+assert.strictEqual(replied.subtitle, LABELS.ready);
+const listen = applyTalkEvent([], { status: "listening" });
+assert.strictEqual(listen.subtitle, LABELS.listening);
+
+const parsed = parseAskReply({ reply: "Hello." });
+assert.strictEqual(parsed.ok, true);
+assert.strictEqual(parsed.reply, "Hello.");
+assert.strictEqual(parseAskReply({}).emptyLabel, LABELS.cantTalk);
+
+const jarvis = selectLead("jarvis");
+assert.strictEqual(jarvis.name, "Jarvis");
+assert.strictEqual(jarvis.talkTarget, "jarvis");
+assert.strictEqual(jarvis.ready, true);
+const writer = selectLead("writer");
+assert.strictEqual(writer.name, "Writer");
+assert.strictEqual(writer.ready, false);
+assert.strictEqual(writer.talkTarget, "jarvis");
+assert.ok(/coming soon/i.test(writer.subtitle));
+
+const micEngine = micPlan(true);
+assert.strictEqual(micEngine.startListen, true);
+assert.strictEqual(micEngine.via, "talk-engine");
+assert.strictEqual(micEngine.fallbackAsk, true);
+assert.strictEqual(micPlan(false).via, "browser");
+
+const empty = chatView([]);
+assert.strictEqual(empty.empty, true);
+assert.strictEqual(empty.emptyLabel, LABELS.emptyChat);
+const filled = chatView(thread);
+assert.strictEqual(filled.empty, false);
+assert.strictEqual(filled.turns.length, 2);
 
 console.log("app-shell helpers ok");
