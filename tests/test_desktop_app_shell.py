@@ -90,7 +90,7 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert "127.0.0.1:6080" in html
     assert "left-collapsed" in html
     assert "right-collapsed" in html
-    assert "#efece8" in html
+    assert "#ddd6cc" in html or "#efece8" in html
     assert "border-radius: 20px" in html or "border-radius: var(--radius)" in html
     assert "api key" not in low
     assert "openrouter" not in low

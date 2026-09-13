@@ -692,7 +692,7 @@ async function createWindow(port) {
     minWidth: 800,
     minHeight: 560,
     title: "Jarvis",
-    backgroundColor: "#efece8",
+    backgroundColor: "#ddd6cc",
     autoHideMenuBar: false,
     show: shouldShowMainOnLaunch(),
     skipTaskbar: !shouldShowMainOnLaunch(),
