@@ -1,6 +1,6 @@
 /**
  * Windows Jarvis 3-pane shell contract (epic #66).
- * Issues #74 / #67 / #68 / #69 / #70 / #71.
+ * Issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73.
  *
  * Pure helpers — Node tests can require this file. The visible chrome is
  * app/static/desktop.html. Electron loads /desktop as the main window.
@@ -22,6 +22,14 @@
  * #71 light data: Helpers = Jarvis (live) + documented stubs that are not
  * connected. Chats = talk history when present. Group chats stay empty
  * until a real group list exists. Never invent live teammates.
+ *
+ * #72 Routines: under the live PC. Real local schedules from
+ * /api/jarvis/routines (JobStore). Honest empty when none. + does not
+ * invent a create flow.
+ *
+ * #73 Settings gear opens /ceo?settings=1 (talk_mode / model / voice /
+ * computer stay on /api/jarvis/settings). Narrow windows collapse
+ * left/right by default.
  */
 
 const SHELL_PATH = "/desktop";
@@ -34,6 +42,9 @@ const ASK_PATH = "/api/jarvis/ask";
 const TALK_LAST_PATH = "/api/jarvis/talk/last";
 const TALK_LOG_PATH = "/api/jarvis/talk/log";
 const SPEAK_PATH = "/api/jarvis/speak";
+const SETTINGS_API_PATH = "/api/jarvis/settings";
+const ROUTINES_PATH = "/api/jarvis/routines";
+const SCHEDULES_PATH = "/api/schedules";
 const MAX_ASK_CHARS = 240;
 const MAX_REPLY_CHARS = 2000;
 const SESSION_GAP_MS = 45 * 60 * 1000;
@@ -47,6 +58,7 @@ const SHELL = {
   rightWidth: 340,
   minMiddleWidth: 360,
   minWindowWidth: 800,
+  collapseBelow: 900,
   // #68: iframe of the existing :6080 session. BrowserView is harder to
   // collapse with the chrome and is not used for the in-pane live PC.
   screenEmbed: "iframe",
@@ -99,13 +111,19 @@ const LABELS = {
   nothingMatches: "Nothing matches.",
   pluginsSoon: "Plugins come later.",
   profileSoon: "Your profile comes later.",
+  emptyRoutines: "No routines yet.",
+  addRoutine: "Add routine",
+  addRoutineSoon: "Adding a routine comes later.",
+  routineReadOnly: "This routine is on the schedule. Changing it comes later.",
+  hidePanesHint: "Chat is in the middle. Jarvis's screen is on the right. Hide chats or Hide computer when you want more room.",
 };
 
 const DATA_SOURCES = {
   helpers: "local-lead + documented-stub",
   chats: "talk-history",
   groups: "none",
-  note: "Only Jarvis is a live helper. Stubs are not connected. Group chats have no list yet.",
+  routines: "local-schedules",
+  note: "Only Jarvis is a live helper. Stubs are not connected. Group chats have no list yet. Routines are real local schedules, or empty.",
 };
 
 const HELPER_STUBS = [
@@ -154,13 +172,21 @@ function togglePane(state, which) {
   return next;
 }
 
+function isNarrowWidth(width) {
+  const w = Number(width) || 0;
+  return w > 0 && w < SHELL.collapseBelow;
+}
+
 function fitPanesToWidth(width, state) {
   const next = normalizePaneState(state);
-  const w = Number(width) || 0;
-  if (w > 0 && w < 900) {
+  if (isNarrowWidth(width)) {
     return { left: false, right: false };
   }
   return next;
+}
+
+function defaultPanesForWidth(width) {
+  return fitPanesToWidth(width, { left: true, right: true });
 }
 
 function layoutColumns(state) {
@@ -603,6 +629,97 @@ function chatView(turns, extras) {
   };
 }
 
+function settingsPlan() {
+  return {
+    fromChrome: true,
+    via: "gear",
+    path: SETTINGS_PATH,
+    query: { settings: "1", desktop: "1" },
+    href: talkHref(8787, { settings: true }),
+    persist: SETTINGS_API_PATH,
+    fields: ["model", "realtime_voice", "computer_kind", "talk_mode"],
+    talkMode: true,
+    note: "Gear opens /ceo?settings=1. Model, voice, computer, and talk_mode stay on /api/jarvis/settings.",
+  };
+}
+
+function settingsRequest() {
+  return { url: SETTINGS_API_PATH, method: "GET" };
+}
+
+function persistTalkModeRequest(value) {
+  const talkMode = normalizeTalkMode(value);
+  return {
+    url: SETTINGS_API_PATH,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: { talk_mode: talkMode },
+  };
+}
+
+function routinesRequest() {
+  return { url: ROUTINES_PATH, method: "GET" };
+}
+
+function addRoutinePlan() {
+  return {
+    ok: false,
+    canCreate: false,
+    label: LABELS.addRoutineSoon,
+    note: "Creating routines is not available yet.",
+  };
+}
+
+function routineRow(row) {
+  if (!row || typeof row !== "object") return null;
+  const id = String(row.id || "").trim();
+  const name = String(row.name || "").trim();
+  if (!id || !name) return null;
+  const when = String(row.when || row.schedule_human || row.subtitle || "").trim()
+    || (row.enabled === false ? "Off" : "On the schedule");
+  return {
+    id,
+    name,
+    when,
+    enabled: row.enabled !== false,
+    source: row.source || DATA_SOURCES.routines,
+    live: row.live !== false,
+    readOnly: row.read_only !== false,
+  };
+}
+
+function routinesFromSchedules(payload) {
+  const body = payload && typeof payload === "object" ? payload : {};
+  const raw = Array.isArray(body.routines)
+    ? body.routines
+    : Array.isArray(body.schedules)
+      ? body.schedules
+      : Array.isArray(payload)
+        ? payload
+        : [];
+  const items = [];
+  for (const row of raw) {
+    const item = routineRow(row);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function routinesView(payload) {
+  const items = routinesFromSchedules(payload);
+  const body = payload && typeof payload === "object" ? payload : {};
+  return {
+    items,
+    empty: items.length === 0,
+    emptyLabel: body.empty_label || LABELS.emptyRoutines,
+    addLabel: LABELS.addRoutine,
+    addSoon: body.add_soon || LABELS.addRoutineSoon,
+    canCreate: body.can_create === true,
+    source: DATA_SOURCES.routines,
+    plusOpens: addRoutinePlan(),
+  };
+}
+
 module.exports = {
   SHELL,
   LABELS,
@@ -620,6 +737,9 @@ module.exports = {
   TALK_LAST_PATH,
   TALK_LOG_PATH,
   SPEAK_PATH,
+  SETTINGS_API_PATH,
+  ROUTINES_PATH,
+  SCHEDULES_PATH,
   MAX_ASK_CHARS,
   MAX_REPLY_CHARS,
   talkQuery,
@@ -629,7 +749,9 @@ module.exports = {
   shellHref,
   normalizePaneState,
   togglePane,
+  isNarrowWidth,
   fitPanesToWidth,
+  defaultPanesForWidth,
   layoutColumns,
   normalizeTalkMode,
   applyTalkMode,
@@ -663,4 +785,12 @@ module.exports = {
   selectLead,
   micPlan,
   chatView,
+  settingsPlan,
+  settingsRequest,
+  persistTalkModeRequest,
+  routinesRequest,
+  addRoutinePlan,
+  routineRow,
+  routinesFromSchedules,
+  routinesView,
 };

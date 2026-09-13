@@ -203,6 +203,22 @@ async def get_jarvis_settings() -> dict[str, Any]:
     return public_view()
 
 
+@router.get("/routines")
+async def list_jarvis_routines(request: Request) -> dict[str, Any]:
+    """Read-only local schedules for the Windows Routines list (issue #72).
+
+    Same-origin like GET /settings. Empty when none. Never invents sample
+    routines. Creating a routine is not offered here.
+    """
+    from app.jarvis.routines import routines_payload
+
+    jobs = getattr(getattr(request, "app", None), "state", None)
+    store = getattr(jobs, "job_store", None) if jobs is not None else None
+    settings = getattr(jobs, "settings", None) if jobs is not None else None
+    tz_name = str(getattr(settings, "tz", None) or "UTC")
+    return await routines_payload(store, tz_name=tz_name)
+
+
 @router.put("/settings")
 async def put_jarvis_settings(
     body: SettingsUpdateBody,

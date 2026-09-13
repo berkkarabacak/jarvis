@@ -944,6 +944,52 @@
         }
         renderComputer(COMPUTER_CHOICES, "linux");
 
+        var talkModeSec = sec("Computer or chat only");
+        var talkModeBlurb = document.createElement("div");
+        talkModeBlurb.className = "iu-set-blurb";
+        talkModeBlurb.textContent = "Chat only hides Jarvis's screen. The computer keeps running.";
+        talkModeSec.appendChild(talkModeBlurb);
+        var talkModeBox = document.createElement("div");
+        talkModeBox.className = "iu-set-profiles";
+        talkModeBox.id = "iu-talk-mode";
+        talkModeSec.appendChild(talkModeBox);
+        var selectedTalkMode = "computer";
+        var TALK_MODE_CHOICES = [
+          { id: "computer", label: "Computer", allows: "Uses the screen when he needs it." },
+          { id: "terminal", label: "Chat only", allows: "Chat only. The computer stays hidden." }
+        ];
+        function renderTalkMode(list, current) {
+          while (talkModeBox.firstChild) talkModeBox.removeChild(talkModeBox.firstChild);
+          selectedTalkMode = String(current || "").toLowerCase() === "terminal" ? "terminal" : "computer";
+          var choices = (list && list.length) ? list : TALK_MODE_CHOICES;
+          choices.forEach(function (p) {
+            var id = p.id === "terminal" ? "terminal" : "computer";
+            var b = document.createElement("button");
+            b.type = "button";
+            b.className = "iu-set-profile";
+            b.dataset.id = id;
+            b.dataset.talkMode = id;
+            b.dataset.on = id === selectedTalkMode ? "1" : "0";
+            var strong = document.createElement("strong");
+            strong.textContent = id === "terminal" ? "Chat only" : (p.label || "Computer");
+            var span = document.createElement("span");
+            span.textContent = p.allows || "";
+            b.appendChild(strong);
+            b.appendChild(span);
+            b.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              selectedTalkMode = id;
+              Array.prototype.forEach.call(talkModeBox.children, function (c) {
+                c.dataset.on = c.dataset.id === selectedTalkMode ? "1" : "0";
+              });
+              persistJarvis({ talk_mode: selectedTalkMode });
+            });
+            talkModeBox.appendChild(b);
+          });
+        }
+        renderTalkMode(TALK_MODE_CHOICES, "computer");
+
         var lookSec = sec("How often I look at the screen");
         var lookBlurb = document.createElement("div");
         lookBlurb.className = "iu-set-blurb";
@@ -1454,6 +1500,7 @@
               fillLookSpeed(data.look_speed || "off");
               fillModelSpeed(data.model_speed || "balanced");
               renderComputer(data.computer_kinds || COMPUTER_CHOICES, data.computer_kind || "linux");
+              renderTalkMode(data.talk_modes || TALK_MODE_CHOICES, data.talk_mode || "computer");
               fillPreference(data.model_preference || "balanced");
               renderQuality(data.quality_vs_price_choices || QUALITY_CHOICES, data.quality_vs_price || "balanced");
               renderProfiles(data.permission_profiles || [], data.permission_profile);
@@ -1544,6 +1591,9 @@
               if (res.j.computer_kind || res.j.computer_kinds) {
                 renderComputer(res.j.computer_kinds || COMPUTER_CHOICES, res.j.computer_kind || selectedComputer);
               }
+              if (res.j.talk_mode || res.j.talk_modes) {
+                renderTalkMode(res.j.talk_modes || TALK_MODE_CHOICES, res.j.talk_mode || selectedTalkMode);
+              }
               if (res.j.realtime_voices || res.j.realtime_voice) {
                 fillSelect(voiceSel, res.j.realtime_voices || VOICES, res.j.realtime_voice || settings.voice);
               }
@@ -1566,6 +1616,7 @@
             realtime_voice: voiceSel.value,
             look_speed: lookSel.value,
             computer_kind: selectedComputer,
+            talk_mode: selectedTalkMode,
             quality_vs_price: selectedQuality,
             model_speed: speedSel.value,
             model_preference: prefSel.value,
