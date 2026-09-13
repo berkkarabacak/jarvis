@@ -195,6 +195,8 @@ def test_middle_pane_is_live_chat_thread():
     assert "Can't talk right now" in html
     assert 'class="msg jarvis pending"' in html
     assert 'className = "msg " + turn.role' in js
+    assert "display: flex" in html
+    assert "flex-direction: column" in html
     assert "/api/jarvis/ask" in html
     assert "/api/jarvis/talk/last" in html
     assert "/api/jarvis/talk/log" in html

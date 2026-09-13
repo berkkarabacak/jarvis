@@ -269,19 +269,34 @@ function speechTurns(rows) {
   return out;
 }
 
-function pushUniqueTurn(turns, turn) {
-  const next = Array.isArray(turns) ? turns.slice() : [];
+function makeTurn(turn) {
   const role = normalizeRole(turn && turn.role);
   const text = clipReply(turn && turn.text);
-  if (!role || !text) return next;
-  const item = {
+  if (!role || !text) return null;
+  return {
     role,
     text,
     speaker: role === "you" ? LABELS.you : LABELS.lead,
     ts: String((turn && turn.ts) || ""),
   };
+}
+
+function pushUniqueTurn(turns, turn) {
+  const next = Array.isArray(turns) ? turns.slice() : [];
+  const item = makeTurn(turn);
+  if (!item) return next;
   const key = turnKey(item);
   if (next.some((row) => turnKey(row) === key)) return next;
+  next.push(item);
+  return next;
+}
+
+function appendTurn(turns, turn) {
+  const next = Array.isArray(turns) ? turns.slice() : [];
+  const item = makeTurn(turn);
+  if (!item) return next;
+  const last = next[next.length - 1];
+  if (last && turnKey(last) === turnKey(item)) return next;
   next.push(item);
   return next;
 }
@@ -299,8 +314,8 @@ function applyTalkEvent(turns, event) {
   const you = clipAsk(src.you);
   const reply = clipReply(src.reply);
   let next = Array.isArray(turns) ? turns.slice() : [];
-  if (you) next = pushUniqueTurn(next, { role: "you", text: you });
-  if (reply) next = pushUniqueTurn(next, { role: "jarvis", text: reply });
+  if (you) next = appendTurn(next, { role: "you", text: you });
+  if (reply) next = appendTurn(next, { role: "jarvis", text: reply });
   const status = String(src.status || (reply ? "idle" : you ? "thinking" : "") || "idle");
   let subtitle = LABELS.ready;
   if (status === "listening") subtitle = LABELS.listening;
@@ -443,6 +458,7 @@ module.exports = {
   normalizeRole,
   speechTurns,
   pushUniqueTurn,
+  appendTurn,
   mergeHistory,
   applyTalkEvent,
   composerSubmit,

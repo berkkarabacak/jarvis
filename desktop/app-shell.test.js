@@ -30,6 +30,7 @@ const {
   screenEmbedPlan,
   clipAsk,
   speechTurns,
+  appendTurn,
   mergeHistory,
   applyTalkEvent,
   composerSubmit,
@@ -216,6 +217,9 @@ let thread = mergeHistory([], [
 assert.strictEqual(thread.length, 2);
 thread = mergeHistory(thread, [{ role: "you", text: "hi" }, { role: "jarvis", text: "Hello." }]);
 assert.strictEqual(thread.length, 2);
+const twice = appendTurn(appendTurn(thread, { role: "you", text: "hi" }), { role: "you", text: "hi" });
+assert.strictEqual(twice.length, 3);
+assert.strictEqual(twice[2].text, "hi");
 
 const liveTalk = applyTalkEvent([], { status: "thinking", you: "open chrome" });
 assert.strictEqual(liveTalk.turns[0].role, "you");

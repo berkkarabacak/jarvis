@@ -212,8 +212,9 @@
       flex: 1;
       overflow: auto;
       padding: 18px 20px 8px;
-      display: grid;
-      align-content: start;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
       gap: 12px;
     }
     .empty {
@@ -229,9 +230,13 @@
     }
     .msg.you {
       margin-left: auto;
+      align-self: flex-end;
       justify-items: end;
     }
-    .msg.jarvis { justify-items: start; }
+    .msg.jarvis {
+      align-self: flex-start;
+      justify-items: start;
+    }
     .msg-who {
       font-size: 11px;
       font-weight: 700;
@@ -729,15 +734,6 @@
         return s.slice(0, MAX_ASK).trimEnd();
       }
 
-      function turnKey(turn) {
-        return String((turn && turn.role) || "") + "\0" + String((turn && turn.text) || "");
-      }
-
-      function hasTurn(role, text) {
-        var key = turnKey({ role: role, text: text });
-        return turns.some(function (row) { return turnKey(row) === key; });
-      }
-
       function paintThread() {
         threadEl.querySelectorAll(".msg:not(#pending)").forEach(function (node) {
           node.remove();
@@ -763,7 +759,8 @@
         var who = role === "you" ? "you" : "jarvis";
         var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
         if (!clean) return false;
-        if (hasTurn(who, clean)) return false;
+        var last = turns[turns.length - 1];
+        if (last && last.role === who && last.text === clean) return false;
         turns.push({ role: who, text: clean });
         paintThread();
         return true;
@@ -826,13 +823,24 @@
       }
 
       function mergeHistory(rows) {
-        var list = Array.isArray(rows) ? rows : [];
-        var added = false;
-        list.forEach(function (row) {
+        var incoming = [];
+        (Array.isArray(rows) ? rows : []).forEach(function (row) {
           if (!row || (row.role !== "you" && row.role !== "jarvis")) return;
-          if (rememberTurn(row.role, row.text)) added = true;
+          var clean = String(row.text || "").replace(/\s+/g, " ").trim();
+          if (!clean) return;
+          incoming.push({ role: row.role, text: row.role === "you" ? clipAsk(clean) : clean });
         });
-        if (!added) paintThread();
+        if (!incoming.length) return;
+        if (!turns.length) {
+          turns = incoming;
+          paintThread();
+          return;
+        }
+        if (sending) return;
+        if (incoming.length >= turns.length) {
+          turns = incoming;
+          paintThread();
+        }
       }
 
       function loadHistory() {
