@@ -7,12 +7,14 @@
   <meta name="theme-color" content="#efece8" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <!--
-    Windows 3-pane product chrome (issues #74 / #67 / #68).
+    Windows 3-pane product chrome (issues #74 / #67 / #68 / #69).
     New route on purpose: /ceo stays the orb Talk + Settings page.
     #68 embeds http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
     in #live-computer via an iframe. BrowserView is not used: it sits
     above the page and would need manual bounds on collapse.
     Hide / Chat only blanks the iframe. Do not kill jarvis-computer.
+    #69 middle pane is the live You / Jarvis chat: /api/jarvis/ask,
+    /api/jarvis/talk/last, and mic listen (browser speech or hidden /ceo).
   -->
   <style>
     :root {
@@ -220,6 +222,43 @@
       color: var(--muted);
       max-width: 16rem;
     }
+    .msg {
+      display: grid;
+      gap: 4px;
+      max-width: 85%;
+    }
+    .msg.you {
+      margin-left: auto;
+      justify-items: end;
+    }
+    .msg.jarvis { justify-items: start; }
+    .msg-who {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .msg p {
+      margin: 0;
+      padding: 10px 14px;
+      border-radius: 16px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .msg.you p {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-radius: 16px 16px 4px 16px;
+    }
+    .msg.jarvis p {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 16px 16px 16px 4px;
+    }
+    .msg.pending p { color: var(--muted); }
+    .agent[data-on="1"], .row[data-on="1"] {
+      border-color: #93c5fd;
+      background: #dbeafe;
+    }
     .composer {
       padding: 12px 14px 14px;
       display: flex;
@@ -296,7 +335,8 @@
       gap: 6px;
       padding: 10px 14px 0;
     }
-    .modes button[data-on="1"] {
+    .modes button[data-on="1"],
+    #mic[data-on="1"] {
       background: #dbeafe;
       border-color: #93c5fd;
     }
@@ -379,7 +419,7 @@
       </div>
     </aside>
 
-    <main class="pane" id="middle" aria-label="Chat">
+    <main class="pane" id="middle" aria-label="Chat" data-chat="live">
       <div class="chat-head">
         <div class="who">
           <h2 id="chat-title">Jarvis</h2>
@@ -387,8 +427,12 @@
         </div>
         <button type="button" class="icon-btn" id="settings" aria-label="Settings" title="Settings">⚙</button>
       </div>
-      <div class="thread" id="thread">
+      <div class="thread" id="thread" aria-live="polite">
         <p class="empty" id="empty-chat">This chat is ready. Messages will show up here.</p>
+        <div class="msg jarvis pending" id="pending" hidden>
+          <span class="msg-who">Jarvis</span>
+          <p id="pending-copy">Jarvis is thinking…</p>
+        </div>
       </div>
       <form class="composer" id="composer">
         <button type="button" class="icon-btn" id="add" aria-label="Add" title="Add">+</button>
@@ -447,6 +491,25 @@
       var terminalNote = document.getElementById("terminal-note");
       var talkMode = "computer";
       var screenShown = true;
+      var ASK_PATH = "/api/jarvis/ask";
+      var TALK_LAST_PATH = "/api/jarvis/talk/last";
+      var TALK_LOG_PATH = "/api/jarvis/talk/log";
+      var SPEAK_PATH = "/api/jarvis/speak";
+      var MAX_ASK = 240;
+      var turns = [];
+      var sending = false;
+      var engineHeard = false;
+      var browserRec = null;
+      var browserListenOn = false;
+      var threadEl = document.getElementById("thread");
+      var emptyChat = document.getElementById("empty-chat");
+      var pendingEl = document.getElementById("pending");
+      var pendingCopy = document.getElementById("pending-copy");
+      var askInput = document.getElementById("ask");
+      var sendBtn = document.getElementById("send");
+      var micBtn = document.getElementById("mic");
+      var chatTitle = document.getElementById("chat-title");
+      var chatSub = document.getElementById("chat-sub");
 
       function say(text) {
         statusEl.textContent = text;
@@ -660,23 +723,307 @@
           });
       });
 
+      function clipAsk(text) {
+        var s = String(text || "").replace(/\s+/g, " ").trim();
+        if (s.length <= MAX_ASK) return s;
+        return s.slice(0, MAX_ASK).trimEnd();
+      }
+
+      function turnKey(turn) {
+        return String((turn && turn.role) || "") + "\0" + String((turn && turn.text) || "");
+      }
+
+      function hasTurn(role, text) {
+        var key = turnKey({ role: role, text: text });
+        return turns.some(function (row) { return turnKey(row) === key; });
+      }
+
+      function paintThread() {
+        threadEl.querySelectorAll(".msg:not(#pending)").forEach(function (node) {
+          node.remove();
+        });
+        emptyChat.hidden = turns.length > 0 || sending || browserListenOn;
+        turns.forEach(function (turn) {
+          var wrap = document.createElement("div");
+          wrap.className = "msg " + turn.role;
+          wrap.setAttribute("data-role", turn.role);
+          var who = document.createElement("span");
+          who.className = "msg-who";
+          who.textContent = turn.role === "you" ? "You" : "Jarvis";
+          var body = document.createElement("p");
+          body.textContent = turn.text;
+          wrap.appendChild(who);
+          wrap.appendChild(body);
+          threadEl.insertBefore(wrap, pendingEl);
+        });
+        threadEl.scrollTop = threadEl.scrollHeight;
+      }
+
+      function rememberTurn(role, text) {
+        var who = role === "you" ? "you" : "jarvis";
+        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        if (!clean) return false;
+        if (hasTurn(who, clean)) return false;
+        turns.push({ role: who, text: clean });
+        paintThread();
+        return true;
+      }
+
+      function setPending(on, label) {
+        pendingEl.hidden = !on;
+        if (on) pendingCopy.textContent = label || "Jarvis is thinking…";
+        emptyChat.hidden = turns.length > 0 || on || browserListenOn;
+        threadEl.scrollTop = threadEl.scrollHeight;
+      }
+
+      function setChatSub(text) {
+        chatSub.textContent = text || "Ready when you are";
+      }
+
+      function postTalkLog(role, text) {
+        var who = role === "you" ? "you" : "jarvis";
+        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        if (!clean) return;
+        fetch(TALK_LOG_PATH, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: who, text: clean }),
+        }).catch(function () {});
+      }
+
+      function playSpeak(text) {
+        var clean = String(text || "").replace(/\s+/g, " ").trim();
+        if (!clean) return;
+        fetch(SPEAK_PATH, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: clean }),
+        })
+          .then(function (r) { return r.ok ? r.blob() : null; })
+          .then(function (blob) {
+            if (!blob) return;
+            var url = URL.createObjectURL(blob);
+            var audio = new Audio(url);
+            audio.play().catch(function () {});
+          })
+          .catch(function () {});
+      }
+
+      function speakReply(text) {
+        if (!text) return;
+        if (window.jarvisDesktop && typeof window.jarvisDesktop.getMuted === "function") {
+          window.jarvisDesktop.getMuted()
+            .then(function (state) {
+              if (state && state.muted) return;
+              playSpeak(text);
+            })
+            .catch(function () { playSpeak(text); });
+          return;
+        }
+        playSpeak(text);
+      }
+
+      function mergeHistory(rows) {
+        var list = Array.isArray(rows) ? rows : [];
+        var added = false;
+        list.forEach(function (row) {
+          if (!row || (row.role !== "you" && row.role !== "jarvis")) return;
+          if (rememberTurn(row.role, row.text)) added = true;
+        });
+        if (!added) paintThread();
+      }
+
+      function loadHistory() {
+        fetch(TALK_LAST_PATH, { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : {}; })
+          .then(function (data) {
+            if (sending) return;
+            mergeHistory(data && data.turns);
+          })
+          .catch(function () {});
+      }
+
+      function applyTalkEvent(event) {
+        var src = event && typeof event === "object" ? event : {};
+        if (src.you) {
+          engineHeard = true;
+          stopBrowserListen();
+          rememberTurn("you", src.you);
+          postTalkLog("you", src.you);
+        }
+        if (src.reply) {
+          rememberTurn("jarvis", src.reply);
+          postTalkLog("jarvis", src.reply);
+          setPending(false);
+          sending = false;
+          sendBtn.disabled = false;
+          setChatSub("Ready when you are");
+          return;
+        }
+        if (src.status === "listening") {
+          setChatSub("Listening…");
+          setPending(false);
+          return;
+        }
+        if (src.status === "thinking") {
+          sending = true;
+          setPending(true, "Jarvis is thinking…");
+          setChatSub("Jarvis is thinking…");
+        }
+      }
+
+      function sendAsk(text) {
+        var asked = clipAsk(text);
+        if (!asked || sending) return;
+        sending = true;
+        sendBtn.disabled = true;
+        rememberTurn("you", asked);
+        askInput.value = "";
+        setPending(true, "Jarvis is thinking…");
+        setChatSub("Jarvis is thinking…");
+        say("Sending…");
+        fetch(ASK_PATH, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: asked }),
+        })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            var data = (res && res.j) || {};
+            var ui = data.ui != null ? data.ui : data.result;
+            var reply = String((data.reply || (ui && ui.summary) || "")).replace(/\s+/g, " ").trim();
+            sending = false;
+            sendBtn.disabled = false;
+            setPending(false);
+            if (reply) {
+              rememberTurn("jarvis", reply);
+              setChatSub("Ready when you are");
+              speakReply(reply);
+              return;
+            }
+            setChatSub("Can't talk right now");
+            say("Can't talk right now");
+          })
+          .catch(function () {
+            sending = false;
+            sendBtn.disabled = false;
+            setPending(false);
+            setChatSub("Can't talk right now");
+            say("Can't talk right now");
+          });
+      }
+
+      function stopBrowserListen() {
+        browserListenOn = false;
+        if (browserRec) {
+          try { browserRec.onresult = null; browserRec.onend = null; browserRec.stop(); } catch (e) {}
+        }
+        browserRec = null;
+        micBtn.setAttribute("data-on", "0");
+      }
+
+      function startBrowserListen() {
+        var Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!Ctor) {
+          if (!(window.jarvisDesktop && window.jarvisDesktop.startListen)) {
+            setChatSub("Talk needs a microphone.");
+            say("Talk needs a microphone.");
+          }
+          return;
+        }
+        stopBrowserListen();
+        browserListenOn = true;
+        engineHeard = false;
+        micBtn.setAttribute("data-on", "1");
+        emptyChat.hidden = turns.length > 0 || sending;
+        browserRec = new Ctor();
+        browserRec.continuous = false;
+        browserRec.interimResults = false;
+        browserRec.lang = "en-US";
+        browserRec.onresult = function (e) {
+          var said = ((e.results[0] && e.results[0][0] && e.results[0][0].transcript) || "").trim();
+          stopBrowserListen();
+          if (engineHeard) return;
+          if (said) sendAsk(said);
+        };
+        browserRec.onerror = function () {
+          stopBrowserListen();
+          if (!engineHeard && !sending) setChatSub("Ready when you are");
+        };
+        browserRec.onend = function () {
+          if (!browserListenOn) return;
+          stopBrowserListen();
+          if (!engineHeard && !sending) setChatSub("Ready when you are");
+        };
+        try { browserRec.start(); } catch (e) {
+          stopBrowserListen();
+        }
+      }
+
+      function startListen() {
+        engineHeard = false;
+        setChatSub("Listening…");
+        say("Listening…");
+        if (window.jarvisDesktop && typeof window.jarvisDesktop.startListen === "function") {
+          window.jarvisDesktop.startListen();
+        }
+        startBrowserListen();
+      }
+
+      function selectLead(id, name, ready) {
+        var title = name || "Jarvis";
+        chatTitle.textContent = title;
+        setChatSub(ready === false ? "Coming soon" : "Ready when you are");
+        document.querySelectorAll(".agent[data-id], .row[data-id]").forEach(function (btn) {
+          btn.setAttribute("data-on", btn.getAttribute("data-id") === id ? "1" : "0");
+        });
+        say(ready === false ? title + " is coming soon." : "Talking with " + title + ".");
+      }
+
       document.getElementById("composer").addEventListener("submit", function (e) {
         e.preventDefault();
-        say("Chat comes next.");
+        sendAsk(askInput.value);
       });
-      document.getElementById("mic").addEventListener("click", function () {
-        say("Talk comes next.");
+      micBtn.addEventListener("click", function () {
+        if (browserListenOn) {
+          stopBrowserListen();
+          setChatSub("Ready when you are");
+          return;
+        }
+        startListen();
       });
       document.getElementById("add").addEventListener("click", function () {
-        say("Add comes next.");
+        say("Photos and files come later.");
+        setChatSub("Photos and files come later.");
       });
-      ["agents", "chats", "groups", "plugins", "profile", "routines"].forEach(function (id) {
+      document.getElementById("agents").addEventListener("click", function (e) {
+        var btn = e.target.closest(".agent[data-id]");
+        if (!btn) return;
+        selectLead(btn.getAttribute("data-id"), btn.querySelector("strong") && btn.querySelector("strong").textContent, btn.getAttribute("data-id") === "jarvis");
+      });
+      document.getElementById("chats").addEventListener("click", function (e) {
+        var btn = e.target.closest(".row[data-id]");
+        if (!btn) return;
+        selectLead(btn.getAttribute("data-id"), btn.querySelector("strong") && btn.querySelector("strong").textContent, true);
+      });
+      ["groups", "plugins", "profile", "routines"].forEach(function (id) {
         var el = document.getElementById(id);
         if (!el) return;
         el.addEventListener("click", function () {
           say("This list is a placeholder.");
         });
       });
+      if (window.jarvisDesktop && typeof window.jarvisDesktop.onTalk === "function") {
+        window.jarvisDesktop.onTalk(applyTalkEvent);
+      }
+      loadHistory();
+      setInterval(function () {
+        if (!sending) loadHistory();
+      }, 4000);
+      selectLead("jarvis", "Jarvis", true);
 
       function persistTalkMode(next) {
         applyTalkMode(next);

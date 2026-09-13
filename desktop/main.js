@@ -13,6 +13,10 @@
  * #live-computer. BrowserView is not used — it is a native overlay
  * that would need manual bounds whenever the right pane collapses.
  * Hide / Chat only blanks the iframe and must not stop jarvis-computer.
+ *
+ * #69 middle pane talks via /api/jarvis/ask on /desktop. Mic can start
+ * listen on the hidden /ceo talk engine. Talk events are forwarded to
+ * the 3-pane window so the thread stays in sync with Realtime / avatar.
  */
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, screen } = require("electron");
 const path = require("path");
@@ -717,6 +721,8 @@ async function createWindow(port) {
   installAppMenu();
   ipcMain.removeHandler("jarvis:open-screen");
   ipcMain.removeHandler("jarvis:open-settings");
+  ipcMain.removeHandler("jarvis:start-listen");
+  ipcMain.removeHandler("jarvis:ask-talk");
   ipcMain.handle("jarvis:open-screen", () => {
     openJarvisScreen();
     return { ok: true, title: JARVIS_SCREEN_TITLE, url: JARVIS_NOVNC_URL };
@@ -724,6 +730,14 @@ async function createWindow(port) {
   ipcMain.handle("jarvis:open-settings", () => {
     openSettingsInWindow();
     return { ok: true };
+  });
+  ipcMain.handle("jarvis:start-listen", () => {
+    focusVoiceFromAvatar();
+    sendMainTalk({ status: "listening" });
+    return { ok: true };
+  });
+  ipcMain.handle("jarvis:ask-talk", (_event, payload) => {
+    return askFromAvatar(payload && payload.text);
   });
   await mainWindow.loadURL(desktopUrl(port));
   createTalkEngineWindow(port);
@@ -858,18 +872,29 @@ function setAvatarTyping(on) {
   return { ok: true };
 }
 
-function sendAvatarTalk(partial) {
-  if (!avatarWindow || avatarWindow.isDestroyed()) return;
-  const next = buildTalkState({
-    open: avatarBubbleOpen,
+function sendMainTalk(partial) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("jarvis:talk-event", {
     status: partial && partial.status,
     you: partial && partial.you,
-    reply: clipReply(partial && partial.reply),
-    muted: jarvisMuted,
+    reply: partial && partial.reply,
   });
-  // Talk events never pop the bubble. Click (and typed ask) open it.
-  next.open = avatarBubbleOpen;
-  avatarWindow.webContents.send("avatar:talk", next);
+}
+
+function sendAvatarTalk(partial) {
+  if (avatarWindow && !avatarWindow.isDestroyed()) {
+    const next = buildTalkState({
+      open: avatarBubbleOpen,
+      status: partial && partial.status,
+      you: partial && partial.you,
+      reply: clipReply(partial && partial.reply),
+      muted: jarvisMuted,
+    });
+    // Talk events never pop the bubble. Click (and typed ask) open it.
+    next.open = avatarBubbleOpen;
+    avatarWindow.webContents.send("avatar:talk", next);
+  }
+  sendMainTalk(partial);
 }
 
 function focusVoiceFromAvatar() {
