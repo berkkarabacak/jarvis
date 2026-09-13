@@ -1,4 +1,4 @@
-"""Windows 3-pane shell chrome — issues #74 / #67 / #68 / #69 (epic #66)."""
+"""Windows 3-pane shell chrome — issues #74 / #67 / #68 / #69 / #70 / #71 (epic #66)."""
 
 from __future__ import annotations
 
@@ -102,6 +102,16 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert "openrouter" not in low
     assert 'id="voiceDock"' not in html
     assert "Coming soon" in html
+    assert 'id="new-chat"' in html
+    assert "New chat" in html
+    assert "nav-toggle" in html
+    assert 'data-section="helpers"' in html
+    assert 'data-section="chats"' in html
+    assert 'data-section="groups"' in html
+    assert "Not connected yet" in html
+    assert "No chats yet. Send a message to start." in html
+    assert "No group chats yet. They come later." in html
+    assert "class=\"unread\"" in html or 'class="unread"' in html
 
 
 def test_right_pane_embeds_live_novnc_iframe():
@@ -230,6 +240,72 @@ def test_middle_pane_is_live_chat_thread():
     assert "API secret" not in html
     assert "openrouter" not in html.lower()
     assert "sk-" not in html.lower()
+
+
+def test_left_pane_is_collapsible_helpers_chats_and_groups():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+
+    assert 'id="search"' in html
+    assert 'id="new-chat"' in html
+    assert 'aria-label="New chat"' in html
+    assert 'id="toggle-helpers"' in html
+    assert 'id="toggle-chats"' in html
+    assert 'id="toggle-groups"' in html
+    assert "aria-expanded" in html
+    assert 'data-section="helpers"' in html
+    assert 'data-section="chats"' in html
+    assert 'data-section="groups"' in html
+    assert 'data-open="0"' in html
+    assert "function toggleNavSection" in shell
+    assert "function normalizeNavSections" in shell
+    assert "function leftNavView" in shell
+    assert "function paintLeftNav" in js
+    assert "function saveNav" in js
+    assert "function paintNavSections" in js
+    assert "jarvis.shell.nav" in js
+    assert "function selectLead" in js
+    assert "chatTitle.textContent" in js
+    assert 'selectLead("jarvis")' in js
+    assert "talkTarget: \"jarvis\"" in shell
+    assert "Quit Jarvis" in (DESKTOP / "main.js").read_text(encoding="utf-8")
+
+
+def test_left_nav_uses_talk_history_and_honest_stubs():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+    readme = (DESKTOP / "README.md").read_text(encoding="utf-8")
+
+    assert 'data-source="local-lead documented-stub"' in html
+    assert 'data-source="talk-history"' in html
+    assert 'data-source="none"' in html
+    assert 'data-source="local-lead"' in html
+    assert 'data-source="documented-stub"' in html
+    assert "Not connected yet" in html
+    assert "Ready when you are" in html
+    assert "No chats yet. Send a message to start." in html
+    assert "No group chats yet. They come later." in html
+    assert "Buyra" not in html
+    assert "Placeholder chat" not in html
+    assert "Placeholder group" not in html
+    assert 'data-id="family"' not in html
+    assert 'data-id="home"' not in html
+    assert "function chatsFromHistory" in js
+    assert "function chatsFromHistory" in shell
+    assert "function helpersFromInventory" in shell
+    assert "function groupChatsFromInventory" in shell
+    assert "documented-stub" in shell
+    assert "talk-history" in shell
+    assert 'DATA_SOURCES' in shell
+    assert "Never invent live teammates" in shell or "never invent live teammates" in shell.lower()
+    assert "function refreshChatsFromTurns" in js
+    assert "/api/jarvis/talk/last" in html
+    assert "innerHTML" not in js
+    assert "left nav" in readme.lower() or "helpers" in readme.lower()
+    assert "talk history" in readme.lower() or "talk-history" in readme.lower()
+    assert "not connected" in readme.lower()
 
 
 def test_middle_pane_keeps_right_pane_live_pc():

@@ -1,5 +1,6 @@
 /**
- * Windows Jarvis 3-pane shell contract (epic #66, issues #74 / #67 / #68 / #69).
+ * Windows Jarvis 3-pane shell contract (epic #66).
+ * Issues #74 / #67 / #68 / #69 / #70 / #71.
  *
  * Pure helpers — Node tests can require this file. The visible chrome is
  * app/static/desktop.html. Electron loads /desktop as the main window.
@@ -13,7 +14,16 @@
  * #69 middle pane: live You / Jarvis thread + composer. Typed send hits
  * /api/jarvis/ask. History is /api/jarvis/talk/last. Mic starts listen
  * (browser speech, or the hidden /ceo talk engine already used by Electron).
+ *
+ * #70 left lists: Search, +, Helpers grid, Chats, Group chats. Each list
+ * section collapses on its own. Selecting a row focuses the middle header.
+ * Asks still go to Jarvis.
+ *
+ * #71 light data: Helpers = Jarvis (live) + documented stubs that are not
+ * connected. Chats = talk history when present. Group chats stay empty
+ * until a real group list exists. Never invent live teammates.
  */
+
 const SHELL_PATH = "/desktop";
 const TALK_PATH = "/ceo";
 const SETTINGS_PATH = "/ceo";
@@ -26,6 +36,8 @@ const TALK_LOG_PATH = "/api/jarvis/talk/log";
 const SPEAK_PATH = "/api/jarvis/speak";
 const MAX_ASK_CHARS = 240;
 const MAX_REPLY_CHARS = 2000;
+const SESSION_GAP_MS = 45 * 60 * 1000;
+const CHAT_TITLE_CHARS = 36;
 
 const SHELL = {
   path: SHELL_PATH,
@@ -80,7 +92,27 @@ const LABELS = {
   showScreen: "Show Jarvis's screen",
   startComputer: "Start Jarvis's computer",
   openScreen: "Open Jarvis's screen",
+  newChat: "New chat",
+  notConnected: "Not connected yet",
+  emptyChats: "No chats yet. Send a message to start.",
+  emptyGroups: "No group chats yet. They come later.",
+  nothingMatches: "Nothing matches.",
+  pluginsSoon: "Plugins come later.",
+  profileSoon: "Your profile comes later.",
 };
+
+const DATA_SOURCES = {
+  helpers: "local-lead + documented-stub",
+  chats: "talk-history",
+  groups: "none",
+  note: "Only Jarvis is a live helper. Stubs are not connected. Group chats have no list yet.",
+};
+
+const HELPER_STUBS = [
+  { id: "writer", name: "Writer", initial: "W", color: "#0f766e" },
+  { id: "helper", name: "Helper", initial: "H", color: "#b45309" },
+  { id: "finder", name: "Finder", initial: "F", color: "#7c3aed" },
+];
 
 function talkQuery(extra) {
   const q = new URLSearchParams({ autolisten: "1", handsfree: "1", desktop: "1" });
@@ -379,24 +411,174 @@ function parseAskReply(payload) {
   };
 }
 
-const LEADS = {
-  jarvis: { id: "jarvis", name: "Jarvis", ready: true },
-  writer: { id: "writer", name: "Writer", ready: false },
-  helper: { id: "helper", name: "Helper", ready: false },
-  finder: { id: "finder", name: "Finder", ready: false },
-  buyra: { id: "buyra", name: "Buyra", ready: true },
-  home: { id: "home", name: "Home", ready: true },
-};
+function helpersFromInventory() {
+  const jarvis = {
+    id: "jarvis",
+    name: LABELS.lead,
+    initial: "J",
+    color: "#1d4ed8",
+    subtitle: LABELS.ready,
+    source: "local-lead",
+    kind: "helper",
+    live: true,
+    ready: true,
+    unread: 0,
+    talkTarget: "jarvis",
+  };
+  const stubs = HELPER_STUBS.map((row) => ({
+    id: row.id,
+    name: row.name,
+    initial: row.initial,
+    color: row.color,
+    subtitle: LABELS.notConnected,
+    source: "documented-stub",
+    kind: "helper",
+    live: false,
+    ready: false,
+    unread: 0,
+    talkTarget: "jarvis",
+  }));
+  return [jarvis, ...stubs];
+}
 
-function selectLead(id) {
+const LEADS = Object.fromEntries(helpersFromInventory().map((row) => [row.id, row]));
+
+function groupChatsFromInventory() {
+  return [];
+}
+
+function parseTurnTime(ts) {
+  const raw = String(ts || "").trim();
+  if (!raw) return 0;
+  const n = Date.parse(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function splitTalkSessions(turns) {
+  const speech = speechTurns(turns);
+  const groups = [];
+  let current = [];
+  let prevTs = 0;
+  for (const row of speech) {
+    const ts = parseTurnTime(row.ts);
+    if (current.length && prevTs && ts && ts - prevTs > SESSION_GAP_MS) {
+      groups.push(current);
+      current = [];
+    }
+    current.push(row);
+    if (ts) prevTs = ts;
+  }
+  if (current.length) groups.push(current);
+  return groups;
+}
+
+function titleFromSession(session, isLatest) {
+  if (isLatest) return LABELS.lead;
+  const firstYou = (Array.isArray(session) ? session : []).find((row) => row && row.role === "you");
+  const raw = firstYou ? clipAsk(firstYou.text) : LABELS.lead;
+  if (!raw) return LABELS.lead;
+  if (raw.length <= CHAT_TITLE_CHARS) return raw;
+  return `${raw.slice(0, Math.max(1, CHAT_TITLE_CHARS - 1)).trimEnd()}…`;
+}
+
+function chatsFromHistory(turns) {
+  const sessions = splitTalkSessions(turns);
+  if (!sessions.length) return [];
+  return sessions
+    .slice()
+    .reverse()
+    .map((session, index) => {
+      const last = session[session.length - 1];
+      const first = session[0] || {};
+      const live = index === 0;
+      const stamp = String(first.ts || index).toLowerCase().replace(/[^a-z0-9]+/g, "");
+      return {
+        id: live ? "talk-live" : `talk-${stamp || index}`,
+        name: titleFromSession(session, live),
+        preview: last ? last.text : "",
+        source: "talk-history",
+        kind: "chat",
+        live,
+        ready: true,
+        unread: 0,
+        talkTarget: "jarvis",
+      };
+    });
+}
+
+function normalizeNavSections(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  return {
+    helpers: src.helpers !== false,
+    chats: src.chats !== false,
+    groups: src.groups !== false,
+  };
+}
+
+function toggleNavSection(state, which) {
+  const next = normalizeNavSections(state);
+  const key = String(which || "").trim().toLowerCase();
+  if (key === "helpers" || key === "chats" || key === "groups") {
+    next[key] = !next[key];
+  }
+  return next;
+}
+
+function filterNavItems(items, query) {
+  const list = Array.isArray(items) ? items : [];
+  const q = String(query || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!q) return list.slice();
+  return list.filter((row) => {
+    if (!row || typeof row !== "object") return false;
+    const hay = [row.name, row.preview, row.subtitle]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    return hay.includes(q);
+  });
+}
+
+function leftNavView(state) {
+  const src = state && typeof state === "object" ? state : {};
+  const query = String(src.query || "");
+  const searching = query.replace(/\s+/g, " ").trim().length > 0;
+  const helpers = filterNavItems(helpersFromInventory(), query);
+  const chats = filterNavItems(chatsFromHistory(src.turns), query);
+  const groups = filterNavItems(groupChatsFromInventory(), query);
+  return {
+    helpers,
+    chats,
+    groups,
+    sections: normalizeNavSections(src.sections),
+    query,
+    searching,
+    emptyHelpers: helpers.length === 0,
+    emptyChats: chats.length === 0,
+    emptyGroups: groups.length === 0,
+    emptyChatsLabel: searching ? LABELS.nothingMatches : LABELS.emptyChats,
+    emptyGroupsLabel: searching ? LABELS.nothingMatches : LABELS.emptyGroups,
+    plusLabel: LABELS.newChat,
+    sources: DATA_SOURCES,
+  };
+}
+
+function selectLead(id, extras) {
+  const extra = extras && typeof extras === "object" ? extras : {};
   const key = String(id || "").trim().toLowerCase();
-  const known = LEADS[key] || LEADS.jarvis;
+  const helpers = helpersFromInventory();
+  const chats = Array.isArray(extra.chats) ? extra.chats : chatsFromHistory(extra.turns);
+  const groups = Array.isArray(extra.groups) ? extra.groups : [];
+  const found = helpers.concat(chats, groups).find((row) => String(row.id).toLowerCase() === key);
+  const known = found || helpers[0];
+  const ready = known.ready === true;
   return {
     id: known.id,
     name: known.name,
-    subtitle: known.ready ? LABELS.ready : LABELS.comingSoon,
+    subtitle: ready ? LABELS.ready : (known.subtitle || LABELS.notConnected),
     talkTarget: "jarvis",
-    ready: known.ready === true,
+    ready,
+    source: known.source || (ready ? "local-lead" : "documented-stub"),
+    kind: known.kind || "helper",
+    live: known.live === true,
   };
 }
 
@@ -424,7 +606,10 @@ function chatView(turns, extras) {
 module.exports = {
   SHELL,
   LABELS,
+  DATA_SOURCES,
+  HELPER_STUBS,
   LEADS,
+  SESSION_GAP_MS,
   SHELL_PATH,
   TALK_PATH,
   SETTINGS_PATH,
@@ -467,6 +652,14 @@ module.exports = {
   talkLogRequest,
   speakRequest,
   parseAskReply,
+  helpersFromInventory,
+  groupChatsFromInventory,
+  splitTalkSessions,
+  chatsFromHistory,
+  normalizeNavSections,
+  toggleNavSection,
+  filterNavItems,
+  leftNavView,
   selectLead,
   micPlan,
   chatView,

@@ -1,5 +1,5 @@
 /**
- * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68 / #69).
+ * Node assertions for desktop/app-shell.js (issues #74 / #67 / #68 / #69 / #70 / #71).
  * Run: node desktop/app-shell.test.js
  */
 const assert = require("assert");
@@ -39,6 +39,14 @@ const {
   talkLogRequest,
   parseAskReply,
   selectLead,
+  helpersFromInventory,
+  groupChatsFromInventory,
+  chatsFromHistory,
+  normalizeNavSections,
+  toggleNavSection,
+  filterNavItems,
+  leftNavView,
+  DATA_SOURCES,
   micPlan,
   chatView,
 } = require("./app-shell");
@@ -74,6 +82,15 @@ assert.strictEqual(LABELS.listening, "Listening…");
 assert.strictEqual(LABELS.thinking, "Jarvis is thinking…");
 assert.strictEqual(LABELS.addSoon, "Photos and files come later.");
 assert.strictEqual(LABELS.cantTalk, "Can't talk right now");
+assert.strictEqual(LABELS.newChat, "New chat");
+assert.strictEqual(LABELS.notConnected, "Not connected yet");
+assert.strictEqual(LABELS.emptyChats, "No chats yet. Send a message to start.");
+assert.strictEqual(LABELS.emptyGroups, "No group chats yet. They come later.");
+assert.strictEqual(LABELS.nothingMatches, "Nothing matches.");
+assert.strictEqual(DATA_SOURCES.helpers, "local-lead + documented-stub");
+assert.strictEqual(DATA_SOURCES.chats, "talk-history");
+assert.strictEqual(DATA_SOURCES.groups, "none");
+assert.ok(/only jarvis is a live helper/i.test(DATA_SOURCES.note));
 assert.ok(!/composer|transcript|nav|sidebar/i.test(Object.values(LABELS).join(" ")));
 assert.strictEqual(ASK_PATH, "/api/jarvis/ask");
 assert.strictEqual(TALK_LAST_PATH, "/api/jarvis/talk/last");
@@ -241,11 +258,92 @@ const jarvis = selectLead("jarvis");
 assert.strictEqual(jarvis.name, "Jarvis");
 assert.strictEqual(jarvis.talkTarget, "jarvis");
 assert.strictEqual(jarvis.ready, true);
+assert.strictEqual(jarvis.source, "local-lead");
+assert.strictEqual(jarvis.live, true);
 const writer = selectLead("writer");
 assert.strictEqual(writer.name, "Writer");
 assert.strictEqual(writer.ready, false);
 assert.strictEqual(writer.talkTarget, "jarvis");
-assert.ok(/coming soon/i.test(writer.subtitle));
+assert.strictEqual(writer.source, "documented-stub");
+assert.strictEqual(writer.live, false);
+assert.ok(/not connected/i.test(writer.subtitle));
+assert.strictEqual(selectLead("buyra").id, "jarvis");
+assert.strictEqual(selectLead("family").live, true);
+
+const helpers = helpersFromInventory();
+assert.strictEqual(helpers[0].id, "jarvis");
+assert.strictEqual(helpers[0].live, true);
+assert.ok(helpers.slice(1).every((row) => row.source === "documented-stub" && row.live === false));
+assert.deepStrictEqual(groupChatsFromInventory(), []);
+
+assert.deepStrictEqual(chatsFromHistory([]), []);
+assert.deepStrictEqual(chatsFromHistory([{ role: "tool", text: "opened" }]), []);
+const oneChat = chatsFromHistory([
+  { role: "you", text: "hey jarvis", ts: "2026-09-13T10:00:00Z" },
+  { role: "jarvis", text: "Hello.", ts: "2026-09-13T10:00:02Z" },
+]);
+assert.strictEqual(oneChat.length, 1);
+assert.strictEqual(oneChat[0].id, "talk-live");
+assert.strictEqual(oneChat[0].name, "Jarvis");
+assert.strictEqual(oneChat[0].preview, "Hello.");
+assert.strictEqual(oneChat[0].source, "talk-history");
+assert.strictEqual(oneChat[0].talkTarget, "jarvis");
+const twoChats = chatsFromHistory([
+  { role: "you", text: "old hello", ts: "2026-09-12T10:00:00Z" },
+  { role: "jarvis", text: "Hi.", ts: "2026-09-12T10:00:02Z" },
+  { role: "you", text: "new hello", ts: "2026-09-13T12:00:00Z" },
+  { role: "jarvis", text: "Hello again.", ts: "2026-09-13T12:00:03Z" },
+]);
+assert.strictEqual(twoChats.length, 2);
+assert.strictEqual(twoChats[0].id, "talk-live");
+assert.strictEqual(twoChats[0].preview, "Hello again.");
+assert.strictEqual(twoChats[1].name, "old hello");
+assert.strictEqual(twoChats[1].source, "talk-history");
+const pickedChat = selectLead("talk-live", { chats: twoChats });
+assert.strictEqual(pickedChat.name, "Jarvis");
+assert.strictEqual(pickedChat.talkTarget, "jarvis");
+assert.strictEqual(pickedChat.ready, true);
+
+assert.deepStrictEqual(normalizeNavSections(null), { helpers: true, chats: true, groups: true });
+assert.deepStrictEqual(toggleNavSection({ helpers: true, chats: true, groups: true }, "chats"), {
+  helpers: true,
+  chats: false,
+  groups: true,
+});
+assert.deepStrictEqual(toggleNavSection({ helpers: true, chats: false, groups: true }, "helpers"), {
+  helpers: false,
+  chats: false,
+  groups: true,
+});
+assert.strictEqual(toggleNavSection({ helpers: true, chats: true, groups: true }, "chats").groups, true);
+
+const filtered = filterNavItems(helpers, "writ");
+assert.strictEqual(filtered.length, 1);
+assert.strictEqual(filtered[0].id, "writer");
+assert.deepStrictEqual(filterNavItems(helpers, "zzzz"), []);
+
+const emptyNav = leftNavView({});
+assert.strictEqual(emptyNav.emptyChats, true);
+assert.strictEqual(emptyNav.emptyGroups, true);
+assert.strictEqual(emptyNav.emptyChatsLabel, LABELS.emptyChats);
+assert.strictEqual(emptyNav.emptyGroupsLabel, LABELS.emptyGroups);
+assert.strictEqual(emptyNav.helpers[0].id, "jarvis");
+assert.strictEqual(emptyNav.plusLabel, "New chat");
+assert.ok(emptyNav.helpers.some((row) => row.live === true));
+assert.ok(emptyNav.helpers.filter((row) => row.live).length === 1);
+const filledNav = leftNavView({ turns: [
+  { role: "you", text: "hey jarvis", ts: "2026-09-13T10:00:00Z" },
+  { role: "jarvis", text: "Hello.", ts: "2026-09-13T10:00:02Z" },
+]});
+assert.strictEqual(filledNav.emptyChats, false);
+assert.strictEqual(filledNav.chats[0].source, "talk-history");
+const searchNav = leftNavView({ query: "zzzz", turns: [
+  { role: "you", text: "hey", ts: "2026-09-13T10:00:00Z" },
+]});
+assert.strictEqual(searchNav.emptyChats, true);
+assert.strictEqual(searchNav.emptyChatsLabel, LABELS.nothingMatches);
+assert.ok(!filledNav.helpers.some((row) => /buyra|family|home/i.test(row.name)));
+assert.ok(!filledNav.chats.some((row) => row.live === false && /connected/i.test(row.preview || "")));
 
 const micEngine = micPlan(true);
 assert.strictEqual(micEngine.startListen, true);
