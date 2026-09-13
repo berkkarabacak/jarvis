@@ -1,9 +1,14 @@
 /**
- * Windows Jarvis 3-pane shell contract (epic #66, issues #74 / #67).
+ * Windows Jarvis 3-pane shell contract (epic #66, issues #74 / #67 / #68).
  *
  * Pure helpers — Node tests can require this file. The visible chrome is
  * app/static/desktop.html. Electron loads /desktop as the main window.
  * /ceo stays the Realtime / Settings page (hidden talk engine + Settings).
+ *
+ * #68 live PC: iframe of localhost noVNC inside #live-computer. BrowserView
+ * is a native overlay and would need manual bounds on collapse; an iframe
+ * hides with the pane. Hide / Chat only blanks the iframe and must not
+ * stop jarvis-computer.
  */
 const SHELL_PATH = "/desktop";
 const TALK_PATH = "/ceo";
@@ -20,9 +25,10 @@ const SHELL = {
   rightWidth: 340,
   minMiddleWidth: 360,
   minWindowWidth: 800,
-  // #68 will put the live PC in the right pane. iframe of the existing
-  // :6080 viewer is the planned embed (BrowserView is harder to collapse).
+  // #68: iframe of the existing :6080 session. BrowserView is harder to
+  // collapse with the chrome and is not used for the in-pane live PC.
   screenEmbed: "iframe",
+  screenEmbedRejected: "BrowserView",
 };
 
 const LABELS = {
@@ -48,7 +54,13 @@ const LABELS = {
   profile: "You",
   emptyChat: "This chat is ready. Messages will show up here.",
   screenSoon: "The live computer will show here.",
+  screenLive: "Jarvis's screen is live.",
+  screenHidden: "Jarvis's screen is hidden. The computer keeps running.",
+  screenDown: "Jarvis's computer is not running.",
   terminalScreen: "Chat only — the computer stays hidden.",
+  hideScreen: "Hide screen",
+  showScreen: "Show Jarvis's screen",
+  startComputer: "Start Jarvis's computer",
   openScreen: "Open Jarvis's screen",
 };
 
@@ -118,24 +130,78 @@ function normalizeTalkMode(value) {
   return mode === "terminal" ? "terminal" : "computer";
 }
 
-function applyTalkMode(value) {
+function screenShouldShow(state) {
+  const src = state && typeof state === "object" ? state : {};
+  const talkMode = normalizeTalkMode(src.talkMode);
+  if (talkMode === "terminal") return false;
+  if (src.paneOpen === false) return false;
+  if (src.screenShown === false) return false;
+  return true;
+}
+
+function applyTalkMode(value, extras) {
   const talkMode = normalizeTalkMode(value);
   const terminal = talkMode === "terminal";
+  const extra = extras && typeof extras === "object" ? extras : {};
+  const paneOpen = extra.paneOpen !== false;
+  const screenShown = terminal ? false : extra.screenShown !== false;
+  const show = screenShouldShow({ talkMode, paneOpen, screenShown });
   return {
     talkMode,
-    showComputerSlot: !terminal,
-    screenLabel: terminal ? LABELS.terminalScreen : LABELS.screenSoon,
+    showComputerSlot: show,
+    screenShown,
+    paneOpen,
+    screenLabel: terminal
+      ? LABELS.terminalScreen
+      : show
+        ? LABELS.screenLive
+        : LABELS.screenHidden,
     modeLabel: terminal ? LABELS.terminal : LABELS.computer,
+    embedSrc: show ? NOVNC_SESSION_URL : "",
+    pauseEmbed: !show,
+    stopComputer: false,
+  };
+}
+
+function liveComputerView(state) {
+  const src = state && typeof state === "object" ? state : {};
+  const talkMode = normalizeTalkMode(src.talkMode);
+  const paneOpen = src.paneOpen !== false;
+  const screenShown = talkMode === "terminal" ? false : src.screenShown !== false;
+  const running = src.running === true;
+  const show = screenShouldShow({ talkMode, paneOpen, screenShown });
+  return {
+    method: SHELL.screenEmbed,
+    talkMode,
+    visible: show,
+    driving: show,
+    paused: !show,
+    embedSrc: show && running ? NOVNC_SESSION_URL : "",
+    startAllowed: show && !running,
+    stopComputer: false,
+    killsComputerOnHide: false,
+  };
+}
+
+function pauseLiveComputer() {
+  return {
+    method: SHELL.screenEmbed,
+    embedSrc: "",
+    paused: true,
+    stopComputer: false,
+    stopUrls: [],
+    note: "Blank the iframe. Do not stop jarvis-computer.",
   };
 }
 
 function screenEmbedPlan() {
   return {
     method: SHELL.screenEmbed,
+    rejected: SHELL.screenEmbedRejected,
     novnc: NOVNC_URL,
     session: NOVNC_SESSION_URL,
     viewerPath: SCREEN_VIEWER_PATH,
-    note: "Do not kill jarvis-computer when the right pane collapses.",
+    note: "Iframe collapses with the pane. BrowserView needs manual bounds. Do not kill jarvis-computer when the right pane collapses.",
   };
 }
 
@@ -159,5 +225,8 @@ module.exports = {
   layoutColumns,
   normalizeTalkMode,
   applyTalkMode,
+  screenShouldShow,
+  liveComputerView,
+  pauseLiveComputer,
   screenEmbedPlan,
 };

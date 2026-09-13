@@ -10,7 +10,7 @@ The cloud site (`aicontrolroom.nl`) cannot see your Windows disk. This local pac
 |-------|----------|
 | Backend | FastAPI / uvicorn on `127.0.0.1:8787` |
 | UI | CEO page in an Edge/Chrome **app window** (`--app=`) |
-| Jarvis's screen | Menu **Open Jarvis's screen** opens the live localhost desktop (ORCH-410) |
+| Jarvis's screen | Right pane iframes the live localhost desktop (`127.0.0.1:6080`). Menu **Open Jarvis's screen** still opens the same session in a window (ORCH-410 / #68) |
 | Chat brain | OpenRouter (`OPENROUTER_API_KEY`) by default |
 | File edits | Optional **Prime Agent** RPC with `PRIME_AGENT_WORKDIR` |
 

@@ -7,6 +7,12 @@
  * tree in extraResources. First run: packaged users go straight to the
  * 3-pane window. Berk sets the talk secret on the hosted server or in
  * the private build env. Users never see a key field.
+ *
+ * #68 live PC: the /desktop page iframes localhost noVNC
+ * (http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale) inside
+ * #live-computer. BrowserView is not used — it is a native overlay
+ * that would need manual bounds whenever the right pane collapses.
+ * Hide / Chat only blanks the iframe and must not stop jarvis-computer.
  */
 const { app, BrowserWindow, Menu, Tray, nativeImage, shell, dialog, ipcMain, screen } = require("electron");
 const path = require("path");
@@ -697,6 +703,9 @@ async function createWindow(port) {
     show: shouldShowMainOnLaunch(),
     skipTaskbar: !shouldShowMainOnLaunch(),
     webPreferences: {
+      // Live PC is an iframe in /desktop, not a BrowserView. Localhost
+      // noVNC (127.0.0.1:6080) loads as a child frame and collapses with
+      // the right pane. Do not attach a BrowserView here.
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,

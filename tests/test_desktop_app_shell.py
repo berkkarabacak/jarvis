@@ -1,4 +1,4 @@
-"""Windows 3-pane shell chrome — issues #74 / #67 (epic #66)."""
+"""Windows 3-pane shell chrome — issues #74 / #67 / #68 (epic #66)."""
 
 from __future__ import annotations
 
@@ -98,6 +98,71 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert "Coming soon" in html
 
 
+def test_right_pane_embeds_live_novnc_iframe():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+    readme = (DESKTOP / "README.md").read_text(encoding="utf-8")
+
+    assert 'id="live-computer"' in html
+    assert 'data-embed="iframe"' in html
+    assert 'id="live-frame"' in html
+    assert 'title="Jarvis\'s screen"' in html
+    assert 'id="hide-screen"' in html
+    assert 'id="show-screen"' in html
+    assert 'aria-label="Hide screen"' in html
+    assert 'aria-label="Show screen"' in html
+    assert 'id="start-computer"' in html
+    assert "Start Jarvis's computer" in html
+    assert "Show Jarvis's screen" in html
+    assert "Chat only — the computer stays hidden." in html
+    assert "Jarvis's screen is hidden. The computer keeps running." in html
+    assert "http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale" in html
+    assert "/api/jarvis/computer/screen" in html
+    assert "/api/jarvis/computer/screen/start" in html
+    assert "function clearLiveFrame" in js
+    assert "function computerShouldShow" in js
+    assert "function syncLiveComputer" in js
+    assert 'setAttribute("src", "about:blank")' in js
+    assert 'sessionStorage.setItem(SCREEN_STORAGE' in js
+    assert 'if (talkMode === "terminal") screenShown = false' in js
+    assert "if (!computerShouldShow()) return" in js
+    assert "BrowserView" in html
+    assert "new BrowserView" not in main
+    assert "require(\"electron\")" in main
+    assert "BrowserView" in main
+    assert "iframe" in main.lower()
+    assert 'screenEmbed: "iframe"' in shell
+    assert 'screenEmbedRejected: "BrowserView"' in shell
+    assert "Do not attach a BrowserView here." in main
+    assert "iframed" in readme.lower() or "iframe" in readme.lower()
+    assert "BrowserView is not used" in readme
+
+
+def test_hide_and_chat_only_do_not_stop_jarvis_computer():
+    html = SHELL_HTML.read_text(encoding="utf-8")
+    js = html.split("<script>")[-1].rsplit("</script>", 1)[0]
+    shell = (DESKTOP / "app-shell.js").read_text(encoding="utf-8")
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    combined = html + "\n" + shell + "\n" + main
+    low = combined.lower()
+
+    assert "clearLiveFrame" in js
+    assert "syncLiveComputer" in js
+    assert 'docker compose down' not in low
+    assert "docker stop" not in low
+    assert "/api/jarvis/computer/screen/stop" not in low
+    assert "jarvis-computer/stop" not in low
+    assert "kill jarvis-computer" not in js.lower()
+    assert "stopComputer: false" in shell
+    assert "killsComputerOnHide: false" in shell
+    assert "Do not stop jarvis-computer" in shell or "do not stop jarvis-computer" in shell
+    assert "savePanes(panes)" in js
+    assert "setScreenShown(false)" in js
+    assert "persistTalkMode(\"terminal\")" in js
+
+
 @pytest.fixture
 async def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "t.db"))
@@ -130,6 +195,9 @@ async def test_desktop_route_serves_three_pane_shell(client):
     assert 'id="left"' in r.text
     assert 'id="middle"' in r.text
     assert 'id="right"' in r.text
+    assert 'id="live-computer"' in r.text
+    assert 'id="live-frame"' in r.text
+    assert 'data-embed="iframe"' in r.text
     assert "API secret" not in r.text
     assert "or-test-key" not in r.text
 

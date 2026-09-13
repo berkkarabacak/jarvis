@@ -15,8 +15,13 @@ shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
 5. **Settings** is Jarvis menu (`Ctrl+,`) or the gear on the 3-pane header.
    That opens `/ceo?settings=1` in a Settings window (talk_mode /
    Computer vs Chat only stay on the same `/api/jarvis/settings` store)
-6. **Jarvis's screen** still opens the noVNC viewer at
-   `http://127.0.0.1:6080`. The right pane is the slot; live embed is #68.
+6. **Jarvis's screen** is the live localhost noVNC session
+   (`http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale`)
+   **iframed** into the right pane (`#live-computer`). Hide / collapse
+   and Chat only blank that iframe — they do **not** stop
+   `jarvis-computer`. BrowserView is not used: it sits above the page
+   and cannot collapse with the chrome. **Open Jarvis's screen** still
+   opens the existing viewer window.
 7. Stops the backend on quit
 
 Why a new `/desktop` route: `/ceo` is the orb Talk surface used by
