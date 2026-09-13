@@ -26,7 +26,14 @@ shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
    `jarvis-computer`. BrowserView is not used: it sits above the page
    and cannot collapse with the chrome. **Open Jarvis's screen** still
    opens the existing viewer window.
-8. Stops the backend on quit
+8. **Left lists** are Search, `+`, Helpers, Chats, and Group chats.
+   Each list section opens and closes on its own. Picking a helper or
+   chat updates the middle header. Asks still go to Jarvis.
+9. Helpers are **Jarvis** (live) plus documented stubs labeled
+   **Not connected yet**. Chats come from local talk history
+   (`/api/jarvis/talk/last`) when you have one. Group chats stay empty
+   until a real group list exists. No invented live teammates.
+10. Stops the backend on quit
 
 Why a new `/desktop` route: `/ceo` is the orb Talk surface used by
 existing voice tests and Settings. Rewriting it in place would mix two
@@ -88,6 +95,14 @@ npm run dist
 Artifacts under `desktop/dist/`. This **shell-only** pack still needs the
 **repo + `.venv`** nearby, or `CONTROL_ROOM_ROOT`. Prefer `build-installer.ps1`
 when you want a real one-file install.
+
+## Left list data
+
+| List | Source | Honest empty / stub |
+|------|--------|---------------------|
+| Helpers | Local lead + documented stubs | Only Jarvis is live. Writer / Helper / Finder say **Not connected yet** |
+| Chats | `/api/jarvis/talk/last` | **No chats yet. Send a message to start.** |
+| Group chats | None yet | **No group chats yet. They come later.** |
 
 ## Surfaces
 

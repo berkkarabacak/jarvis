@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#efece8" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <!--
-    Windows 3-pane product chrome (issues #74 / #67 / #68 / #69).
+    Windows 3-pane product chrome (issues #74 / #67 / #68 / #69 / #70 / #71).
     New route on purpose: /ceo stays the orb Talk + Settings page.
     #68 embeds http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale
     in #live-computer via an iframe. BrowserView is not used: it sits
@@ -15,6 +15,10 @@
     Hide / Chat only blanks the iframe. Do not kill jarvis-computer.
     #69 middle pane is the live You / Jarvis chat: /api/jarvis/ask,
     /api/jarvis/talk/last, and mic listen (browser speech or hidden /ceo).
+    #70 left lists: Search, +, Helpers, Chats, Group chats — each section
+    collapses on its own. Selection focuses the middle header.
+    #71 light data: Jarvis is live. Other helpers are documented stubs
+    (not connected). Chats come from talk history. Group chats stay empty.
   -->
   <style>
     :root {
@@ -107,6 +111,12 @@
     }
     .icon-btn:hover, .text-btn:hover { background: #fff; }
     .search-wrap { padding: 0 14px 12px; }
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-row .search { flex: 1; min-width: 0; }
     .search-wrap input {
       width: 100%;
       border: 1px solid var(--line);
@@ -151,6 +161,63 @@
       text-transform: uppercase;
       color: var(--muted);
     }
+    .nav-scroll {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+    }
+    .nav-block { padding: 2px 10px 8px; }
+    .nav-toggle {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 0;
+      background: transparent;
+      padding: 8px 4px 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .nav-toggle .chevron {
+      margin-left: auto;
+      font-size: 11px;
+      transition: transform .15s ease;
+    }
+    .nav-block[data-open="0"] .nav-body { display: none; }
+    .nav-block[data-open="0"] .chevron { transform: rotate(-90deg); }
+    .empty-list {
+      margin: 0;
+      padding: 8px 6px 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .row .copy { flex: 1; min-width: 0; }
+    .row .copy strong, .row .copy span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .unread {
+      flex: 0 0 18px;
+      width: 18px;
+      min-height: 18px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 18px;
+      text-align: center;
+      background: var(--accent);
+      color: var(--accent-ink);
+    }
+    .unread[data-count="0"], .unread:empty {
+      background: transparent;
+      color: transparent;
+    }
+    .agent[data-live="0"] .avatar { opacity: 0.72; }
     .agents {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -376,47 +443,69 @@
         <button type="button" class="icon-btn" id="hide-left" aria-label="Hide chats">‹</button>
       </div>
       <div class="search-wrap">
-        <div class="search">
-          <input id="search" type="search" placeholder="Search" aria-label="Search" autocomplete="off" />
+        <div class="search-row">
+          <div class="search">
+            <input id="search" type="search" placeholder="Search" aria-label="Search" autocomplete="off" />
+          </div>
+          <button type="button" class="icon-btn" id="new-chat" aria-label="New chat" title="New chat">+</button>
         </div>
       </div>
-      <div class="section">
-        <h3>Helpers</h3>
-        <div class="agents" id="agents">
-          <button type="button" class="agent" data-id="jarvis">
-            <span class="avatar" style="background:#1d4ed8">J</span>
-            <strong>Jarvis</strong>
-            <span>Coming soon</span>
+      <div class="nav-scroll" id="left-lists">
+        <section class="nav-block" data-section="helpers" data-open="1">
+          <button type="button" class="nav-toggle" id="toggle-helpers" aria-expanded="true" aria-controls="agents">
+            <span>Helpers</span>
+            <span class="chevron" aria-hidden="true">▾</span>
           </button>
-          <button type="button" class="agent" data-id="writer">
-            <span class="avatar" style="background:#0f766e">W</span>
-            <strong>Writer</strong>
-            <span>Coming soon</span>
+          <div class="nav-body" id="helpers-body">
+            <div class="agents" id="agents" data-source="local-lead documented-stub">
+              <button type="button" class="agent" data-id="jarvis" data-source="local-lead" data-live="1" data-on="1">
+                <span class="avatar" style="background:#1d4ed8">J</span>
+                <strong>Jarvis</strong>
+                <span>Ready when you are</span>
+                <span class="unread" data-count="0"></span>
+              </button>
+              <button type="button" class="agent" data-id="writer" data-source="documented-stub" data-live="0">
+                <span class="avatar" style="background:#0f766e">W</span>
+                <strong>Writer</strong>
+                <span>Not connected yet</span>
+                <span class="unread" data-count="0"></span>
+              </button>
+              <button type="button" class="agent" data-id="helper" data-source="documented-stub" data-live="0">
+                <span class="avatar" style="background:#b45309">H</span>
+                <strong>Helper</strong>
+                <span>Not connected yet</span>
+                <span class="unread" data-count="0"></span>
+              </button>
+              <button type="button" class="agent" data-id="finder" data-source="documented-stub" data-live="0">
+                <span class="avatar" style="background:#7c3aed">F</span>
+                <strong>Finder</strong>
+                <span>Not connected yet</span>
+                <span class="unread" data-count="0"></span>
+              </button>
+            </div>
+            <p class="empty-list" id="empty-helpers" hidden>Nothing matches.</p>
+          </div>
+        </section>
+        <section class="nav-block" data-section="chats" data-open="1">
+          <button type="button" class="nav-toggle" id="toggle-chats" aria-expanded="true" aria-controls="chats">
+            <span>Chats</span>
+            <span class="chevron" aria-hidden="true">▾</span>
           </button>
-          <button type="button" class="agent" data-id="helper">
-            <span class="avatar" style="background:#b45309">H</span>
-            <strong>Helper</strong>
-            <span>Coming soon</span>
+          <div class="nav-body" id="chats-body">
+            <div class="list" id="chats" data-source="talk-history"></div>
+            <p class="empty-list" id="empty-chats">No chats yet. Send a message to start.</p>
+          </div>
+        </section>
+        <section class="nav-block" data-section="groups" data-open="1">
+          <button type="button" class="nav-toggle" id="toggle-groups" aria-expanded="true" aria-controls="groups">
+            <span>Group chats</span>
+            <span class="chevron" aria-hidden="true">▾</span>
           </button>
-          <button type="button" class="agent" data-id="finder">
-            <span class="avatar" style="background:#7c3aed">F</span>
-            <strong>Finder</strong>
-            <span>Coming soon</span>
-          </button>
-        </div>
-      </div>
-      <div class="section">
-        <h3>Chats</h3>
-        <div class="list" id="chats">
-          <button type="button" class="row" data-id="buyra"><span class="dot"></span><span><strong>Buyra</strong><br /><span>Placeholder chat</span></span></button>
-          <button type="button" class="row" data-id="home"><span class="dot"></span><span><strong>Home</strong><br /><span>Placeholder chat</span></span></button>
-        </div>
-      </div>
-      <div class="section">
-        <h3>Group chats</h3>
-        <div class="list" id="groups">
-          <button type="button" class="row" data-id="family"><span class="dot"></span><span><strong>Family</strong><br /><span>Placeholder group</span></span></button>
-        </div>
+          <div class="nav-body" id="groups-body">
+            <div class="list" id="groups" data-source="none"></div>
+            <p class="empty-list" id="empty-groups">No group chats yet. They come later.</p>
+          </div>
+        </section>
       </div>
       <div class="left-foot">
         <button type="button" class="footer-btn" id="plugins">Plugins</button>
@@ -481,6 +570,7 @@
   <script>
     (function () {
       var STORAGE = "jarvis.shell.panes";
+      var NAV_STORAGE = "jarvis.shell.nav";
       var SCREEN_STORAGE = "jarvis.shell.pcVisible";
       var SESSION = "http://127.0.0.1:6080/vnc.html?autoconnect=1&resize=scale";
       var statusEl = document.getElementById("status");
@@ -515,6 +605,10 @@
       var micBtn = document.getElementById("mic");
       var chatTitle = document.getElementById("chat-title");
       var chatSub = document.getElementById("chat-sub");
+      var searchInput = document.getElementById("search");
+      var selectedId = "jarvis";
+      var chatRows = [];
+      var navSections = { helpers: true, chats: true, groups: true };
 
       function say(text) {
         statusEl.textContent = text;
@@ -763,6 +857,7 @@
         if (last && last.role === who && last.text === clean) return false;
         turns.push({ role: who, text: clean });
         paintThread();
+        refreshChatsFromTurns();
         return true;
       }
 
@@ -834,12 +929,14 @@
         if (!turns.length) {
           turns = incoming;
           paintThread();
+          refreshChatsFromTurns();
           return;
         }
         if (sending) return;
         if (incoming.length >= turns.length) {
           turns = incoming;
           paintThread();
+          refreshChatsFromTurns();
         }
       }
 
@@ -981,14 +1078,226 @@
         startBrowserListen();
       }
 
-      function selectLead(id, name, ready) {
-        var title = name || "Jarvis";
-        chatTitle.textContent = title;
-        setChatSub(ready === false ? "Coming soon" : "Ready when you are");
-        document.querySelectorAll(".agent[data-id], .row[data-id]").forEach(function (btn) {
-          btn.setAttribute("data-on", btn.getAttribute("data-id") === id ? "1" : "0");
+      function helpersInventory() {
+        return [
+          { id: "jarvis", name: "Jarvis", initial: "J", color: "#1d4ed8", subtitle: "Ready when you are", source: "local-lead", live: true, ready: true },
+          { id: "writer", name: "Writer", initial: "W", color: "#0f766e", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false },
+          { id: "helper", name: "Helper", initial: "H", color: "#b45309", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false },
+          { id: "finder", name: "Finder", initial: "F", color: "#7c3aed", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false }
+        ];
+      }
+
+      function parseTurnTime(ts) {
+        var n = Date.parse(String(ts || ""));
+        return isFinite(n) ? n : 0;
+      }
+
+      function chatsFromHistory(rows) {
+        var speech = [];
+        (Array.isArray(rows) ? rows : []).forEach(function (row) {
+          if (!row || (row.role !== "you" && row.role !== "jarvis")) return;
+          var clean = String(row.text || "").replace(/\s+/g, " ").trim();
+          if (!clean) return;
+          speech.push({
+            role: row.role,
+            text: row.role === "you" ? clipAsk(clean) : clean,
+            ts: String(row.ts || "")
+          });
         });
-        say(ready === false ? title + " is coming soon." : "Talking with " + title + ".");
+        var sessions = [];
+        var current = [];
+        var prevTs = 0;
+        var gap = 45 * 60 * 1000;
+        speech.forEach(function (row) {
+          var ts = parseTurnTime(row.ts);
+          if (current.length && prevTs && ts && ts - prevTs > gap) {
+            sessions.push(current);
+            current = [];
+          }
+          current.push(row);
+          if (ts) prevTs = ts;
+        });
+        if (current.length) sessions.push(current);
+        return sessions.reverse().map(function (session, index) {
+          var last = session[session.length - 1];
+          var first = session[0] || {};
+          var firstYou = null;
+          session.forEach(function (row) {
+            if (!firstYou && row.role === "you") firstYou = row;
+          });
+          var live = index === 0;
+          var title = "Jarvis";
+          if (!live && firstYou && firstYou.text) {
+            title = firstYou.text.length > 36
+              ? firstYou.text.slice(0, 35).replace(/\s+$/, "") + "…"
+              : firstYou.text;
+          }
+          var sid = String(first.ts || index).replace(/[^a-z0-9]/gi, "").toLowerCase();
+          return {
+            id: live ? "talk-live" : ("talk-" + (sid || index)),
+            name: title,
+            preview: last ? last.text : "",
+            source: "talk-history",
+            live: live,
+            ready: true
+          };
+        });
+      }
+
+      function matchesQuery(row, query) {
+        var q = String(query || "").replace(/\s+/g, " ").trim().toLowerCase();
+        if (!q) return true;
+        var hay = [row.name, row.preview, row.subtitle].join(" ").toLowerCase();
+        return hay.indexOf(q) !== -1;
+      }
+
+      function unreadBadge() {
+        var badge = document.createElement("span");
+        badge.className = "unread";
+        badge.setAttribute("data-count", "0");
+        badge.setAttribute("aria-hidden", "true");
+        return badge;
+      }
+
+      function markSelected() {
+        document.querySelectorAll(".agent[data-id], .row[data-id]").forEach(function (btn) {
+          btn.setAttribute("data-on", btn.getAttribute("data-id") === selectedId ? "1" : "0");
+        });
+      }
+
+      function paintHelpers() {
+        var box = document.getElementById("agents");
+        var empty = document.getElementById("empty-helpers");
+        var q = searchInput.value;
+        var rows = helpersInventory().filter(function (row) { return matchesQuery(row, q); });
+        while (box.firstChild) box.removeChild(box.firstChild);
+        rows.forEach(function (row) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "agent";
+          btn.setAttribute("data-id", row.id);
+          btn.setAttribute("data-source", row.source);
+          btn.setAttribute("data-live", row.live ? "1" : "0");
+          var av = document.createElement("span");
+          av.className = "avatar";
+          av.style.background = row.color;
+          av.textContent = row.initial;
+          var name = document.createElement("strong");
+          name.textContent = row.name;
+          var sub = document.createElement("span");
+          sub.textContent = row.subtitle;
+          btn.appendChild(av);
+          btn.appendChild(name);
+          btn.appendChild(sub);
+          btn.appendChild(unreadBadge());
+          box.appendChild(btn);
+        });
+        empty.hidden = rows.length > 0;
+      }
+
+      function paintChatRows() {
+        var box = document.getElementById("chats");
+        var empty = document.getElementById("empty-chats");
+        var q = searchInput.value;
+        var rows = chatRows.filter(function (row) { return matchesQuery(row, q); });
+        while (box.firstChild) box.removeChild(box.firstChild);
+        rows.forEach(function (row) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "row";
+          btn.setAttribute("data-id", row.id);
+          btn.setAttribute("data-source", row.source);
+          btn.setAttribute("data-live", row.live ? "1" : "0");
+          var copy = document.createElement("span");
+          copy.className = "copy";
+          var name = document.createElement("strong");
+          name.textContent = row.name;
+          var preview = document.createElement("span");
+          preview.textContent = row.preview || "";
+          copy.appendChild(name);
+          copy.appendChild(preview);
+          btn.appendChild(copy);
+          btn.appendChild(unreadBadge());
+          box.appendChild(btn);
+        });
+        empty.hidden = rows.length > 0;
+        empty.textContent = String(searchInput.value || "").trim()
+          ? "Nothing matches."
+          : "No chats yet. Send a message to start.";
+      }
+
+      function paintGroups() {
+        var box = document.getElementById("groups");
+        var empty = document.getElementById("empty-groups");
+        while (box.firstChild) box.removeChild(box.firstChild);
+        empty.hidden = false;
+        empty.textContent = String(searchInput.value || "").trim()
+          ? "Nothing matches."
+          : "No group chats yet. They come later.";
+      }
+
+      function paintLeftNav() {
+        paintHelpers();
+        paintChatRows();
+        paintGroups();
+        markSelected();
+      }
+
+      function refreshChatsFromTurns() {
+        chatRows = chatsFromHistory(turns);
+        paintLeftNav();
+      }
+
+      function normalizeNav(raw) {
+        var src = raw && typeof raw === "object" ? raw : {};
+        return {
+          helpers: src.helpers !== false,
+          chats: src.chats !== false,
+          groups: src.groups !== false
+        };
+      }
+
+      function readNav() {
+        try {
+          return normalizeNav(JSON.parse(localStorage.getItem(NAV_STORAGE) || "null"));
+        } catch (e) {
+          return { helpers: true, chats: true, groups: true };
+        }
+      }
+
+      function paintNavSections(state) {
+        ["helpers", "chats", "groups"].forEach(function (key) {
+          var block = document.querySelector('.nav-block[data-section="' + key + '"]');
+          var btn = document.getElementById("toggle-" + key);
+          if (!block || !btn) return;
+          var open = state[key] !== false;
+          block.setAttribute("data-open", open ? "1" : "0");
+          btn.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+      }
+
+      function saveNav(state) {
+        navSections = normalizeNav(state);
+        try { localStorage.setItem(NAV_STORAGE, JSON.stringify(navSections)); } catch (e) {}
+        paintNavSections(navSections);
+      }
+
+      function leadFromId(id) {
+        var key = String(id || "");
+        var helper = helpersInventory().filter(function (row) { return row.id === key; })[0];
+        if (helper) return helper;
+        var chat = chatRows.filter(function (row) { return row.id === key; })[0];
+        if (chat) return chat;
+        return helpersInventory()[0];
+      }
+
+      function selectLead(id) {
+        var lead = leadFromId(id);
+        selectedId = lead.id || "jarvis";
+        chatTitle.textContent = lead.name || "Jarvis";
+        setChatSub(lead.ready === false ? (lead.subtitle || "Not connected yet") : "Ready when you are");
+        markSelected();
+        say(lead.ready === false ? (lead.name + " is not connected yet.") : ("Talking with " + lead.name + "."));
       }
 
       document.getElementById("composer").addEventListener("submit", function (e) {
@@ -1010,20 +1319,44 @@
       document.getElementById("agents").addEventListener("click", function (e) {
         var btn = e.target.closest(".agent[data-id]");
         if (!btn) return;
-        selectLead(btn.getAttribute("data-id"), btn.querySelector("strong") && btn.querySelector("strong").textContent, btn.getAttribute("data-id") === "jarvis");
+        selectLead(btn.getAttribute("data-id"));
       });
       document.getElementById("chats").addEventListener("click", function (e) {
         var btn = e.target.closest(".row[data-id]");
         if (!btn) return;
-        selectLead(btn.getAttribute("data-id"), btn.querySelector("strong") && btn.querySelector("strong").textContent, true);
+        selectLead(btn.getAttribute("data-id"));
       });
-      ["groups", "plugins", "profile", "routines"].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener("click", function () {
-          say("This list is a placeholder.");
+      document.getElementById("new-chat").addEventListener("click", function () {
+        selectLead("jarvis");
+        askInput.focus();
+        say("New chat with Jarvis.");
+      });
+      searchInput.addEventListener("input", paintLeftNav);
+      ["helpers", "chats", "groups"].forEach(function (key) {
+        var btn = document.getElementById("toggle-" + key);
+        if (!btn) return;
+        btn.addEventListener("click", function () {
+          var next = {
+            helpers: navSections.helpers,
+            chats: navSections.chats,
+            groups: navSections.groups
+          };
+          next[key] = !next[key];
+          saveNav(next);
         });
       });
+      document.getElementById("plugins").addEventListener("click", function () {
+        say("Plugins come later.");
+      });
+      document.getElementById("profile").addEventListener("click", function () {
+        say("Your profile comes later.");
+      });
+      document.getElementById("routines").addEventListener("click", function () {
+        say("This list is a placeholder.");
+      });
+      navSections = readNav();
+      paintNavSections(navSections);
+      paintLeftNav();
       if (window.jarvisDesktop && typeof window.jarvisDesktop.onTalk === "function") {
         window.jarvisDesktop.onTalk(applyTalkEvent);
       }
@@ -1031,7 +1364,7 @@
       setInterval(function () {
         if (!sending) loadHistory();
       }, 4000);
-      selectLead("jarvis", "Jarvis", true);
+      selectLead("jarvis");
 
       function persistTalkMode(next) {
         applyTalkMode(next);
