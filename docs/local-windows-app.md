@@ -55,8 +55,22 @@ npm install
 npm start
 ```
 
-The window loads the 3-pane shell at `/desktop`. Settings and the hidden
-talk engine still use the same `/ceo` page as the website.
+The window loads the Next.js 3-pane shell at `/desktop-ui` when
+`desktop-web` has been exported (`npm run export`). Otherwise it loads
+the HTML shell at `/desktop`. For live UI reload:
+
+```powershell
+cd desktop-web
+npm install
+npm run dev
+# other terminal:
+cd desktop
+$env:JARVIS_DESKTOP_UI_URL = "http://127.0.0.1:3000"
+npm start
+```
+
+Settings and the hidden talk engine still use the same `/ceo` page as the website.
+See [desktop-web/README.md](../desktop-web/README.md).
 
 Build a portable/NSIS binary: `npm run dist` inside `desktop/` (see `desktop/README.md`).
 

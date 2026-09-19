@@ -67,6 +67,31 @@ foreach ($item in $backendItems) {
 Get-ChildItem -Path $BackendDir -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
+# Next.js Windows shell (#93 / #96). Copy static export into packaged backend.
+$webDir = Join-Path $Root "desktop-web"
+$uiOut = Join-Path $webDir "out"
+$uiDest = Join-Path $BackendDir "app\static\desktop-ui"
+if (Test-Path (Join-Path $webDir "package.json")) {
+  Write-Host "==> Next desktop UI export"
+  Push-Location $webDir
+  try {
+    if (-not $SkipNpmInstall -or -not (Test-Path (Join-Path $webDir "node_modules"))) {
+      npm install
+      if ($LASTEXITCODE -ne 0) { throw "desktop-web npm install failed" }
+    }
+    npm run export
+    if ($LASTEXITCODE -ne 0) { throw "desktop-web export failed" }
+  } finally {
+    Pop-Location
+  }
+  if (Test-Path (Join-Path $uiOut "index.html")) {
+    if (Test-Path $uiDest) { Remove-Item -Recurse -Force $uiDest }
+    Copy-Item -Recurse -Force $uiOut $uiDest
+  } else {
+    Write-Host "WARN: desktop-web/out missing; installer will use HTML /desktop"
+  }
+}
+
 # Operator talk secret — private build env only. Never commit this file.
 # Berk sets JARVIS_OPERATOR_OPENROUTER_KEY or OPENROUTER_API_KEY (and
 # optionally JARVIS_HOSTED_TALK_URL) on Odin. Family users never see it.

@@ -7,7 +7,8 @@
   "author": "GRoK",
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
+    "start": "node prepare-desktop-ui.js && electron .",
+    "start:legacy": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win nsis portable",
     "dist:installer": "electron-builder --win nsis --config electron-builder.installer.yml"
@@ -24,6 +25,7 @@
       "app-shell.js",
       "packaged-python.js",
       "talk-policy.js",
+      "prepare-desktop-ui.js",
       "preload.js",
       "first-run.html",
       "first-run-preload.js",

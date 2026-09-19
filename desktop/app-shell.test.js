@@ -18,6 +18,9 @@ const {
   shellQuery,
   talkHref,
   shellHref,
+  reactShellHref,
+  resolveDesktopHref,
+  REACT_SHELL_PATH,
   normalizePaneState,
   togglePane,
   fitPanesToWidth,
@@ -132,8 +135,18 @@ assert.strictEqual(talkQuery({ settings: true }).get("settings"), "1");
 assert.strictEqual(shellQuery().get("desktop"), "1");
 assert.ok(talkHref(8787).startsWith("http://127.0.0.1:8787/ceo?"));
 assert.ok(shellHref(8787).startsWith("http://127.0.0.1:8787/desktop?"));
+assert.strictEqual(REACT_SHELL_PATH, "/desktop-ui");
+assert.ok(reactShellHref(8787).startsWith("http://127.0.0.1:8787/desktop-ui?"));
 assert.ok(talkHref(8787).includes("desktop=1"));
 assert.ok(!shellHref(8787).includes("autolisten=1"));
+assert.ok(
+  resolveDesktopHref(8787, null, { JARVIS_DESKTOP_UI_URL: "http://127.0.0.1:3000" }, false).startsWith(
+    "http://127.0.0.1:3000"
+  )
+);
+assert.ok(resolveDesktopHref(8787, null, { JARVIS_DESKTOP_UI_URL: "http://127.0.0.1:3000" }, false).includes("desktop=1"));
+assert.ok(resolveDesktopHref(8787, null, {}, true).includes("/desktop-ui?"));
+assert.ok(resolveDesktopHref(8787, null, {}, false).includes("/desktop?"));
 
 assert.deepStrictEqual(normalizePaneState(null), { left: true, right: true });
 assert.deepStrictEqual(normalizePaneState({ left: false }), { left: false, right: true });

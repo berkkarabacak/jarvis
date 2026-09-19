@@ -55,6 +55,9 @@ def test_electron_hosts_three_pane_as_primary_window():
     assert "trayMenuItems" in main
     assert "shouldShowFirstRunKeyWindow" in main
     assert "/desktop" in shell
+    assert "/desktop-ui" in shell
+    assert "resolveDesktopHref" in shell
+    assert "JARVIS_DESKTOP_UI_URL" in main or "JARVIS_DESKTOP_UI_URL" in shell
     assert 'defaultLaunch: "main"' in helpers
     assert "function shouldShowMainOnLaunch" in helpers
     assert "openSettings" in preload
