@@ -1,7 +1,9 @@
 /**
  * Jarvis desktop shell.
  *
- * Primary window is the Grok Bot–like 3-pane chrome at /desktop.
+ * Primary window is the Next.js 3-pane chrome at /desktop-ui when the
+ * export exists, else the HTML shell at /desktop. Set
+ * JARVIS_DESKTOP_UI_URL (e.g. http://127.0.0.1:3000) for Next dev.
  * /ceo stays loaded in a hidden talk engine so Realtime, avatar ask,
  * and Settings keep working. Packaged installer: bundled Python + app
  * tree in extraResources. First run: packaged users go straight to the
@@ -52,7 +54,7 @@ const {
   applyOperatorTalkEnv,
   shouldShowFirstRunKeyWindow,
 } = require("./talk-policy");
-const { SHELL_PATH, TALK_PATH } = require("./app-shell");
+const { SHELL_PATH, REACT_SHELL_PATH, TALK_PATH, resolveDesktopHref } = require("./app-shell");
 
 const DEFAULT_PORT = 8787;
 const JARVIS_SCREEN_TITLE = "Jarvis's screen";
@@ -79,10 +81,16 @@ function ceoUrl(port, extra) {
   return `http://127.0.0.1:${port}${TALK_PATH}?${q.toString()}`;
 }
 
+function nextUiDir() {
+  const packaged = path.join(packagedResources(), "backend", "app", "static", "desktop-ui");
+  const repo = path.join(repoRoot(), "desktop-web", "out");
+  if (fs.existsSync(path.join(packaged, "index.html"))) return packaged;
+  if (fs.existsSync(path.join(repo, "index.html"))) return repo;
+  return "";
+}
+
 function desktopUrl(port, extra) {
-  const q = new URLSearchParams({ desktop: "1" });
-  if (extra && extra.settings) q.set("settings", "1");
-  return `http://127.0.0.1:${port}${SHELL_PATH}?${q.toString()}`;
+  return resolveDesktopHref(port, extra, process.env, !!nextUiDir());
 }
 
 function openSettingsInWindow() {
@@ -170,7 +178,7 @@ function installAppMenu() {
             expandMainWindow();
             if (mainWindow && !mainWindow.isDestroyed()) {
               const url = mainWindow.webContents.getURL() || "";
-              if (!url.includes(SHELL_PATH)) {
+              if (!url.includes(SHELL_PATH) && !url.includes(REACT_SHELL_PATH) && !url.includes(":3000")) {
                 mainWindow.loadURL(desktopUrl(currentPort));
               }
             }

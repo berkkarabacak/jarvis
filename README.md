@@ -29,6 +29,8 @@ Talk page: `http://127.0.0.1:8787/ceo`
 
 Windows installer: `scripts\windows\build-installer.ps1`
 
+Windows Electron UI: Next.js app in `desktop-web/` (ElevenLabs Conversation). See `desktop-web/README.md`.
+
 ## Keys
 
 When you run Jarvis yourself, put your own keys in `.env` (copy from `.env.example`):

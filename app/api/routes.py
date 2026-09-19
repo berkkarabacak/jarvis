@@ -61,8 +61,18 @@ DASHBOARD_HTML = STATIC_DIR / "dashboard.html"
 HISTORY_HTML = STATIC_DIR / "history.html"
 CEO_HTML = STATIC_DIR / "ceo.html"
 DESKTOP_HTML = STATIC_DIR / "desktop.html"
+DESKTOP_UI_STATIC = STATIC_DIR / "desktop-ui"
+DESKTOP_UI_EXPORT = Path(__file__).resolve().parents[2] / "desktop-web" / "out"
 LOGO_SVG = STATIC_DIR / "logo.svg"
 FAVICON_SVG = STATIC_DIR / "favicon.svg"
+
+
+def desktop_ui_dir() -> Path | None:
+    """Next.js static export for the Windows React shell (#93 / #94 / #96)."""
+    for candidate in (DESKTOP_UI_STATIC, DESKTOP_UI_EXPORT):
+        if (candidate / "index.html").is_file():
+            return candidate
+    return None
 
 
 class ImportTokensBody(BaseModel):
@@ -172,10 +182,41 @@ async def ceo_home_page() -> FileResponse:
 
 @router.get("/desktop", response_class=HTMLResponse)
 async def desktop_shell_page() -> FileResponse:
-    """Windows 3-pane product chrome. Does not replace /ceo Talk."""
+    """Legacy HTML 3-pane chrome. React/Next primary is /desktop-ui."""
     if not DESKTOP_HTML.is_file():
         raise HTTPException(status_code=404, detail="Desktop shell not found")
     return FileResponse(DESKTOP_HTML, media_type="text/html; charset=utf-8")
+
+
+@router.get("/desktop-legacy", response_class=HTMLResponse)
+async def desktop_legacy_shell_page() -> FileResponse:
+    """Always the vanilla HTML shell. Used if the Next export is missing."""
+    return await desktop_shell_page()
+
+
+@router.get("/desktop-ui", response_model=None)
+@router.get("/desktop-ui/", response_model=None)
+async def desktop_ui_index() -> FileResponse | RedirectResponse:
+    """Next.js Windows shell (ElevenLabs Conversation). Falls back to HTML."""
+    root = desktop_ui_dir()
+    if root is None:
+        return RedirectResponse(url="/desktop", status_code=307)
+    return FileResponse(root / "index.html", media_type="text/html; charset=utf-8")
+
+
+@router.get("/desktop-ui/{full_path:path}", response_model=None)
+async def desktop_ui_asset(full_path: str) -> FileResponse:
+    root = desktop_ui_dir()
+    if root is None:
+        raise HTTPException(status_code=404, detail="Desktop UI not built")
+    dest = (root / full_path).resolve()
+    if dest != root.resolve() and root.resolve() not in dest.parents:
+        raise HTTPException(status_code=404, detail="Not found")
+    if dest.is_dir():
+        dest = dest / "index.html"
+    if not dest.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(dest)
 
 
 @router.post("/oauth/start", dependencies=[Depends(require_api_secret)])

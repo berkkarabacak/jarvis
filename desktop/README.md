@@ -1,8 +1,10 @@
 # Jarvis — Desktop (Electron)
 
-Native Windows app. The **primary window** is a three-pane shell
-(`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`): dark
-left rail, light chat, and Live Computer on the right.
+Native Windows app. The **primary window** is a three-pane Next.js shell
+(`desktop-web/`, ElevenLabs UI Conversation) at
+`http://127.0.0.1:<port>/desktop-ui` when the export exists. Fallback is
+`app/static/desktop.html` at `/desktop`. Dark left rail, light chat, and
+Live Computer on the right.
 
 `/ceo` is **not** rewritten. It stays the Realtime / Settings page:
 
@@ -70,10 +72,24 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\start-control-room.ps1 
 # JARVIS_OPERATOR_OPENROUTER_KEY or JARVIS_HOSTED_TALK_URL.
 # Packaged users never see a key field.
 
+# Next UI (one-time)
+cd desktop-web
+npm install
+
+# Live reload: Next + Electron
+npm run dev
+# other terminal:
 cd desktop
 npm install
+$env:JARVIS_DESKTOP_UI_URL = "http://127.0.0.1:3000"
+npm start
+
+# Or let Electron export + load /desktop-ui:
+cd desktop
 npm start
 ```
+
+See [desktop-web/README.md](../desktop-web/README.md).
 
 ## Operator talk key (Berk only)
 
@@ -120,7 +136,7 @@ when you want a real one-file install.
 
 | Surface | UI source |
 |---------|-----------|
-| This Electron app (main window) | server `app/static/desktop.html` at `/desktop` |
+| This Electron app (main window) | Next `desktop-web` at `/desktop-ui` (HTML `/desktop` fallback) |
 | Settings / hidden talk engine | server `app/static/ceo.html` at `/ceo` |
 | https://aicontrolroom.nl/ceo | same `/ceo` orb Talk (web later) |
 

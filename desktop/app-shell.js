@@ -3,7 +3,8 @@
  * Issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73.
  *
  * Pure helpers — Node tests can require this file. The visible chrome is
- * app/static/desktop.html. Electron loads /desktop as the main window.
+ * the Next.js app at /desktop-ui (desktop-web/). Electron loads that as
+ * the primary window when the export exists, else /desktop HTML.
  * /ceo stays the Realtime / Settings page (hidden talk engine + Settings).
  *
  * #68 live PC: iframe of localhost noVNC inside #live-computer. BrowserView
@@ -33,6 +34,7 @@
  */
 
 const SHELL_PATH = "/desktop";
+const REACT_SHELL_PATH = "/desktop-ui";
 const TALK_PATH = "/ceo";
 const SETTINGS_PATH = "/ceo";
 const SCREEN_VIEWER_PATH = "/ceo/jarvis-screen";
@@ -163,6 +165,28 @@ function talkHref(port, extra) {
 
 function shellHref(port, extra) {
   return pageHref(port, SHELL_PATH, shellQuery(extra));
+}
+
+function reactShellHref(port, extra) {
+  return pageHref(port, REACT_SHELL_PATH, shellQuery(extra));
+}
+
+function resolveDesktopHref(port, extra, env, nextAvailable) {
+  const src = env && typeof env === "object" ? env : {};
+  const override = String(src.JARVIS_DESKTOP_UI_URL || "").trim();
+  if (override) {
+    try {
+      const u = new URL(override);
+      const q = shellQuery(extra);
+      q.forEach((value, key) => {
+        u.searchParams.set(key, value);
+      });
+      return u.toString();
+    } catch (_) {
+      return override;
+    }
+  }
+  return nextAvailable ? reactShellHref(port, extra) : shellHref(port, extra);
 }
 
 function normalizePaneState(raw) {
@@ -761,6 +785,7 @@ module.exports = {
   LEADS,
   SESSION_GAP_MS,
   SHELL_PATH,
+  REACT_SHELL_PATH,
   TALK_PATH,
   SETTINGS_PATH,
   SCREEN_VIEWER_PATH,
@@ -780,6 +805,8 @@ module.exports = {
   pageHref,
   talkHref,
   shellHref,
+  reactShellHref,
+  resolveDesktopHref,
   normalizePaneState,
   togglePane,
   isNarrowWidth,
