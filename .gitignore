@@ -23,6 +23,9 @@ dist/
 build/
 desktop/node_modules/
 desktop/dist/
+desktop-web/node_modules/
+desktop-web/.next/
+desktop-web/out/
 android/.gradle/
 android/build/
 android/app/build/
