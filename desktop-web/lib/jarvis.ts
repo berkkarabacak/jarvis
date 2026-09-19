@@ -157,16 +157,22 @@ export function appendTurn(turns: TalkTurn[], turn: { role?: unknown; text?: unk
   return next
 }
 
-export function mergeHistory(turns: TalkTurn[], rows: unknown): TalkTurn[] {
-  const next = Array.isArray(turns) ? turns.slice() : []
+export function speechTurns(rows: unknown): TalkTurn[] {
   const list = Array.isArray(rows) ? rows : []
+  const out: TalkTurn[] = []
   for (const row of list) {
     const item = makeTurn(row as { role?: unknown; text?: unknown; ts?: unknown })
-    if (!item) continue
-    if (next.some((existing) => turnKey(existing) === turnKey(item))) continue
-    next.push(item)
+    if (item) out.push(item)
   }
-  return next
+  return out
+}
+
+export function mergeHistory(turns: TalkTurn[], rows: unknown): TalkTurn[] {
+  const incoming = speechTurns(rows)
+  if (!incoming.length) return Array.isArray(turns) ? turns.slice() : []
+  const prev = Array.isArray(turns) ? turns : []
+  if (!prev.length || incoming.length >= prev.length) return incoming
+  return prev.slice()
 }
 
 export function applyTalkEvent(

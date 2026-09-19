@@ -12,6 +12,7 @@ import {
   composerSubmit,
   helpersFromInventory,
   liveComputerView,
+  mergeHistory,
   normalizeTalkMode,
   parseAskReply,
   screenShouldShow,
@@ -65,4 +66,16 @@ test("talk events append unique turns", () => {
   assert.equal(turns[0].role, "you")
   const talked = applyTalkEvent([], { status: "thinking", you: "open chrome" })
   assert.match(talked.subtitle, /thinking/i)
+})
+
+test("history keeps repeated Jarvis replies", () => {
+  const rows = [
+    { role: "you", text: "ping", ts: "1" },
+    { role: "jarvis", text: "What do you need?", ts: "2" },
+    { role: "you", text: "Japan", ts: "3" },
+    { role: "jarvis", text: "What do you need?", ts: "4" },
+  ]
+  const merged = mergeHistory([], rows)
+  assert.equal(merged.length, 4)
+  assert.equal(merged[3].text, "What do you need?")
 })

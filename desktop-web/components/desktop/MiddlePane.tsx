@@ -117,7 +117,7 @@ export function MiddlePane({
             {empty ? (
               <ConversationEmptyState
                 id="empty-chat"
-                icon={<Orb className="size-12" agentState={null} />}
+                icon={<Orb className="size-16" agentState={null} />}
                 title={LABELS.emptyOrbTitle}
                 description={LABELS.emptyChat}
               />
