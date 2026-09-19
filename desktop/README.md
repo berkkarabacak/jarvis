@@ -1,18 +1,19 @@
 # Jarvis — Desktop (Electron)
 
-Native Windows app. The **primary window** is a Grok Bot–like three-pane
-shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
+Native Windows app. The **primary window** is a three-pane shell
+(`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`): dark
+left rail, light chat, and Live Computer on the right.
 
 `/ceo` is **not** rewritten. It stays the Realtime / Settings page:
 
 1. Starts local `uvicorn` from the repo
-2. Cold start shows the 3-pane window (Helpers / chat / Jarvis's screen)
+2. Cold start shows the 3-pane window (Assistants / chat / Live Computer)
 3. A hidden talk engine still loads `/ceo` so avatar ask, mute, and
    Realtime keep working
 4. Close the main window returns to the optional mini avatar. The avatar
    **×** (and tray **Quit Jarvis**) really quits. Mute on the avatar or
    tray stops Realtime output and neural TTS until unmuted. Never Windows SAPI.
-5. **Settings** is Jarvis menu (`Ctrl+,`) or the gear on the 3-pane header.
+5. **Settings** is Jarvis menu (`Ctrl+,`) or the gear on the left footer.
    That opens `/ceo?settings=1` in a Settings window. Model, voice,
    computer, and talk_mode / Computer vs Chat only stay on the same
    `/api/jarvis/settings` store. Settings tabs including talk_mode keep
@@ -28,16 +29,17 @@ shell (`app/static/desktop.html` via `http://127.0.0.1:<port>/desktop`).
    `jarvis-computer`. BrowserView is not used: it sits above the page
    and cannot collapse with the chrome. **Open Jarvis's screen** still
    opens the existing viewer window.
-8. **Left lists** are Search, `+`, Helpers, Chats, and Group chats.
-   Each list section opens and closes on its own. Picking a helper or
-   chat updates the middle header. Asks still go to Jarvis.
+8. **Left lists** are Search, compose, Chat / Helpers / Plugins /
+   Routines, Assistants, Recent chats, and View all chats. Each list
+   section opens and closes on its own. Picking a helper or chat
+   updates the middle header. Asks still go to Jarvis.
 9. Helpers are **Jarvis** (live) plus documented stubs labeled
    **Not connected yet**. Chats come from local talk history
    (`/api/jarvis/talk/last`) when you have one. Group chats stay empty
    until a real group list exists. No invented live teammates.
-10. **Routines** sit under Jarvis's screen. The list is
+10. **Routines** sit under Live Computer (Jarvis's screen). The list is
     `/api/jarvis/routines` (real local schedules). Empty says
-    **No routines yet.** `+` says **Adding a routine comes later.**
+    **No routines yet.** `+` / Create routine says **Adding a routine comes later.**
     No invented Morning briefing.
 11. A **narrow window** (under 900px) hides the left and right panes
     by default. Use the edge arrows, or Hide chats / Hide computer.
@@ -109,10 +111,10 @@ when you want a real one-file install.
 
 | List | Source | Honest empty / stub |
 |------|--------|---------------------|
-| Helpers | Local lead + documented stubs | Only Jarvis is live. Writer / Helper / Finder say **Not connected yet** |
-| Chats | `/api/jarvis/talk/last` | **No chats yet. Send a message to start.** |
+| Helpers / Assistants | Local lead + documented stubs | Only Jarvis is live. Writer / Helper / Finder say **Not connected yet** |
+| Recent chats | `/api/jarvis/talk/last` | **No chats yet. Send a message to start.** |
 | Group chats | None yet | **No group chats yet. They come later.** |
-| Routines | `/api/jarvis/routines` (local JobStore) | **No routines yet.** `+` is **Adding a routine comes later.** |
+| Routines | `/api/jarvis/routines` (local JobStore) | **No routines yet.** Create routine is **Adding a routine comes later.** |
 
 ## Surfaces
 
@@ -132,10 +134,10 @@ Dev: from `desktop/`, `npm start` — 3-pane window, no key field.
 
 Installer: `Jarvis-Setup.exe` — same chrome. Family path never asks for a key.
 
-Checklist against the Grok Bot reference:
+Checklist against the Windows mock:
 
 1. Chat is in the middle. Type or use the mic.
-2. Jarvis's screen is the right pane. Routines sit under it (empty until a real schedule exists).
+2. Jarvis's screen (Live Computer) is the right pane. Routines sit under it (empty until a real schedule exists).
 3. Helpers and chats are on the left. Hide chats / Hide computer collapse a side.
 4. On a narrow window both sides start hidden. Use the edge arrows to show them.
 5. Gear (or Jarvis → Settings) opens Settings. Model, voice, computer, and talk_mode persist. Computer vs Chat only still works.
