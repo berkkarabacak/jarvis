@@ -42,6 +42,8 @@ const {
   helpersFromInventory,
   groupChatsFromInventory,
   chatsFromHistory,
+  formatChatWhen,
+  friendlyModel,
   normalizeNavSections,
   toggleNavSection,
   filterNavItems,
@@ -78,14 +80,19 @@ assert.strictEqual(NOVNC_URL, "http://127.0.0.1:6080");
 assert.ok(NOVNC_SESSION_URL.includes("autoconnect=1"));
 
 assert.strictEqual(LABELS.agents, "Helpers");
-assert.strictEqual(LABELS.chats, "Chats");
+assert.strictEqual(LABELS.chats, "Recent chats");
 assert.strictEqual(LABELS.groups, "Group chats");
+assert.strictEqual(LABELS.teammate, "Your AI teammate");
+assert.strictEqual(LABELS.liveComputer, "Live Computer");
 assert.strictEqual(LABELS.screen, "Jarvis's screen");
 assert.strictEqual(LABELS.routines, "Routines");
 assert.strictEqual(LABELS.terminal, "Chat only");
 assert.strictEqual(LABELS.hideScreen, "Hide screen");
 assert.strictEqual(LABELS.showScreen, "Show Jarvis's screen");
 assert.strictEqual(LABELS.startComputer, "Start Jarvis's computer");
+assert.strictEqual(LABELS.openScreen, "Open in new window");
+assert.strictEqual(LABELS.createRoutine, "Create routine");
+assert.ok(/using the computer/i.test(LABELS.usingComputer));
 assert.ok(/keeps running/i.test(LABELS.screenHidden));
 assert.strictEqual(LABELS.you, "You");
 assert.strictEqual(LABELS.lead, "Jarvis");
@@ -323,6 +330,14 @@ assert.strictEqual(oneChat[0].name, "Jarvis");
 assert.strictEqual(oneChat[0].preview, "Hello.");
 assert.strictEqual(oneChat[0].source, "talk-history");
 assert.strictEqual(oneChat[0].talkTarget, "jarvis");
+assert.ok(typeof oneChat[0].when === "string");
+const noon = new Date(2026, 8, 13, 18, 0, 0);
+const earlier = new Date(2026, 8, 13, 10, 0, 0);
+const yest = new Date(2026, 8, 12, 10, 0, 0);
+assert.ok(formatChatWhen(earlier.toISOString(), noon).length > 0);
+assert.strictEqual(formatChatWhen(yest.toISOString(), noon), "Yesterday");
+assert.strictEqual(friendlyModel({ helper_name: "Quick" }), "Quick");
+assert.strictEqual(friendlyModel({}), "Jarvis");
 const twoChats = chatsFromHistory([
   { role: "you", text: "old hello", ts: "2026-09-12T10:00:00Z" },
   { role: "jarvis", text: "Hi.", ts: "2026-09-12T10:00:02Z" },

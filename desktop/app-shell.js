@@ -15,9 +15,9 @@
  * /api/jarvis/ask. History is /api/jarvis/talk/last. Mic starts listen
  * (browser speech, or the hidden /ceo talk engine already used by Electron).
  *
- * #70 left lists: Search, +, Helpers grid, Chats, Group chats. Each list
- * section collapses on its own. Selecting a row focuses the middle header.
- * Asks still go to Jarvis.
+ * #70 left lists: Search, +, Chat/Helpers/Plugins/Routines nav, Assistants,
+ * Recent chats, View all chats. Each list section collapses on its own.
+ * Selecting a row focuses the middle header. Asks still go to Jarvis.
  *
  * #71 light data: Helpers = Jarvis (live) + documented stubs that are not
  * connected. Chats = talk history when present. Group chats stay empty
@@ -54,8 +54,8 @@ const SHELL = {
   path: SHELL_PATH,
   defaultLaunch: "main",
   theme: "light",
-  leftWidth: 280,
-  rightWidth: 340,
+  leftWidth: 276,
+  rightWidth: 360,
   minMiddleWidth: 360,
   minWindowWidth: 800,
   collapseBelow: 900,
@@ -67,10 +67,13 @@ const SHELL = {
 
 const LABELS = {
   app: "Jarvis",
-  search: "Search",
+  teammate: "Your AI teammate",
+  search: "Search assistants, chats…",
   agents: "Helpers",
-  chats: "Chats",
+  assistants: "Assistants",
+  chats: "Recent chats",
   groups: "Group chats",
+  viewAll: "View all chats",
   composer: "Type a message",
   add: "Add",
   talk: "Talk",
@@ -81,11 +84,13 @@ const LABELS = {
   hideRight: "Hide computer",
   showRight: "Show computer",
   screen: "Jarvis's screen",
+  liveComputer: "Live Computer",
   routines: "Routines",
   computer: "Computer",
   terminal: "Chat only",
   plugins: "Plugins",
   profile: "You",
+  profileMail: "berk@jarvis.app",
   emptyChat: "This chat is ready. Messages will show up here.",
   you: "You",
   lead: "Jarvis",
@@ -103,7 +108,9 @@ const LABELS = {
   hideScreen: "Hide screen",
   showScreen: "Show Jarvis's screen",
   startComputer: "Start Jarvis's computer",
-  openScreen: "Open Jarvis's screen",
+  openScreen: "Open in new window",
+  usingComputer: "Jarvis is using the computer…",
+  connected: "Connected",
   newChat: "New chat",
   notConnected: "Not connected yet",
   emptyChats: "No chats yet. Send a message to start.",
@@ -113,6 +120,7 @@ const LABELS = {
   profileSoon: "Your profile comes later.",
   emptyRoutines: "No routines yet.",
   addRoutine: "Add routine",
+  createRoutine: "Create routine",
   addRoutineSoon: "Adding a routine comes later.",
   routineReadOnly: "This routine is on the schedule. Changing it comes later.",
   hidePanesHint: "Chat is in the middle. Jarvis's screen is on the right. Hide chats or Hide computer when you want more room.",
@@ -442,7 +450,7 @@ function helpersFromInventory() {
     id: "jarvis",
     name: LABELS.lead,
     initial: "J",
-    color: "#1d4ed8",
+    color: "#2563EB",
     subtitle: LABELS.ready,
     source: "local-lead",
     kind: "helper",
@@ -478,6 +486,30 @@ function parseTurnTime(ts) {
   if (!raw) return 0;
   const n = Date.parse(raw);
   return Number.isFinite(n) ? n : 0;
+}
+
+function formatChatWhen(ts, now) {
+  const n = parseTurnTime(ts);
+  if (!n) return "";
+  const d = new Date(n);
+  const ref = now instanceof Date ? now : new Date();
+  const startToday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()).getTime();
+  const startYest = startToday - 86400000;
+  if (n >= startToday) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  if (n >= startYest) return "Yesterday";
+  return d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "numeric" });
+}
+
+function friendlyModel(data) {
+  const src = data && typeof data === "object" ? data : {};
+  const name = String(src.helper_name || "").trim();
+  if (name) return name;
+  const model = String(src.model || "").trim();
+  if (!model) return LABELS.lead;
+  const parts = model.split("/");
+  return parts[parts.length - 1] || LABELS.lead;
 }
 
 function splitTalkSessions(turns) {
@@ -522,6 +554,7 @@ function chatsFromHistory(turns) {
         id: live ? "talk-live" : `talk-${stamp || index}`,
         name: titleFromSession(session, live),
         preview: last ? last.text : "",
+        when: formatChatWhen(last && last.ts),
         source: "talk-history",
         kind: "chat",
         live,
@@ -778,6 +811,8 @@ module.exports = {
   groupChatsFromInventory,
   splitTalkSessions,
   chatsFromHistory,
+  formatChatWhen,
+  friendlyModel,
   normalizeNavSections,
   toggleNavSection,
   filterNavItems,

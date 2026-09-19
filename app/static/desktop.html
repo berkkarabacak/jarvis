@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jarvis</title>
-  <meta name="theme-color" content="#efece8" />
+  <meta name="theme-color" content="#1A1D23" />
   <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <!--
     Windows 3-pane product chrome (issues #74 / #67 / #68 / #69 / #70 / #71 / #72 / #73).
@@ -26,19 +26,27 @@
   -->
   <style>
     :root {
-      --page: #ddd6cc;
-      --panel: #ffffff;
-      --ink: #1c1917;
-      --muted: #6b6560;
-      --line: #d7d0c7;
-      --soft: #f6f3ef;
-      --accent: #1d4ed8;
+      --sidebar: #1A1D23;
+      --sidebar-2: #22262E;
+      --sidebar-hover: #2A2F38;
+      --sidebar-ink: #F4F5F7;
+      --sidebar-muted: #8B919A;
+      --page: #F8F9FB;
+      --panel: #FFFFFF;
+      --ink: #111827;
+      --muted: #6B7280;
+      --line: #E6E8EE;
+      --soft: #F3F4F6;
+      --accent: #2563EB;
       --accent-ink: #fff;
-      --chip: #ece7e1;
-      --shadow: 0 8px 24px rgba(28, 25, 23, 0.12);
-      --radius: 20px;
-      --left: 280px;
-      --right: 340px;
+      --user-bubble: #E8F1FF;
+      --green: #22C55E;
+      --chip: #EEF2F7;
+      --shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
+      --radius: 14px;
+      --radius-sm: 12px;
+      --left: 276px;
+      --right: 360px;
       --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
     }
     * { box-sizing: border-box; }
@@ -47,7 +55,7 @@
       height: 100%;
       background: var(--page);
       color: var(--ink);
-      font: 15px/1.4 var(--ui);
+      font: 14px/1.45 var(--ui);
     }
     body { overflow: hidden; }
     button, input { font: inherit; color: inherit; }
@@ -55,33 +63,37 @@
     .app {
       height: 100%;
       display: flex;
-      gap: 16px;
-      padding: 16px;
+      gap: 0;
+      padding: 0;
       min-width: 0;
     }
     .pane {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
       min-width: 0;
       min-height: 0;
       display: flex;
       flex-direction: column;
+      background: var(--panel);
+      border-radius: var(--radius);
     }
     #left {
-      flex: 0 1 var(--left);
+      flex: 0 0 var(--left);
       width: var(--left);
-      max-width: 32%;
+      max-width: 34%;
+      background: var(--sidebar);
+      color: var(--sidebar-ink);
+      border-right: 1px solid #12141A;
     }
     #middle {
       flex: 1 1 360px;
       min-width: 280px;
+      background: var(--page);
     }
     #right {
-      flex: 0 1 var(--right);
+      flex: 0 0 var(--right);
       width: var(--right);
-      max-width: 36%;
+      max-width: 38%;
+      background: var(--panel);
+      border-left: 1px solid var(--line);
     }
     body.left-collapsed #left,
     body.right-collapsed #right {
@@ -93,90 +105,137 @@
       body:not(.left-open) #show-left { display: grid; }
       body:not(.right-open) #show-right { display: grid; }
     }
-    .pane-head, .chat-head {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 14px 10px;
-    }
-    .pane-head h1, .pane-head h2, .chat-head h2 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 650;
-      flex: 1;
-    }
     .icon-btn, .text-btn {
-      border: 1px solid var(--line);
-      background: var(--soft);
+      border: 1px solid transparent;
+      background: transparent;
       border-radius: 999px;
-      min-height: 32px;
+      min-height: 34px;
       padding: 0 10px;
-      color: var(--ink);
+      color: inherit;
     }
     .icon-btn {
-      width: 32px;
+      width: 34px;
       padding: 0;
       display: grid;
       place-items: center;
     }
-    .icon-btn:hover, .text-btn:hover { background: #fff; }
-    .search-wrap { padding: 0 14px 12px; }
-    .search-row {
+    #left .icon-btn { color: var(--sidebar-ink); }
+    #left .icon-btn:hover, #left .text-btn:hover { background: var(--sidebar-hover); }
+    #middle .icon-btn, #right .icon-btn, #middle .text-btn, #right .text-btn {
+      color: #374151;
+      background: var(--soft);
+      border-color: var(--line);
+    }
+    #middle .icon-btn:hover, #right .icon-btn:hover,
+    #middle .text-btn:hover, #right .text-btn:hover {
+      background: #fff;
+    }
+    .brand {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      padding: 16px 14px 12px;
     }
-    .search-row .search { flex: 1; min-width: 0; }
-    .search-wrap input {
-      width: 100%;
-      border: 1px solid var(--line);
-      background: var(--soft);
-      border-radius: 999px;
-      min-height: 38px;
-      padding: 0 14px 0 36px;
-      outline: none;
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, #4F8CFF 0%, #3B6EF0 100%);
+      color: #fff;
+      font-weight: 700;
+      font-size: 16px;
+      box-shadow: 0 0 0 6px rgba(59, 110, 240, 0.16);
+      flex: 0 0 auto;
     }
+    .brand-copy { flex: 1; min-width: 0; }
+    .brand-copy h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+    }
+    .brand-copy p {
+      margin: 1px 0 0;
+      color: var(--sidebar-muted);
+      font-size: 12px;
+    }
+    .search-wrap { padding: 0 12px 12px; }
     .search {
       position: relative;
     }
-    .search::before {
-      content: "";
+    .search input {
+      width: 100%;
+      border: 0;
+      background: var(--sidebar-2);
+      border-radius: 12px;
+      min-height: 38px;
+      padding: 0 58px 0 34px;
+      font-size: 13px;
+      outline: none;
+      color: var(--sidebar-ink);
+    }
+    .search input::placeholder { color: var(--sidebar-muted); }
+    .search .search-ico {
       position: absolute;
-      left: 13px;
+      left: 12px;
       top: 11px;
-      width: 12px;
-      height: 12px;
-      border: 2px solid var(--muted);
-      border-radius: 50%;
+      width: 16px;
+      height: 16px;
+      color: var(--sidebar-muted);
+      pointer-events: none;
     }
-    .search::after {
-      content: "";
+    .search kbd {
       position: absolute;
-      left: 24px;
-      top: 22px;
-      width: 7px;
-      height: 2px;
-      background: var(--muted);
-      transform: rotate(45deg);
-    }
-    .section {
-      padding: 4px 14px 10px;
-      overflow: auto;
-    }
-    .section h3 {
-      margin: 0 0 8px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: var(--muted);
+      right: 7px;
+      top: 9px;
+      border: 0;
+      background: #2C313A;
+      color: var(--sidebar-muted);
+      border-radius: 7px;
+      min-height: 20px;
+      padding: 0 6px;
+      font: 10px/20px var(--ui);
+      letter-spacing: 0;
     }
     .nav-scroll {
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
     }
-    .nav-block { padding: 2px 10px 8px; }
+    .primary-nav {
+      display: grid;
+      gap: 2px;
+      padding: 2px 10px 10px;
+    }
+    .nav-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      background: transparent;
+      color: var(--sidebar-ink);
+      border-radius: 12px;
+      min-height: 38px;
+      padding: 0 10px;
+      text-align: left;
+    }
+    .nav-row svg { width: 16px; height: 16px; color: var(--sidebar-muted); flex: 0 0 auto; }
+    .nav-row[data-on="1"], .nav-row.active {
+      background: var(--sidebar-hover);
+    }
+    .nav-row:hover { background: var(--sidebar-hover); }
+    .beta {
+      margin-left: auto;
+      background: #2C313A;
+      color: var(--sidebar-muted);
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 650;
+      padding: 2px 8px;
+    }
+    .nav-block { padding: 6px 10px 8px; }
     .nav-toggle {
       width: 100%;
       display: flex;
@@ -184,11 +243,11 @@
       gap: 8px;
       border: 0;
       background: transparent;
-      padding: 8px 4px 6px;
-      color: var(--muted);
-      font-size: 12px;
+      padding: 8px 4px 8px;
+      color: var(--sidebar-muted);
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: .04em;
+      letter-spacing: .06em;
       text-transform: uppercase;
     }
     .nav-toggle .chevron {
@@ -196,16 +255,28 @@
       font-size: 11px;
       transition: transform .15s ease;
     }
+    .nav-toggle .plus {
+      margin-left: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: var(--sidebar-muted);
+    }
     .nav-block[data-open="0"] .nav-body { display: none; }
     .nav-block[data-open="0"] .chevron { transform: rotate(-90deg); }
+    .nav-block[data-section="groups"][data-open="0"] { display: none; }
     .empty-list {
       margin: 0;
       padding: 8px 6px 4px;
-      color: var(--muted);
+      color: var(--sidebar-muted);
       font-size: 12px;
     }
+    #right .empty-list { color: var(--muted); }
     .row .copy { flex: 1; min-width: 0; }
-    .row .copy strong, .row .copy span {
+    .row .copy strong, .row .copy span,
+    .agent .copy strong, .agent .copy span {
       display: block;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -227,72 +298,132 @@
       background: transparent;
       color: transparent;
     }
-    .agent[data-live="0"] .avatar { opacity: 0.72; }
-    .agents {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-    .agent, .row, .routine, .footer-btn {
-      border: 1px solid var(--line);
-      background: var(--soft);
-      border-radius: 14px;
+    .agents, .list { display: grid; gap: 2px; }
+    .agent, .row {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      border-radius: 12px;
       text-align: left;
+      padding: 8px 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--sidebar-ink);
     }
-    .agent {
-      padding: 10px 10px 12px;
-      display: grid;
-      gap: 6px;
-      justify-items: start;
+    .agent:hover, .row:hover, .agent[data-on="1"], .row[data-on="1"] {
+      background: var(--sidebar-hover);
     }
     .avatar {
-      width: 44px;
-      height: 44px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       display: grid;
       place-items: center;
       color: #fff;
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 700;
+      flex: 0 0 auto;
     }
-    .agent strong, .row strong { font-size: 13px; }
-    .agent span, .row span, .hint, .routine span {
-      color: var(--muted);
+    .agent strong, .row strong { font-size: 13px; font-weight: 650; }
+    .agent span, .row span, .hint {
+      color: var(--sidebar-muted);
       font-size: 12px;
     }
-    .list { display: grid; gap: 6px; }
-    .row, .routine, .footer-btn {
+    .agent .copy, .row .copy { display: grid; gap: 1px; }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #4B5563;
+      display: inline-block;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .agent[data-live="1"] .status-dot { background: var(--green); }
+    .row .when {
+      flex: 0 0 auto;
+      color: var(--sidebar-muted);
+      font-size: 11px;
+    }
+    .view-all {
       width: 100%;
-      padding: 8px 10px;
+      border: 0;
+      background: transparent;
+      color: var(--sidebar-muted);
+      text-align: left;
+      padding: 8px 8px 4px;
+      font-size: 13px;
+    }
+    .view-all:hover { color: var(--sidebar-ink); }
+    .left-foot {
+      margin-top: auto;
+      padding: 10px 12px 14px;
       display: flex;
       align-items: center;
       gap: 8px;
+      border-top: 1px solid #12141A;
     }
-    .row .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #22c55e;
-      flex: 0 0 auto;
-    }
-    .left-foot {
-      margin-top: auto;
-      padding: 12px 14px;
+    .footer-btn {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      border-radius: 12px;
+      padding: 6px 8px;
       display: flex;
-      gap: 8px;
-      border-top: 1px solid var(--line);
+      align-items: center;
+      gap: 10px;
+      text-align: left;
+      color: var(--sidebar-ink);
     }
-    .footer-btn { flex: 1; justify-content: center; }
-    .chat-head .who { display: grid; gap: 2px; flex: 1; }
-    .chat-head .who span { color: var(--muted); font-size: 12px; }
+    .footer-btn:hover { background: var(--sidebar-hover); }
+    .footer-btn .copy { min-width: 0; }
+    .footer-btn strong, .footer-btn span { display: block; }
+    .footer-btn span { color: var(--sidebar-muted); font-size: 12px; }
+    .chat-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    .chat-head .who { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .chat-head .who h2 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 650;
+    }
+    .chat-head .who span { color: var(--muted); font-size: 12px; display: block; }
+    .chat-head .who span::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .model-btn {
+      border: 0;
+      background: transparent;
+      color: #374151;
+      font-weight: 600;
+      min-height: 32px;
+      padding: 0 8px;
+      border-radius: 10px;
+    }
+    .model-btn:hover { background: var(--soft); }
     .thread {
       flex: 1;
       overflow: auto;
-      padding: 18px 20px 8px;
+      padding: 22px 28px 10px;
       display: flex;
       flex-direction: column;
       align-items: stretch;
-      gap: 12px;
+      gap: 16px;
+      background: var(--page);
     }
     .empty {
       margin: auto;
@@ -302,8 +433,8 @@
     }
     .msg {
       display: grid;
-      gap: 4px;
-      max-width: 85%;
+      gap: 6px;
+      max-width: 78%;
     }
     .msg.you {
       margin-left: auto;
@@ -313,12 +444,18 @@
     .msg.jarvis {
       align-self: flex-start;
       justify-items: start;
+      grid-template-columns: 32px minmax(0, 1fr);
+      column-gap: 10px;
+      max-width: 86%;
     }
+    .msg.jarvis .msg-ava { grid-row: 1 / span 2; }
     .msg-who {
       font-size: 11px;
       font-weight: 700;
       color: var(--muted);
     }
+    .msg.you .msg-who { display: none; }
+    .msg.jarvis .msg-who { display: none; }
     .msg p {
       margin: 0;
       padding: 10px 14px;
@@ -327,46 +464,129 @@
       overflow-wrap: anywhere;
     }
     .msg.you p {
-      background: var(--accent);
-      color: var(--accent-ink);
-      border-radius: 16px 16px 4px 16px;
+      background: var(--user-bubble);
+      color: #1F2937;
+      border-radius: 16px 16px 6px 16px;
     }
     .msg.jarvis p {
-      background: var(--soft);
-      border: 1px solid var(--line);
-      border-radius: 16px 16px 16px 4px;
+      background: transparent;
+      padding: 2px 0 0;
+      border-radius: 0;
     }
+    .msg.jarvis.card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 14px 10px;
+      box-shadow: var(--shadow);
+      max-width: 92%;
+    }
+    .msg.jarvis.card p { padding: 0; }
     .msg.pending p { color: var(--muted); }
-    .agent[data-on="1"], .row[data-on="1"] {
-      border-color: #93c5fd;
-      background: #dbeafe;
+    .msg-meta {
+      font-size: 11px;
+      color: #9CA3AF;
     }
     .composer {
-      padding: 12px 14px 14px;
+      margin: 10px 18px 16px;
+      padding: 6px 6px 6px 8px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      box-shadow: 0 8px 20px rgba(17, 24, 39, 0.04);
     }
     .composer input {
       flex: 1;
       min-width: 0;
-      border: 1px solid var(--line);
-      background: var(--soft);
-      border-radius: 999px;
-      min-height: 44px;
-      padding: 0 16px;
+      border: 0;
+      background: transparent;
+      min-height: 40px;
+      padding: 0 8px;
       outline: none;
     }
-    .send {
-      background: var(--accent);
-      color: var(--accent-ink);
-      border-color: var(--accent);
+    .composer .icon-btn {
+      background: transparent;
+      border-color: transparent;
+      color: #6B7280;
     }
+    .composer .icon-btn:hover { background: var(--soft); }
+    .send {
+      background: var(--accent) !important;
+      color: var(--accent-ink) !important;
+      border-color: var(--accent) !important;
+      width: 36px;
+      height: 36px;
+    }
+    .pane-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 16px 8px;
+    }
+    .pane-head h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+    }
+    .pc-title { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .pc-title .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #EEF2FF;
+      color: #2563EB;
+    }
+    .pc-connected {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 1px;
+    }
+    .pc-connected i {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+    }
+    .pc-connected[data-on="0"] i { background: #9CA3AF; }
+    .pills {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 8px 16px 12px;
+    }
+    .pills button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      min-height: 34px;
+      padding: 0 12px;
+      color: #374151;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pills button[data-on="1"],
+    #mic[data-on="1"] {
+      background: #E8F1FF;
+      border-color: #BFDBFE;
+      color: #1D4ED8;
+    }
+    .pills button:hover { background: var(--soft); }
+    .terminal-note { margin: 0 16px 8px; color: var(--muted); font-size: 12px; }
     .screen {
       position: relative;
-      margin: 0 14px;
+      margin: 0 16px;
       border-radius: 16px;
-      background: #111;
+      background: #0B1220;
       color: #f5f5f4;
       flex: 1 1 auto;
       min-height: 220px;
@@ -375,6 +595,16 @@
       place-items: center;
       text-align: center;
     }
+    .screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        radial-gradient(120% 90% at 20% 0%, #1E3A8A 0%, transparent 46%),
+        radial-gradient(90% 80% at 90% 20%, #0EA5E9 0%, transparent 42%),
+        linear-gradient(180deg, #0B1220 0%, #111827 100%);
+      opacity: .95;
+    }
     #live-frame {
       position: absolute;
       inset: 0;
@@ -382,10 +612,11 @@
       height: 100%;
       border: 0;
       background: #000;
+      z-index: 1;
     }
     #screen-idle {
       position: relative;
-      z-index: 1;
+      z-index: 2;
       display: grid;
       justify-items: center;
       gap: 10px;
@@ -393,50 +624,116 @@
     }
     html[data-talk-mode="terminal"] .screen,
     html[data-pc="off"] .screen:not([hidden]) {
-      background: #f6f3ef;
+      background: #F8F9FB;
       color: var(--muted);
-      border: 1px dashed var(--line);
     }
+    html[data-talk-mode="terminal"] .screen::before,
+    html[data-pc="off"] .screen:not([hidden])::before { opacity: 0; }
     .screen p { margin: 0; max-width: 16rem; }
-    .screen .text-btn { color: var(--ink); }
-    .terminal-note {
-      margin: 8px 14px 0;
+    .screen .text-btn { color: var(--ink); position: relative; z-index: 2; }
+    .screen-tools {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 3;
+      display: grid;
+      gap: 8px;
     }
+    .screen-tools button {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(17, 24, 39, 0.45);
+      color: #fff;
+      display: grid;
+      place-items: center;
+    }
+    .screen-tools button:hover { background: rgba(17, 24, 39, 0.7); }
+    html[data-talk-mode="terminal"] .screen-tools,
+    html[data-pc="off"] .screen-tools { display: none; }
+    .pc-using {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 18px 6px;
+      color: #374151;
+      font-size: 13px;
+    }
+    .pc-using i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+    .pc-using[hidden] { display: none !important; }
     .routines {
       flex: 0 1 auto;
-      max-height: 36%;
-      min-height: 88px;
+      max-height: 38%;
+      min-height: 120px;
       border-top: 1px solid var(--line);
       margin-top: 8px;
-      padding-top: 8px;
+      padding: 10px 16px 16px;
     }
     .routines-head {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
-    .routines-head h3 { flex: 1; margin: 0; }
-    .screen-actions {
+    .routines-head h3 {
+      flex: 1;
+      margin: 0;
+      font-size: 11px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      padding: 10px 14px 0;
+      align-items: center;
+      gap: 8px;
     }
-    html[data-talk-mode="terminal"] .screen-actions {
-      display: none;
+    .routine-empty {
+      display: grid;
+      justify-items: center;
+      text-align: center;
+      gap: 8px;
+      padding: 10px 8px 4px;
     }
+    .routine-empty .clock {
+      width: 44px;
+      height: 44px;
+      border: 1px dashed #D1D5DB;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #9CA3AF;
+    }
+    .routine-empty strong { font-size: 14px; }
+    .routine-empty span { color: var(--muted); font-size: 12px; max-width: 16rem; }
+    .create-routine {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      min-height: 36px;
+      padding: 0 16px;
+      color: #111827;
+    }
+    .create-routine:hover { background: var(--soft); }
+    .routine {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--soft);
+      border-radius: 12px;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+    }
+    .routine span { color: var(--muted); font-size: 12px; }
     [hidden] { display: none !important; }
-    .modes {
-      display: flex;
-      gap: 6px;
-      padding: 10px 14px 0;
-    }
-    .modes button[data-on="1"],
-    #mic[data-on="1"] {
-      background: #dbeafe;
-      border-color: #93c5fd;
-    }
+    html[data-talk-mode="terminal"] .pills .screen-only { display: none; }
     .edge {
       position: absolute;
       top: 50%;
@@ -455,6 +752,28 @@
       overflow: hidden;
       clip: rect(0 0 0 0);
     }
+    .menu {
+      position: absolute;
+      right: 16px;
+      top: 56px;
+      z-index: 5;
+      min-width: 180px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 6px;
+    }
+    .menu button {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      border-radius: 8px;
+      min-height: 34px;
+      padding: 0 10px;
+    }
+    .menu button:hover { background: var(--soft); }
   </style>
 </head>
 <body>
@@ -463,48 +782,87 @@
   <button type="button" class="icon-btn edge" id="show-right" aria-label="Show computer">›</button>
   <div class="app" id="app">
     <aside class="pane" id="left" aria-label="Chats">
-      <div class="pane-head">
-        <h1>Jarvis</h1>
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">J</div>
+        <div class="brand-copy">
+          <h1>Jarvis</h1>
+          <p>Your AI teammate</p>
+        </div>
+        <button type="button" class="icon-btn" id="new-chat" aria-label="New chat" title="New chat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button type="button" class="icon-btn" id="hide-left" aria-label="Hide chats">‹</button>
       </div>
       <div class="search-wrap">
-        <div class="search-row">
-          <div class="search">
-            <input id="search" type="search" placeholder="Search" aria-label="Search" autocomplete="off" />
-          </div>
-          <button type="button" class="icon-btn" id="new-chat" aria-label="New chat" title="New chat">+</button>
+        <div class="search">
+          <svg class="search-ico" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M16 16l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <input id="search" type="search" placeholder="Search assistants, chats…" aria-label="Search" autocomplete="off" />
+          <kbd>Ctrl K</kbd>
         </div>
       </div>
       <div class="nav-scroll" id="left-lists">
+        <nav class="primary-nav" aria-label="Main">
+          <button type="button" class="nav-row" id="nav-chat" data-on="1">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v6A2.5 2.5 0 0 1 16.5 16H10l-4 3v-3.2A2.5 2.5 0 0 1 5 13.5v-6Z" stroke="currentColor" stroke-width="1.7"/></svg>
+            <span>Chat</span>
+          </button>
+          <button type="button" class="nav-row" id="nav-helpers">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="8" cy="9" r="2.4" stroke="currentColor" stroke-width="1.7"/><circle cx="16" cy="9" r="2.4" stroke="currentColor" stroke-width="1.7"/><path d="M4.8 17.5c.6-2.2 2.4-3.5 5.2-3.5s4.6 1.3 5.2 3.5M14.2 14.2c1.1-.4 2.4-.5 3.8.1 1.6.7 2.6 2 2.9 3.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Helpers</span>
+          </button>
+          <button type="button" class="nav-row" id="plugins">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4v3M16 4v3M6.5 8h11A1.5 1.5 0 0 1 19 9.5V17a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V9.5A1.5 1.5 0 0 1 6.5 8Z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Plugins</span>
+          </button>
+          <button type="button" class="nav-row" id="nav-routines">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="13" r="7" stroke="currentColor" stroke-width="1.7"/><path d="M12 10v3.2L14.2 15M9 4h6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            <span>Routines</span>
+            <span class="beta">Beta</span>
+          </button>
+        </nav>
         <section class="nav-block" data-section="helpers" data-open="1">
           <button type="button" class="nav-toggle" id="toggle-helpers" aria-expanded="true" aria-controls="agents">
-            <span>Helpers</span>
+            <span>Assistants</span>
+            <span class="plus" aria-hidden="true">+</span>
             <span class="chevron" aria-hidden="true">▾</span>
           </button>
           <div class="nav-body" id="helpers-body">
             <div class="agents" id="agents" data-source="local-lead documented-stub">
               <button type="button" class="agent" data-id="jarvis" data-source="local-lead" data-live="1" data-on="1">
-                <span class="avatar" style="background:#1d4ed8">J</span>
-                <strong>Jarvis</strong>
-                <span>Ready when you are</span>
+                <span class="avatar" style="background:#2563EB">J</span>
+                <span class="copy">
+                  <strong>Jarvis</strong>
+                  <span><i class="status-dot"></i>Ready when you are</span>
+                </span>
                 <span class="unread" data-count="0"></span>
               </button>
               <button type="button" class="agent" data-id="writer" data-source="documented-stub" data-live="0">
                 <span class="avatar" style="background:#0f766e">W</span>
-                <strong>Writer</strong>
-                <span>Not connected yet</span>
+                <span class="copy">
+                  <strong>Writer</strong>
+                  <span>Not connected yet</span>
+                </span>
                 <span class="unread" data-count="0"></span>
               </button>
               <button type="button" class="agent" data-id="helper" data-source="documented-stub" data-live="0">
                 <span class="avatar" style="background:#b45309">H</span>
-                <strong>Helper</strong>
-                <span>Not connected yet</span>
+                <span class="copy">
+                  <strong>Helper</strong>
+                  <span>Not connected yet</span>
+                </span>
                 <span class="unread" data-count="0"></span>
               </button>
               <button type="button" class="agent" data-id="finder" data-source="documented-stub" data-live="0">
                 <span class="avatar" style="background:#7c3aed">F</span>
-                <strong>Finder</strong>
-                <span>Not connected yet</span>
+                <span class="copy">
+                  <strong>Finder</strong>
+                  <span>Not connected yet</span>
+                </span>
                 <span class="unread" data-count="0"></span>
               </button>
             </div>
@@ -513,16 +871,18 @@
         </section>
         <section class="nav-block" data-section="chats" data-open="1">
           <button type="button" class="nav-toggle" id="toggle-chats" aria-expanded="true" aria-controls="chats">
-            <span>Chats</span>
+            <span>Recent chats</span>
+            <span class="plus" aria-hidden="true">+</span>
             <span class="chevron" aria-hidden="true">▾</span>
           </button>
           <div class="nav-body" id="chats-body">
             <div class="list" id="chats" data-source="talk-history"></div>
             <p class="empty-list" id="empty-chats">No chats yet. Send a message to start.</p>
+            <button type="button" class="view-all" id="view-all-chats">View all chats</button>
           </div>
         </section>
-        <section class="nav-block" data-section="groups" data-open="1">
-          <button type="button" class="nav-toggle" id="toggle-groups" aria-expanded="true" aria-controls="groups">
+        <section class="nav-block" data-section="groups" data-open="0">
+          <button type="button" class="nav-toggle" id="toggle-groups" aria-expanded="false" aria-controls="groups">
             <span>Group chats</span>
             <span class="chevron" aria-hidden="true">▾</span>
           </button>
@@ -533,63 +893,138 @@
         </section>
       </div>
       <div class="left-foot">
-        <button type="button" class="footer-btn" id="plugins">Plugins</button>
-        <button type="button" class="footer-btn" id="profile">You</button>
+        <button type="button" class="footer-btn" id="profile">
+          <span class="avatar" style="background:#2563EB">B</span>
+          <span class="copy">
+            <strong>You</strong>
+            <span>berk@jarvis.app</span>
+          </span>
+        </button>
+        <button type="button" class="icon-btn" id="settings" aria-label="Settings" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M12 4.5v1.6M12 17.9v1.6M4.5 12h1.6M17.9 12h1.6M6.4 6.4l1.1 1.1M16.5 16.5l1.1 1.1M17.6 6.4l-1.1 1.1M7.5 16.5l-1.1 1.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
     </aside>
 
     <main class="pane" id="middle" aria-label="Chat" data-chat="live">
       <div class="chat-head">
         <div class="who">
-          <h2 id="chat-title">Jarvis</h2>
-          <span id="chat-sub">Ready when you are</span>
+          <span class="avatar" style="background:#2563EB">J</span>
+          <div>
+            <h2 id="chat-title">Jarvis</h2>
+            <span id="chat-sub">Ready when you are</span>
+          </div>
         </div>
-        <button type="button" class="icon-btn" id="settings" aria-label="Settings" title="Settings">⚙</button>
+        <button type="button" class="model-btn" id="model-btn" aria-label="Current model" title="Current model from Settings">
+          <span id="model-label">Jarvis</span> ▾
+        </button>
+        <button type="button" class="icon-btn" id="chat-menu" aria-label="Chat menu" title="More">⋯</button>
+      </div>
+      <div class="menu" id="more-menu" hidden>
+        <button type="button" id="menu-settings">Settings</button>
+        <button type="button" id="menu-hide-right">Hide computer</button>
       </div>
       <div class="thread" id="thread" aria-live="polite">
         <p class="empty" id="empty-chat">This chat is ready. Messages will show up here.</p>
         <div class="msg jarvis pending" id="pending" hidden>
+          <span class="avatar msg-ava" style="background:#2563EB">J</span>
           <span class="msg-who">Jarvis</span>
           <p id="pending-copy">Jarvis is thinking…</p>
         </div>
       </div>
       <form class="composer" id="composer">
         <button type="button" class="icon-btn" id="add" aria-label="Add" title="Add">+</button>
-        <input id="ask" type="text" placeholder="Type a message" aria-label="Type a message" autocomplete="off" />
-        <button type="button" class="icon-btn" id="mic" aria-label="Talk" title="Talk">🎤</button>
-        <button type="submit" class="icon-btn send" id="send" aria-label="Send" title="Send">➤</button>
+        <input id="ask" type="text" placeholder="Type a message…" aria-label="Type a message" autocomplete="off" />
+        <button type="button" class="icon-btn" id="attach" aria-label="Attach" title="Attach">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8.5 12.5l6.2-6.2a3 3 0 1 1 4.2 4.2l-8 8a3.8 3.8 0 0 1-5.4-5.4l7.2-7.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="mic" aria-label="Talk" title="Talk">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="9" y="4" width="6" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button type="submit" class="icon-btn send" id="send" aria-label="Send" title="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 18V7M7.5 11.5 12 7l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </form>
     </main>
 
     <aside class="pane" id="right" aria-label="Computer">
       <div class="pane-head">
-        <h2>Jarvis's screen</h2>
-        <button type="button" class="icon-btn" id="hide-right" aria-label="Hide computer">›</button>
+        <div class="pc-title">
+          <span class="mark" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
+          <div>
+            <h2>Live Computer</h2>
+            <div class="pc-connected" id="pc-connected" data-on="0"><i></i><span id="pc-connected-copy">Checking…</span></div>
+          </div>
+        </div>
+        <button type="button" class="icon-btn" id="expand-screen" aria-label="Expand screen" title="Expand">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M9 5H5v4M15 5h4v4M5 15v4h4M19 15v4h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="hide-right" aria-label="Hide computer">⋯</button>
       </div>
-      <div class="modes" role="group" aria-label="Computer or chat only">
-        <button type="button" class="text-btn" id="mode-computer" data-talk-mode="computer">Computer</button>
+      <div class="pills" role="group" aria-label="Computer or chat only">
+        <button type="button" class="text-btn" id="mode-computer" data-talk-mode="computer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/></svg>
+          Computer
+        </button>
         <button type="button" class="text-btn" id="mode-terminal" data-talk-mode="terminal">Chat only</button>
+        <button type="button" class="text-btn screen-only" id="hide-screen" aria-label="Hide screen">Hide screen</button>
+        <button type="button" class="text-btn screen-only" id="show-screen" aria-label="Show screen" hidden>Show Jarvis's screen</button>
+        <button type="button" class="text-btn" id="open-screen">Open in new window</button>
       </div>
       <p class="hint terminal-note" id="terminal-note" hidden>Chat only — the computer stays hidden.</p>
-      <div class="screen-actions" id="screen-actions">
-        <button type="button" class="text-btn" id="hide-screen" aria-label="Hide screen">Hide screen</button>
-        <button type="button" class="text-btn" id="show-screen" aria-label="Show screen" hidden>Show Jarvis's screen</button>
-        <button type="button" class="text-btn" id="open-screen">Open Jarvis's screen</button>
-      </div>
       <div class="screen" id="live-computer" data-embed="iframe" aria-label="Jarvis's screen">
         <iframe id="live-frame" title="Jarvis's screen" src="" hidden></iframe>
         <div id="screen-idle">
           <p id="screen-copy">Checking Jarvis's screen…</p>
           <button type="button" class="text-btn" id="start-computer">Start Jarvis's computer</button>
         </div>
+        <div class="screen-tools" id="screen-tools">
+          <button type="button" id="tool-fullscreen" title="Full screen" aria-label="Full screen">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M8 5H5v3M16 5h3v3M5 16v3h3M19 16v3h-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <button type="button" id="tool-mouse" title="Mouse" aria-label="Mouse">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 3.5 18 12l-6.2.4L9.2 20 6 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+          </button>
+          <button type="button" id="tool-keys" title="Keyboard" aria-label="Keyboard">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="7" width="17" height="10" rx="2" stroke="currentColor" stroke-width="1.6"/><path d="M7 12h.01M12 12h.01M17 12h.01M8.5 15h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="pc-using" id="pc-using" hidden>
+        <i></i>
+        <span id="pc-using-copy">Jarvis is using the computer…</span>
       </div>
       <div class="section routines" id="routines-block">
         <div class="routines-head">
-          <h3>Routines</h3>
+          <h3>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="13" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 10v3.2L14 15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            Routines
+          </h3>
           <button type="button" class="icon-btn" id="add-routine" aria-label="Add routine" title="Add routine">+</button>
         </div>
         <div class="list" id="routines" data-source="local-schedules"></div>
-        <p class="empty-list" id="empty-routines">No routines yet.</p>
+        <div class="routine-empty" id="routine-empty">
+          <div class="clock" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="13" r="6.5" stroke="currentColor" stroke-width="1.6"/><path d="M12 10v3.2L14 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </div>
+          <p class="empty-list" id="empty-routines">No routines yet.</p>
+          <span>Create a routine to automate repetitive tasks.</span>
+          <button type="button" class="create-routine" id="create-routine">Create routine</button>
+        </div>
         <p class="empty-list" id="routine-note" hidden>Adding a routine comes later.</p>
       </div>
     </aside>
@@ -611,8 +1046,14 @@
       var hideScreenBtn = document.getElementById("hide-screen");
       var showScreenBtn = document.getElementById("show-screen");
       var terminalNote = document.getElementById("terminal-note");
+      var pcConnected = document.getElementById("pc-connected");
+      var pcConnectedCopy = document.getElementById("pc-connected-copy");
+      var pcUsing = document.getElementById("pc-using");
+      var modelLabel = document.getElementById("model-label");
+      var moreMenu = document.getElementById("more-menu");
       var talkMode = "computer";
       var screenShown = true;
+      var computerRunning = false;
       var ASK_PATH = "/api/jarvis/ask";
       var TALK_LAST_PATH = "/api/jarvis/talk/last";
       var TALK_LOG_PATH = "/api/jarvis/talk/log";
@@ -637,7 +1078,7 @@
       var searchInput = document.getElementById("search");
       var selectedId = "jarvis";
       var chatRows = [];
-      var navSections = { helpers: true, chats: true, groups: true };
+      var navSections = { helpers: true, chats: true, groups: false };
 
       function say(text) {
         statusEl.textContent = text;
@@ -705,10 +1146,22 @@
         return talkMode !== "terminal" && panes.right && screenShown;
       }
 
+      function setPcChrome(connected, using) {
+        if (pcConnected) pcConnected.setAttribute("data-on", connected ? "1" : "0");
+        if (pcConnectedCopy) {
+          pcConnectedCopy.textContent = talkMode === "terminal"
+            ? "Chat only"
+            : connected ? "Connected" : (computerShouldShow() ? "Not running" : "Hidden");
+        }
+        if (pcUsing) pcUsing.hidden = !using;
+      }
+
       function showLiveFrame() {
         if (!liveFrame) return;
         screenIdle.hidden = true;
         liveFrame.hidden = false;
+        computerRunning = true;
+        setPcChrome(true, talkMode === "computer");
         if (liveFrame.getAttribute("src") !== SESSION) {
           liveFrame.setAttribute("src", SESSION);
         }
@@ -717,8 +1170,10 @@
       function showIdle(message, canStart) {
         clearLiveFrame();
         screenIdle.hidden = false;
+        computerRunning = false;
         screenCopy.textContent = message || "Jarvis's computer is not running.";
         startBtn.hidden = !canStart;
+        setPcChrome(false, false);
       }
 
       function loadLiveScreen() {
@@ -757,6 +1212,7 @@
             ? "Chat only — the computer stays hidden."
             : "Jarvis's screen is hidden. The computer keeps running.";
           startBtn.hidden = true;
+          setPcChrome(false, false);
           return;
         }
         loadLiveScreen();
@@ -797,6 +1253,11 @@
         panes = { left: panes.left, right: true };
         savePanes(panes);
       });
+      document.getElementById("menu-hide-right").addEventListener("click", function () {
+        moreMenu.hidden = true;
+        panes = { left: panes.left, right: false };
+        savePanes(panes);
+      });
 
       window.addEventListener("resize", function () {
         var next = fitPanesToWidth(window.innerWidth, readPanes());
@@ -805,6 +1266,7 @@
       });
 
       function openSettings() {
+        if (moreMenu) moreMenu.hidden = true;
         if (window.jarvisDesktop && typeof window.jarvisDesktop.openSettings === "function") {
           window.jarvisDesktop.openSettings();
           return;
@@ -812,10 +1274,16 @@
         location.href = "/ceo?settings=1&desktop=1";
       }
       document.getElementById("settings").addEventListener("click", openSettings);
+      document.getElementById("model-btn").addEventListener("click", openSettings);
+      document.getElementById("menu-settings").addEventListener("click", openSettings);
+      document.getElementById("chat-menu").addEventListener("click", function () {
+        moreMenu.hidden = !moreMenu.hidden;
+      });
 
       function paintRoutines(rows) {
         var box = document.getElementById("routines");
         var empty = document.getElementById("empty-routines");
+        var emptyWrap = document.getElementById("routine-empty");
         var list = Array.isArray(rows) ? rows : [];
         while (box.firstChild) box.removeChild(box.firstChild);
         list.forEach(function (row) {
@@ -833,7 +1301,9 @@
           btn.appendChild(when);
           box.appendChild(btn);
         });
-        empty.hidden = box.childNodes.length > 0;
+        var has = box.childNodes.length > 0;
+        empty.hidden = has;
+        if (emptyWrap) emptyWrap.hidden = has;
         empty.textContent = "No routines yet.";
       }
 
@@ -863,6 +1333,13 @@
         window.open("/ceo/jarvis-screen", "jarvis-screen");
       }
       document.getElementById("open-screen").addEventListener("click", openScreen);
+      document.getElementById("expand-screen").addEventListener("click", function () {
+        if (liveSlot && liveSlot.requestFullscreen) {
+          liveSlot.requestFullscreen().catch(function () { openScreen(); });
+          return;
+        }
+        openScreen();
+      });
       hideScreenBtn.addEventListener("click", function () { setScreenShown(false); });
       showScreenBtn.addEventListener("click", function () { setScreenShown(true); });
       startBtn.addEventListener("click", function () {
@@ -895,10 +1372,37 @@
           });
       });
 
+      document.getElementById("tool-fullscreen").addEventListener("click", function () {
+        if (liveSlot && liveSlot.requestFullscreen) {
+          liveSlot.requestFullscreen().catch(function () {});
+        }
+      });
+      document.getElementById("tool-mouse").addEventListener("click", function () {
+        say("Click the live screen to move the mouse.");
+      });
+      document.getElementById("tool-keys").addEventListener("click", function () {
+        say("Click the live screen, then type.");
+      });
+
       function clipAsk(text) {
         var s = String(text || "").replace(/\s+/g, " ").trim();
         if (s.length <= MAX_ASK) return s;
         return s.slice(0, MAX_ASK).trimEnd();
+      }
+
+      function clipReplyKeepBreaks(text) {
+        var s = String(text || "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        return s;
+      }
+
+      function looksStructured(text) {
+        var lines = String(text || "").split(/\n+/).filter(Boolean);
+        if (lines.length < 3) return false;
+        var marks = 0;
+        lines.forEach(function (line) {
+          if (/^\s*([-*•]|\d+\.)\s+/.test(line) || /^day\s+\d+/i.test(line)) marks += 1;
+        });
+        return marks >= 2;
       }
 
       function paintThread() {
@@ -910,6 +1414,14 @@
           var wrap = document.createElement("div");
           wrap.className = "msg " + turn.role;
           wrap.setAttribute("data-role", turn.role);
+          if (turn.role === "jarvis") {
+            var av = document.createElement("span");
+            av.className = "avatar msg-ava";
+            av.style.background = "#2563EB";
+            av.textContent = "J";
+            wrap.appendChild(av);
+            if (looksStructured(turn.text)) wrap.className += " card";
+          }
           var who = document.createElement("span");
           who.className = "msg-who";
           who.textContent = turn.role === "you" ? "You" : "Jarvis";
@@ -917,18 +1429,24 @@
           body.textContent = turn.text;
           wrap.appendChild(who);
           wrap.appendChild(body);
+          if (turn.role === "you" && turn.ts) {
+            var meta = document.createElement("span");
+            meta.className = "msg-meta";
+            meta.textContent = formatChatWhen(turn.ts);
+            wrap.appendChild(meta);
+          }
           threadEl.insertBefore(wrap, pendingEl);
         });
         threadEl.scrollTop = threadEl.scrollHeight;
       }
 
-      function rememberTurn(role, text) {
+      function rememberTurn(role, text, ts) {
         var who = role === "you" ? "you" : "jarvis";
-        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        var clean = who === "you" ? clipAsk(text) : clipReplyKeepBreaks(text);
         if (!clean) return false;
         var last = turns[turns.length - 1];
         if (last && last.role === who && last.text === clean) return false;
-        turns.push({ role: who, text: clean });
+        turns.push({ role: who, text: clean, ts: ts || new Date().toISOString() });
         paintThread();
         refreshChatsFromTurns();
         return true;
@@ -947,7 +1465,7 @@
 
       function postTalkLog(role, text) {
         var who = role === "you" ? "you" : "jarvis";
-        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        var clean = who === "you" ? clipAsk(text) : clipReplyKeepBreaks(text);
         if (!clean) return;
         fetch(TALK_LOG_PATH, {
           method: "POST",
@@ -996,7 +1514,11 @@
           if (!row || (row.role !== "you" && row.role !== "jarvis")) return;
           var clean = String(row.text || "").replace(/\s+/g, " ").trim();
           if (!clean) return;
-          incoming.push({ role: row.role, text: row.role === "you" ? clipAsk(clean) : clean });
+          incoming.push({
+            role: row.role,
+            text: row.role === "you" ? clipAsk(clean) : clipReplyKeepBreaks(row.text),
+            ts: String(row.ts || "")
+          });
         });
         if (!incoming.length) return;
         if (!turns.length) {
@@ -1072,7 +1594,7 @@
           .then(function (res) {
             var data = (res && res.j) || {};
             var ui = data.ui != null ? data.ui : data.result;
-            var reply = String((data.reply || (ui && ui.summary) || "")).replace(/\s+/g, " ").trim();
+            var reply = clipReplyKeepBreaks(data.reply || (ui && ui.summary) || "");
             sending = false;
             sendBtn.disabled = false;
             setPending(false);
@@ -1153,7 +1675,7 @@
 
       function helpersInventory() {
         return [
-          { id: "jarvis", name: "Jarvis", initial: "J", color: "#1d4ed8", subtitle: "Ready when you are", source: "local-lead", live: true, ready: true },
+          { id: "jarvis", name: "Jarvis", initial: "J", color: "#2563EB", subtitle: "Ready when you are", source: "local-lead", live: true, ready: true },
           { id: "writer", name: "Writer", initial: "W", color: "#0f766e", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false },
           { id: "helper", name: "Helper", initial: "H", color: "#b45309", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false },
           { id: "finder", name: "Finder", initial: "F", color: "#7c3aed", subtitle: "Not connected yet", source: "documented-stub", live: false, ready: false }
@@ -1163,6 +1685,20 @@
       function parseTurnTime(ts) {
         var n = Date.parse(String(ts || ""));
         return isFinite(n) ? n : 0;
+      }
+
+      function formatChatWhen(ts) {
+        var n = parseTurnTime(ts);
+        if (!n) return "";
+        var d = new Date(n);
+        var now = new Date();
+        var startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        var startYest = startToday - 86400000;
+        if (n >= startToday) {
+          return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        }
+        if (n >= startYest) return "Yesterday";
+        return d.toLocaleDateString([], { month: "numeric", day: "numeric", year: "numeric" });
       }
 
       function chatsFromHistory(rows) {
@@ -1210,6 +1746,7 @@
             id: live ? "talk-live" : ("talk-" + (sid || index)),
             name: title,
             preview: last ? last.text : "",
+            when: formatChatWhen(last && last.ts),
             source: "talk-history",
             live: live,
             ready: true
@@ -1236,6 +1773,10 @@
         document.querySelectorAll(".agent[data-id], .row[data-id]").forEach(function (btn) {
           btn.setAttribute("data-on", btn.getAttribute("data-id") === selectedId ? "1" : "0");
         });
+        var chatNav = document.getElementById("nav-chat");
+        var helpNav = document.getElementById("nav-helpers");
+        if (chatNav) chatNav.setAttribute("data-on", selectedId === "writer" || selectedId === "helper" || selectedId === "finder" ? "0" : "1");
+        if (helpNav) helpNav.setAttribute("data-on", selectedId === "writer" || selectedId === "helper" || selectedId === "finder" ? "1" : "0");
       }
 
       function paintHelpers() {
@@ -1255,13 +1796,21 @@
           av.className = "avatar";
           av.style.background = row.color;
           av.textContent = row.initial;
+          var copy = document.createElement("span");
+          copy.className = "copy";
           var name = document.createElement("strong");
           name.textContent = row.name;
           var sub = document.createElement("span");
-          sub.textContent = row.subtitle;
+          if (row.live) {
+            var dot = document.createElement("i");
+            dot.className = "status-dot";
+            sub.appendChild(dot);
+          }
+          sub.appendChild(document.createTextNode(row.subtitle));
+          copy.appendChild(name);
+          copy.appendChild(sub);
           btn.appendChild(av);
-          btn.appendChild(name);
-          btn.appendChild(sub);
+          btn.appendChild(copy);
           btn.appendChild(unreadBadge());
           box.appendChild(btn);
         });
@@ -1290,6 +1839,12 @@
           copy.appendChild(name);
           copy.appendChild(preview);
           btn.appendChild(copy);
+          if (row.when) {
+            var when = document.createElement("span");
+            when.className = "when";
+            when.textContent = row.when;
+            btn.appendChild(when);
+          }
           btn.appendChild(unreadBadge());
           box.appendChild(btn);
         });
@@ -1326,7 +1881,7 @@
         return {
           helpers: src.helpers !== false,
           chats: src.chats !== false,
-          groups: src.groups !== false
+          groups: src.groups === true
         };
       }
 
@@ -1334,7 +1889,7 @@
         try {
           return normalizeNav(JSON.parse(localStorage.getItem(NAV_STORAGE) || "null"));
         } catch (e) {
-          return { helpers: true, chats: true, groups: true };
+          return { helpers: true, chats: true, groups: false };
         }
       }
 
@@ -1344,6 +1899,7 @@
           var btn = document.getElementById("toggle-" + key);
           if (!block || !btn) return;
           var open = state[key] !== false;
+          if (key === "groups") open = state[key] === true;
           block.setAttribute("data-open", open ? "1" : "0");
           btn.setAttribute("aria-expanded", open ? "true" : "false");
         });
@@ -1373,6 +1929,18 @@
         say(lead.ready === false ? (lead.name + " is not connected yet.") : ("Talking with " + lead.name + "."));
       }
 
+      function focusSection(key) {
+        var next = {
+          helpers: navSections.helpers,
+          chats: navSections.chats,
+          groups: navSections.groups
+        };
+        next[key] = true;
+        saveNav(next);
+        var block = document.querySelector('.nav-block[data-section="' + key + '"]');
+        if (block && block.scrollIntoView) block.scrollIntoView({ block: "nearest" });
+      }
+
       document.getElementById("composer").addEventListener("submit", function (e) {
         e.preventDefault();
         sendAsk(askInput.value);
@@ -1385,10 +1953,12 @@
         }
         startListen();
       });
-      document.getElementById("add").addEventListener("click", function () {
+      function filesSoon() {
         say("Photos and files come later.");
         setChatSub("Photos and files come later.");
-      });
+      }
+      document.getElementById("add").addEventListener("click", filesSoon);
+      document.getElementById("attach").addEventListener("click", filesSoon);
       document.getElementById("agents").addEventListener("click", function (e) {
         var btn = e.target.closest(".agent[data-id]");
         if (!btn) return;
@@ -1404,7 +1974,32 @@
         askInput.focus();
         say("New chat with Jarvis.");
       });
+      document.getElementById("nav-chat").addEventListener("click", function () {
+        selectLead("jarvis");
+        askInput.focus();
+      });
+      document.getElementById("nav-helpers").addEventListener("click", function () {
+        focusSection("helpers");
+      });
+      document.getElementById("nav-routines").addEventListener("click", function () {
+        if (!panes.right) {
+          panes = { left: panes.left, right: true };
+          savePanes(panes);
+        }
+        var block = document.getElementById("routines-block");
+        if (block && block.scrollIntoView) block.scrollIntoView({ block: "nearest" });
+      });
+      document.getElementById("view-all-chats").addEventListener("click", function () {
+        focusSection("chats");
+        saveNav({ helpers: navSections.helpers, chats: true, groups: true });
+      });
       searchInput.addEventListener("input", paintLeftNav);
+      document.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "k") {
+          e.preventDefault();
+          searchInput.focus();
+        }
+      });
       ["helpers", "chats", "groups"].forEach(function (key) {
         var btn = document.getElementById("toggle-" + key);
         if (!btn) return;
@@ -1430,6 +2025,7 @@
         say("This routine is on the schedule. Changing it comes later.");
       });
       document.getElementById("add-routine").addEventListener("click", addRoutineSoon);
+      document.getElementById("create-routine").addEventListener("click", addRoutineSoon);
       navSections = readNav();
       paintNavSections(navSections);
       paintLeftNav();
@@ -1454,10 +2050,23 @@
       modeComputer.addEventListener("click", function () { persistTalkMode("computer"); });
       modeTerminal.addEventListener("click", function () { persistTalkMode("terminal"); });
 
+      function friendlyModel(data) {
+        var src = data && typeof data === "object" ? data : {};
+        var name = String(src.helper_name || "").trim();
+        if (name) return name;
+        var model = String(src.model || "").trim();
+        if (!model) return "Jarvis";
+        var parts = model.split("/");
+        return parts[parts.length - 1] || "Jarvis";
+      }
+
       function loadTalkMode() {
         fetch(SETTINGS_API_PATH, { credentials: "same-origin" })
           .then(function (r) { return r.ok ? r.json() : {}; })
-          .then(function (data) { applyTalkMode(data && data.talk_mode); })
+          .then(function (data) {
+            applyTalkMode(data && data.talk_mode);
+            if (modelLabel) modelLabel.textContent = friendlyModel(data);
+          })
           .catch(function () { applyTalkMode("computer"); });
       }
       loadTalkMode();

@@ -69,7 +69,7 @@ def test_electron_hosts_three_pane_as_primary_window():
     assert (DESKTOP / "app-shell.js").is_file()
 
 
-def test_three_pane_html_is_light_grok_like_chrome():
+def test_three_pane_html_matches_windows_mock_chrome():
     html = SHELL_HTML.read_text(encoding="utf-8")
     low = html.lower()
     assert 'id="left"' in html
@@ -80,24 +80,34 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert 'id="ask"' in html
     assert 'id="mic"' in html
     assert 'id="send"' in html
+    assert 'id="attach"' in html
+    assert "Your AI teammate" in html
+    assert "Search assistants, chats" in html
+    assert "Ctrl K" in html
     assert "Helpers" in html
-    assert "Chats" in html
+    assert "Recent chats" in html
+    assert "View all chats" in html
     assert "Group chats" in html
+    assert "Live Computer" in html
     assert "Jarvis's screen" in html
     assert "Routines" in html
+    assert "Create routine" in html
     assert "Type a message" in html
     assert "Hide chats" in html
     assert "Show chats" in html
     assert "Hide computer" in html
     assert "Show computer" in html
     assert "Chat only" in html
+    assert "Open in new window" in html
+    assert "Jarvis is using the computer" in html
     assert "talk_mode" in html
     assert "/api/jarvis/settings" in html
     assert "127.0.0.1:6080" in html
     assert "left-collapsed" in html
     assert "right-collapsed" in html
-    assert "#ddd6cc" in html or "#efece8" in html
-    assert "border-radius: 20px" in html or "border-radius: var(--radius)" in html
+    assert "#1A1D23" in html
+    assert "#F8F9FB" in html
+    assert "border-radius: 14px" in html or "border-radius: var(--radius)" in html
     assert "api key" not in low
     assert "openrouter" not in low
     assert 'id="voiceDock"' not in html
@@ -105,6 +115,9 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert 'id="new-chat"' in html
     assert "New chat" in html
     assert "nav-toggle" in html
+    assert 'id="nav-chat"' in html
+    assert 'id="nav-helpers"' in html
+    assert 'id="nav-routines"' in html
     assert 'data-section="helpers"' in html
     assert 'data-section="chats"' in html
     assert 'data-section="groups"' in html
@@ -112,6 +125,9 @@ def test_three_pane_html_is_light_grok_like_chrome():
     assert "No chats yet. Send a message to start." in html
     assert "No group chats yet. They come later." in html
     assert "class=\"unread\"" in html or 'class="unread"' in html
+    assert 'id="settings"' in html
+    assert 'id="model-btn"' in html
+    assert "Buyra" not in html
 
 
 def test_right_pane_embeds_live_novnc_iframe():
