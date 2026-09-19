@@ -1465,7 +1465,7 @@
 
       function postTalkLog(role, text) {
         var who = role === "you" ? "you" : "jarvis";
-        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        var clean = who === "you" ? clipAsk(text) : clipReplyKeepBreaks(text);
         if (!clean) return;
         fetch(TALK_LOG_PATH, {
           method: "POST",
@@ -1594,7 +1594,7 @@
           .then(function (res) {
             var data = (res && res.j) || {};
             var ui = data.ui != null ? data.ui : data.result;
-            var reply = String((data.reply || (ui && ui.summary) || "")).replace(/\s+/g, " ").trim();
+            var reply = clipReplyKeepBreaks(data.reply || (ui && ui.summary) || "");
             sending = false;
             sendBtn.disabled = false;
             setPending(false);
