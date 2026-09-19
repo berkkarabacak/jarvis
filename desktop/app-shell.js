@@ -54,7 +54,7 @@ const SHELL = {
   path: SHELL_PATH,
   defaultLaunch: "main",
   theme: "light",
-  leftWidth: 268,
+  leftWidth: 276,
   rightWidth: 360,
   minMiddleWidth: 360,
   minWindowWidth: 800,

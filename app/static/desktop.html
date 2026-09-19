@@ -45,7 +45,7 @@
       --shadow: 0 8px 24px rgba(17, 24, 39, 0.08);
       --radius: 14px;
       --radius-sm: 12px;
-      --left: 268px;
+      --left: 276px;
       --right: 360px;
       --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
     }
@@ -170,7 +170,8 @@
       background: var(--sidebar-2);
       border-radius: 12px;
       min-height: 38px;
-      padding: 0 64px 0 36px;
+      padding: 0 58px 0 34px;
+      font-size: 13px;
       outline: none;
       color: var(--sidebar-ink);
     }
@@ -186,15 +187,16 @@
     }
     .search kbd {
       position: absolute;
-      right: 8px;
-      top: 8px;
+      right: 7px;
+      top: 9px;
       border: 0;
       background: #2C313A;
       color: var(--sidebar-muted);
-      border-radius: 8px;
-      min-height: 22px;
-      padding: 0 7px;
-      font: 11px/22px var(--ui);
+      border-radius: 7px;
+      min-height: 20px;
+      padding: 0 6px;
+      font: 10px/20px var(--ui);
+      letter-spacing: 0;
     }
     .nav-scroll {
       flex: 1 1 auto;
@@ -264,6 +266,7 @@
     }
     .nav-block[data-open="0"] .nav-body { display: none; }
     .nav-block[data-open="0"] .chevron { transform: rotate(-90deg); }
+    .nav-block[data-section="groups"][data-open="0"] { display: none; }
     .empty-list {
       margin: 0;
       padding: 8px 6px 4px;
@@ -555,8 +558,8 @@
     }
     .pc-connected[data-on="0"] i { background: #9CA3AF; }
     .pills {
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
       padding: 8px 16px 12px;
     }
@@ -1387,6 +1390,11 @@
         return s.slice(0, MAX_ASK).trimEnd();
       }
 
+      function clipReplyKeepBreaks(text) {
+        var s = String(text || "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        return s;
+      }
+
       function looksStructured(text) {
         var lines = String(text || "").split(/\n+/).filter(Boolean);
         if (lines.length < 3) return false;
@@ -1434,7 +1442,7 @@
 
       function rememberTurn(role, text, ts) {
         var who = role === "you" ? "you" : "jarvis";
-        var clean = who === "you" ? clipAsk(text) : String(text || "").replace(/\s+/g, " ").trim();
+        var clean = who === "you" ? clipAsk(text) : clipReplyKeepBreaks(text);
         if (!clean) return false;
         var last = turns[turns.length - 1];
         if (last && last.role === who && last.text === clean) return false;
@@ -1508,7 +1516,7 @@
           if (!clean) return;
           incoming.push({
             role: row.role,
-            text: row.role === "you" ? clipAsk(clean) : clean,
+            text: row.role === "you" ? clipAsk(clean) : clipReplyKeepBreaks(row.text),
             ts: String(row.ts || "")
           });
         });
