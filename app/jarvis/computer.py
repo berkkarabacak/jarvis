@@ -622,6 +622,14 @@ def public_computer_status() -> dict[str, Any]:
         kind = "linux"
     backend = JARVIS_ANDROID if kind == "android" else JARVIS_COMPUTER
     label = "Android" if kind == "android" else "Linux"
+    hostname = JARVIS_ANDROID if kind == "android" else CONTAINER_NAME
+    try:
+        from app.jarvis.settings_store import computer_display_name, computer_hostname
+
+        label = computer_display_name(kind)
+        hostname = computer_hostname(kind) or hostname
+    except Exception:
+        label = "Android" if kind == "android" else "Linux"
     container = JARVIS_ANDROID if kind == "android" else CONTAINER_NAME
     watch_path = "/android/" if kind == "android" else "/novnc/"
     live = False
@@ -640,7 +648,10 @@ def public_computer_status() -> dict[str, Any]:
         live = False
     return {
         "kind": kind,
+        "id": kind,
         "label": label,
+        "display_name": label,
+        "hostname": hostname,
         "backend": backend,
         "container": container,
         "live": live,

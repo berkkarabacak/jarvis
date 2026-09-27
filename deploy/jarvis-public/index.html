@@ -602,6 +602,25 @@
       color: var(--muted);
     }
     .picks button[data-on="1"] .pick-note { color: #d7d3d3; }
+    .computer-pick { display: flex; flex-direction: column; gap: 6px; }
+    .picks button.rename-computer {
+      min-height: 36px;
+      align-self: flex-start;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 6px 12px;
+    }
+    .rename-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .rename-form input {
+      flex: 1;
+      min-width: 8rem;
+      min-height: 40px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 0 12px;
+      font: 600 16px/1.2 var(--ui-font);
+    }
+    .rename-error { margin: 0; color: #9f1239; font-size: 14px; flex-basis: 100%; }
     .row {
       display: flex;
       align-items: baseline;
@@ -920,8 +939,14 @@
           <p class="choice-label">Which computer he uses</p>
           <p class="choice-note">Same Jarvis. Same memory. Different box. Android is not the phone app.</p>
           <div class="picks" id="computer-picks">
-            <button type="button" data-computer="linux">Linux<span class="pick-note">The usual desktop. This is the default.</span></button>
-            <button type="button" data-computer="android">Android<span class="pick-note">A phone-shaped box he can tap.</span></button>
+            <div class="computer-pick">
+              <button type="button" data-computer="linux"><span class="computer-name">Linux</span><span class="pick-note">The usual desktop. This is the default.</span></button>
+              <button type="button" class="rename-computer" data-rename-computer="linux" aria-label="Rename Linux">Rename</button>
+            </div>
+            <div class="computer-pick">
+              <button type="button" data-computer="android"><span class="computer-name">Android</span><span class="pick-note">A phone-shaped box he can tap.</span></button>
+              <button type="button" class="rename-computer" data-rename-computer="android" aria-label="Rename Android">Rename</button>
+            </div>
           </div>
           <p class="choice-label">How often he looks</p>
           <div class="picks" id="look-picks">
@@ -1512,6 +1537,72 @@
         return isFinite(x) ? x : null;
       }
 
+      function cleanComputerName(value) {
+        const name = String(value || "").replace(/\s+/g, " ").trim();
+        if (!name) return { ok: false, error: "Name cannot be empty." };
+        if (name.length > 64) return { ok: false, error: "Name is too long." };
+        return { ok: true, name: name };
+      }
+
+      function paintComputerNames(data) {
+        const rows = (data && (data.computers || data.computer_kinds)) || [];
+        const byId = {};
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i] || {};
+          if (row.id) byId[String(row.id)] = row;
+        }
+        document.querySelectorAll("#computer-picks [data-computer]").forEach(function (btn) {
+          const id = btn.getAttribute("data-computer") || "";
+          const row = byId[id];
+          const nameEl = btn.querySelector(".computer-name");
+          if (row && nameEl) nameEl.textContent = String(row.display_name || row.label || id);
+        });
+        const selected = byId[prefs.computerKind];
+        const live = document.getElementById("computer-kind-label");
+        if (live && selected) live.textContent = String(selected.display_name || selected.label || "");
+      }
+
+      function beginPublicRename(id) {
+        const pick = document.querySelector('#computer-picks [data-computer="' + id + '"]');
+        const wrap = pick && pick.closest(".computer-pick");
+        if (!wrap || wrap.querySelector(".rename-form")) return;
+        const current = (pick.querySelector(".computer-name") || {}).textContent || "";
+        const form = document.createElement("form");
+        form.className = "rename-form";
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = current;
+        input.maxLength = 64;
+        input.setAttribute("aria-label", "Computer name");
+        const save = document.createElement("button");
+        save.type = "submit";
+        save.textContent = "Save";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        const err = document.createElement("p");
+        err.className = "rename-error";
+        form.appendChild(input);
+        form.appendChild(save);
+        form.appendChild(cancel);
+        form.appendChild(err);
+        cancel.addEventListener("click", function () { form.remove(); });
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          const parsed = cleanComputerName(input.value);
+          if (!parsed.ok) {
+            err.textContent = parsed.error;
+            return;
+          }
+          const names = {};
+          names[id] = parsed.name;
+          void saveTalkSettings({ computer_names: names });
+        });
+        wrap.appendChild(form);
+        input.focus();
+        input.select();
+      }
+
       function paintPicks(root, attr, value) {
         if (!root) return;
         const bits = root.querySelectorAll("[" + attr + "]");
@@ -1706,6 +1797,7 @@
           const live = document.getElementById("computer-kind-label");
           if (live && data.computer.label) live.textContent = String(data.computer.label);
         }
+        paintComputerNames(data);
         if ("realtime_voice" in data) {
           const voice = voiceFromId(data.realtime_voice);
           if (voice) prefs.voice = voice;
@@ -3640,6 +3732,13 @@
             const kind = el.getAttribute("data-computer") || "linux";
             paintPicks(computerPicksEl, "data-computer", kind);
             void saveTalkSettings({ computer_kind: kind });
+          });
+        });
+        computerPicksEl.querySelectorAll("[data-rename-computer]").forEach(function (el) {
+          el.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            beginPublicRename(el.getAttribute("data-rename-computer") || "");
           });
         });
       }

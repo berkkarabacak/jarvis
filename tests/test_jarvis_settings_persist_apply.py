@@ -213,6 +213,7 @@ async def test_public_host_persists_every_talk_server_card(public_client, jarvis
         "model",
         "model_lock",
         "computer_kind",
+        "computer_names",
         "realtime_voice",
         "talk_speed",
         "look_speed",

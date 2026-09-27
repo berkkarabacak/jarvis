@@ -10,8 +10,11 @@ import {
   chatsFromHistory,
   clipAsk,
   composerSubmit,
+  computersFromSettings,
   helpersFromInventory,
   liveComputerView,
+  normalizeComputerName,
+  selectedComputerLabel,
   mergeHistory,
   normalizeTalkMode,
   parseAskReply,
@@ -66,6 +69,24 @@ test("talk events append unique turns", () => {
   assert.equal(turns[0].role, "you")
   const talked = applyTalkEvent([], { status: "thinking", you: "open chrome" })
   assert.match(talked.subtitle, /thinking/i)
+})
+
+test("computer rename keeps the machine id and rejects a blank name", () => {
+  const named = computersFromSettings({
+    computer_kind: "linux",
+    computers: [
+      { id: "linux", hostname: "jarvis-computer", display_name: "Office PC", label: "Office PC" },
+      { id: "android", hostname: "jarvis-android", display_name: "Android", label: "Android" },
+    ],
+  })
+  assert.equal(named[0].id, "linux")
+  assert.equal(named[0].hostname, "jarvis-computer")
+  assert.equal(named[0].label, "Office PC")
+  assert.equal(named[1].label, "Android")
+  assert.equal(selectedComputerLabel(named, "linux"), "Office PC")
+  assert.equal(normalizeComputerName("  Berk's PC  ").ok && normalizeComputerName("  Berk's PC  ").name, "Berk's PC")
+  assert.equal(normalizeComputerName("   ").ok, false)
+  assert.equal(normalizeComputerName("a".repeat(65)).ok, false)
 })
 
 test("history keeps repeated Jarvis replies", () => {

@@ -1,6 +1,13 @@
 "use client"
 
-import { LABELS, NOVNC_SESSION_URL, type TalkMode } from "@/lib/jarvis"
+import { useState } from "react"
+import {
+  LABELS,
+  NOVNC_SESSION_URL,
+  normalizeComputerName,
+  type ComputerMeta,
+  type TalkMode,
+} from "@/lib/jarvis"
 
 type Routine = { id: string; name: string; when: string }
 
@@ -22,6 +29,10 @@ type Props = {
   onHideRight: () => void
   onAddRoutine: () => void
   onRoutineClick: () => void
+  computers: ComputerMeta[]
+  computerKind: string
+  onSelectComputer: (id: string) => void
+  onRenameComputer: (id: string, name: string) => Promise<string | null>
 }
 
 export function RightPane({
@@ -42,10 +53,40 @@ export function RightPane({
   onHideRight,
   onAddRoutine,
   onRoutineClick,
+  computers,
+  computerKind,
+  onSelectComputer,
+  onRenameComputer,
 }: Props) {
   const terminal = talkMode === "terminal"
   const show = !terminal && screenShown
   const live = show && computerRunning
+  const selected = computers.find((row) => row.id === computerKind) || computers[0]
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState("")
+  const [renameError, setRenameError] = useState("")
+
+  function beginRename(id: string) {
+    const row = computers.find((item) => item.id === id)
+    setEditingId(id)
+    setDraft(row?.label || "")
+    setRenameError("")
+  }
+
+  async function commitRename(id: string) {
+    const parsed = normalizeComputerName(draft)
+    if (!parsed.ok) {
+      setRenameError(parsed.error)
+      return
+    }
+    const err = await onRenameComputer(id, parsed.name)
+    if (err) {
+      setRenameError(err)
+      return
+    }
+    setEditingId(null)
+    setRenameError("")
+  }
 
   return (
     <aside
@@ -61,8 +102,18 @@ export function RightPane({
               <path d="M8 20h8M12 16v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
             </svg>
           </span>
-          <div>
+          <div className="min-w-0">
             <h2 className="m-0 text-[15px] font-semibold text-[#111827]">{LABELS.liveComputer}</h2>
+            <button
+              type="button"
+              id="pc-name"
+              className="m-0 block max-w-full truncate border-0 bg-transparent p-0 text-left text-xs text-[#6B7280]"
+              aria-label={selected ? `Rename ${selected.label}` : "Rename computer"}
+              hidden={!selected}
+              onClick={() => selected && beginRename(selected.id)}
+            >
+              {selected?.label || ""}
+            </button>
             <div className="flex items-center gap-1.5 text-xs text-[#6B7280]" id="pc-connected" data-on={live ? "1" : "0"}>
               <i className={`inline-block size-1.5 rounded-full ${live ? "bg-[#22C55E]" : "bg-[#D1D5DB]"}`} />
               <span id="pc-connected-copy">{connectedCopy}</span>
@@ -90,6 +141,85 @@ export function RightPane({
         >
           ⋯
         </button>
+      </div>
+
+      <div className="flex flex-col gap-1.5 px-3 pb-2" id="computers" role="list" aria-label="Computers">
+        {computers.map((row) => {
+          const editing = editingId === row.id
+          return (
+            <div
+              key={row.id}
+              role="listitem"
+              data-computer={row.id}
+              data-hostname={row.hostname}
+              data-on={row.id === computerKind ? "1" : "0"}
+              className="flex flex-wrap items-center gap-2 rounded-xl border border-[#E6E8EE] bg-[#F9FAFB] px-2 py-1.5 data-[on=1]:border-[#BFDBFE] data-[on=1]:bg-[#E8F1FF]"
+            >
+              {editing ? (
+                <form
+                  className="flex w-full flex-wrap items-center gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void commitRename(row.id)
+                  }}
+                >
+                  <input
+                    aria-label={`Name for ${row.hostname}`}
+                    value={draft}
+                    maxLength={64}
+                    autoFocus
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault()
+                        setEditingId(null)
+                        setRenameError("")
+                      }
+                    }}
+                    className="h-8 min-w-0 flex-1 rounded-lg border border-[#E6E8EE] bg-white px-2 text-sm text-[#111827]"
+                  />
+                  <button type="submit" className="h-8 rounded-full bg-[#111827] px-2.5 text-xs text-white">
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="h-8 rounded-full border border-[#E6E8EE] bg-white px-2.5 text-xs"
+                    onClick={() => {
+                      setEditingId(null)
+                      setRenameError("")
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  {renameError ? (
+                    <p role="alert" className="m-0 basis-full text-xs text-[#B91C1C]">
+                      {renameError}
+                    </p>
+                  ) : null}
+                </form>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
+                    onClick={() => onSelectComputer(row.id)}
+                  >
+                    <strong className="block truncate text-sm text-[#111827]">{row.label}</strong>
+                    <span className="block truncate text-[11px] text-[#6B7280]">{row.hostname}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 rounded-full border border-[#E6E8EE] bg-white px-2 text-[11px] text-[#374151]"
+                    aria-label={`Rename ${row.label}`}
+                    onClick={() => beginRename(row.id)}
+                  >
+                    Rename
+                  </button>
+                </>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap gap-1.5 px-3 pb-2" role="group" aria-label="Computer or chat only">
