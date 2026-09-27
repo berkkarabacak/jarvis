@@ -14,6 +14,7 @@ from app.jarvis.gateway import get_gateway
 from app.jarvis.settings_store import (
     get_approve_countdown_sec,
     get_computer_kind,
+    get_computer_names,
     get_daily_budget_usd,
     get_look_speed,
     get_model,
@@ -54,6 +55,7 @@ PUBLIC_SAFE_SETTINGS_FIELDS = frozenset(
         "permission_profile",
         "talk_speed",
         "talk_mode",
+        "computer_names",
     }
 )
 
@@ -78,6 +80,7 @@ class SettingsUpdateBody(BaseModel):
     model_speed: str | None = Field(default=None, max_length=32)
     approve_countdown_sec: int | None = Field(default=None, ge=1, le=120)
     computer_kind: str | None = Field(default=None, max_length=32)
+    computer_names: dict[str, str] | None = None
 
 
 def _require_jarvis_write_auth(
@@ -194,6 +197,7 @@ def _snapshot() -> dict[str, Any]:
         "model_speed": get_model_speed(),
         "approve_countdown_sec": get_approve_countdown_sec(),
         "computer_kind": get_computer_kind(),
+        "computer_names": get_computer_names(),
     }
 
 

@@ -66,6 +66,32 @@ export function persistTalkMode(talkMode: string): void {
   }).catch(() => {})
 }
 
+export function persistComputerKind(kind: string): void {
+  fetch(apiUrl(SETTINGS_API_PATH), {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ computer_kind: kind === "android" ? "android" : "linux" }),
+  }).catch(() => {})
+}
+
+export async function renameComputer(id: string, displayName: string): Promise<string | null> {
+  const names: Record<string, string> = {}
+  names[id] = displayName
+  const res = await fetch(apiUrl(SETTINGS_API_PATH), {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ computer_names: names }),
+  })
+  const data = (await readJson(res)) as { detail?: unknown }
+  if (!res.ok) {
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail
+    return "Could not rename"
+  }
+  return null
+}
+
 export async function fetchRoutines(): Promise<unknown> {
   const res = await fetch(apiUrl(ROUTINES_PATH), { credentials: "include" })
   if (!res.ok) return {}

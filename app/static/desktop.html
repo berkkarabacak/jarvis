@@ -557,6 +557,59 @@
       display: inline-block;
     }
     .pc-connected[data-on="0"] i { background: #9CA3AF; }
+    .pc-name {
+      display: block;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .computers {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 0 16px 8px;
+    }
+    .computer-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 6px 8px;
+      background: #fff;
+    }
+    .computer-row[data-on="1"] {
+      border-color: #BFDBFE;
+      background: #E8F1FF;
+    }
+    .computer-main {
+      flex: 1;
+      min-width: 0;
+      background: none;
+      border: 0;
+      text-align: left;
+      padding: 0;
+      cursor: pointer;
+      color: inherit;
+    }
+    .computer-main strong { display: block; font-size: 13px; }
+    .computer-main .hostname { display: block; font-size: 11px; color: var(--muted); }
+    .rename-form { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; align-items: center; }
+    .rename-form input {
+      flex: 1;
+      min-width: 8rem;
+      height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 8px;
+    }
+    .rename-error { color: #B91C1C; font-size: 12px; margin: 0; flex-basis: 100%; }
     .pills {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -965,6 +1018,7 @@
           </span>
           <div>
             <h2>Live Computer</h2>
+            <button type="button" class="pc-name" id="pc-name" aria-label="Rename computer" hidden></button>
             <div class="pc-connected" id="pc-connected" data-on="0"><i></i><span id="pc-connected-copy">Checking…</span></div>
           </div>
         </div>
@@ -975,6 +1029,7 @@
         </button>
         <button type="button" class="icon-btn" id="hide-right" aria-label="Hide computer">⋯</button>
       </div>
+      <div class="computers" id="computers" role="list" aria-label="Computers"></div>
       <div class="pills" role="group" aria-label="Computer or chat only">
         <button type="button" class="text-btn" id="mode-computer" data-talk-mode="computer">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2" stroke="currentColor" stroke-width="1.7"/></svg>
@@ -2060,15 +2115,187 @@
         return parts[parts.length - 1] || "Jarvis";
       }
 
+      var computerRows = [
+        { id: "linux", hostname: "jarvis-computer", label: "Linux" },
+        { id: "android", hostname: "jarvis-android", label: "Android" }
+      ];
+      var selectedComputerKind = "linux";
+      var renamingComputer = false;
+      var computerList = document.getElementById("computers");
+      var pcName = document.getElementById("pc-name");
+
+      function computersFromSettings(data) {
+        var src = data && typeof data === "object" ? data : {};
+        var rows = Array.isArray(src.computers) ? src.computers : (Array.isArray(src.computer_kinds) ? src.computer_kinds : []);
+        if (!rows.length) return computerRows.slice();
+        var out = [];
+        rows.forEach(function (row) {
+          if (!row || (row.id !== "linux" && row.id !== "android")) return;
+          var label = String(row.display_name || row.label || (row.id === "android" ? "Android" : "Linux")).trim() || "Computer";
+          out.push({
+            id: row.id,
+            hostname: String(row.hostname || (row.id === "android" ? "jarvis-android" : "jarvis-computer")),
+            label: label
+          });
+        });
+        return out.length ? out : computerRows.slice();
+      }
+
+      function cleanComputerName(value) {
+        var name = String(value || "").replace(/\s+/g, " ").trim();
+        if (!name) return { ok: false, error: "Name cannot be empty." };
+        if (name.length > 64) return { ok: false, error: "Name is too long." };
+        return { ok: true, name: name };
+      }
+
+      function selectedComputerRow() {
+        var found = null;
+        computerRows.forEach(function (row) {
+          if (row.id === selectedComputerKind) found = row;
+        });
+        return found || computerRows[0];
+      }
+
+      function beginComputerRename(id) {
+        renamingComputer = true;
+        paintComputers(id);
+      }
+
+      function paintComputers(editingId) {
+        if (pcName) {
+          var current = selectedComputerRow();
+          pcName.hidden = !current;
+          pcName.textContent = (current && current.label) || "";
+          if (current) pcName.setAttribute("aria-label", "Rename " + pcName.textContent);
+        }
+        if (!computerList || renamingComputer && !editingId && computerList.querySelector(".rename-form")) return;
+        computerList.textContent = "";
+        computerRows.forEach(function (row) {
+          var item = document.createElement("div");
+          item.className = "computer-row";
+          item.setAttribute("role", "listitem");
+          item.dataset.computer = row.id;
+          item.dataset.hostname = row.hostname;
+          item.dataset.on = row.id === selectedComputerKind ? "1" : "0";
+          if (editingId === row.id) {
+            var form = document.createElement("form");
+            form.className = "rename-form";
+            var input = document.createElement("input");
+            input.type = "text";
+            input.value = row.label;
+            input.maxLength = 64;
+            input.setAttribute("aria-label", "Name for " + row.hostname);
+            var saveBtn = document.createElement("button");
+            saveBtn.type = "submit";
+            saveBtn.className = "text-btn";
+            saveBtn.textContent = "Save";
+            var cancelBtn = document.createElement("button");
+            cancelBtn.type = "button";
+            cancelBtn.className = "text-btn";
+            cancelBtn.textContent = "Cancel";
+            var err = document.createElement("p");
+            err.className = "rename-error";
+            err.hidden = true;
+            form.appendChild(input);
+            form.appendChild(saveBtn);
+            form.appendChild(cancelBtn);
+            form.appendChild(err);
+            cancelBtn.addEventListener("click", function () {
+              renamingComputer = false;
+              paintComputers();
+            });
+            form.addEventListener("submit", function (e) {
+              e.preventDefault();
+              var parsed = cleanComputerName(input.value);
+              if (!parsed.ok) {
+                err.hidden = false;
+                err.textContent = parsed.error;
+                return;
+              }
+              var names = {};
+              names[row.id] = parsed.name;
+              fetch(SETTINGS_API_PATH, {
+                method: "PUT",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ computer_names: names })
+              }).then(function (r) {
+                return r.json().then(function (body) { return { ok: r.ok, body: body }; });
+              }).then(function (res) {
+                if (!res.ok) {
+                  err.hidden = false;
+                  err.textContent = (res.body && res.body.detail) || "Could not rename";
+                  return;
+                }
+                renamingComputer = false;
+                loadTalkMode();
+              }).catch(function () {
+                err.hidden = false;
+                err.textContent = "Could not rename";
+              });
+            });
+            item.appendChild(form);
+            computerList.appendChild(item);
+            input.focus();
+            input.select();
+            return;
+          }
+          var main = document.createElement("button");
+          main.type = "button";
+          main.className = "computer-main";
+          var strong = document.createElement("strong");
+          strong.textContent = row.label;
+          var host = document.createElement("span");
+          host.className = "hostname";
+          host.textContent = row.hostname;
+          main.appendChild(strong);
+          main.appendChild(host);
+          main.addEventListener("click", function () { selectComputer(row.id); });
+          var rename = document.createElement("button");
+          rename.type = "button";
+          rename.className = "text-btn";
+          rename.textContent = "Rename";
+          rename.setAttribute("aria-label", "Rename " + row.label);
+          rename.addEventListener("click", function () { beginComputerRename(row.id); });
+          item.appendChild(main);
+          item.appendChild(rename);
+          computerList.appendChild(item);
+        });
+      }
+
+      function selectComputer(id) {
+        selectedComputerKind = id === "android" ? "android" : "linux";
+        paintComputers();
+        fetch(SETTINGS_API_PATH, {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ computer_kind: selectedComputerKind })
+        }).catch(function () {});
+      }
+
       function loadTalkMode() {
         fetch(SETTINGS_API_PATH, { credentials: "same-origin" })
           .then(function (r) { return r.ok ? r.json() : {}; })
           .then(function (data) {
             applyTalkMode(data && data.talk_mode);
             if (modelLabel) modelLabel.textContent = friendlyModel(data);
+            if (!renamingComputer) {
+              computerRows = computersFromSettings(data);
+              var kind = String((data && data.computer_kind) || "linux").toLowerCase();
+              selectedComputerKind = kind === "android" ? "android" : "linux";
+              paintComputers();
+            }
           })
-          .catch(function () { applyTalkMode("computer"); });
+          .catch(function () {
+            applyTalkMode("computer");
+            if (!renamingComputer) paintComputers();
+          });
       }
+      if (pcName) pcName.addEventListener("click", function () {
+        var row = selectedComputerRow();
+        if (row) beginComputerRename(row.id);
+      });
       loadTalkMode();
       window.addEventListener("focus", loadTalkMode);
       setInterval(function () {

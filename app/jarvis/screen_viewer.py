@@ -282,6 +282,15 @@ def screen_status() -> dict[str, Any]:
         body["status_code"] = probe.get("status_code")
     if probe.get("reason"):
         body["reason"] = probe.get("reason")
+    try:
+        from app.jarvis.settings_store import computer_display_name, computer_hostname
+
+        body["label"] = computer_display_name(kind)
+        body["display_name"] = body["label"]
+        body["hostname"] = computer_hostname(kind)
+    except Exception:
+        body.setdefault("label", "Android" if kind == "android" else "Linux")
+        body.setdefault("display_name", body["label"])
     return body
 
 

@@ -279,6 +279,25 @@
     }
     #iu-settings-sheet .iu-set-profile strong { display: block; margin-bottom: 2px; }
     #iu-settings-sheet .iu-set-profile span { font-size: 11px; color: rgba(255,255,255,.68); }
+    #iu-settings-sheet .iu-set-computer {
+      display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; cursor: default;
+    }
+    #iu-settings-sheet .iu-set-computer-main {
+      flex: 1; min-width: 0; background: rgba(255,255,255,0); border: 0; color: inherit;
+      text-align: left; padding: 0; cursor: pointer; font: inherit;
+    }
+    #iu-settings-sheet .iu-set-rename {
+      flex: none; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,0);
+      color: inherit; border-radius: 8px; padding: 4px 8px; cursor: pointer;
+      font: 600 11px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    #iu-settings-sheet .iu-set-rename-form {
+      flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    #iu-settings-sheet .iu-set-rename-form input { flex: 1; min-width: 8rem; }
+    #iu-settings-sheet .iu-set-rename-error {
+      flex-basis: 100%; color: #fecaca; font-size: 11px;
+    }
     #iu-settings-sheet .iu-set-secrets, #iu-settings-sheet .iu-set-audit {
       font-size: 11px; color: rgba(255,255,255,.75);
       font-variant-numeric: tabular-nums;
@@ -914,23 +933,76 @@
           { id: "linux", label: "Linux", allows: "The usual desktop. Chrome, notepad, files." },
           { id: "android", label: "Android", allows: "A phone-shaped box he can tap. Same Jarvis, different computer." }
         ];
+        function cleanComputerName(value) {
+          var name = String(value || "").replace(/\s+/g, " ").trim();
+          if (!name) return { ok: false, error: "Name cannot be empty." };
+          if (name.length > 64) return { ok: false, error: "Name is too long." };
+          return { ok: true, name: name };
+        }
+        function beginComputerRename(row, id, current) {
+          if (row.querySelector(".iu-set-rename-form")) return;
+          var form = document.createElement("form");
+          form.className = "iu-set-rename-form";
+          var input = document.createElement("input");
+          input.type = "text";
+          input.value = current || "";
+          input.maxLength = 64;
+          input.setAttribute("aria-label", "Computer name");
+          var saveBtn = document.createElement("button");
+          saveBtn.type = "submit";
+          saveBtn.className = "iu-set-rename";
+          saveBtn.textContent = "Save";
+          var cancelBtn = document.createElement("button");
+          cancelBtn.type = "button";
+          cancelBtn.className = "iu-set-rename";
+          cancelBtn.textContent = "Cancel";
+          var err = document.createElement("div");
+          err.className = "iu-set-rename-error";
+          form.appendChild(input);
+          form.appendChild(saveBtn);
+          form.appendChild(cancelBtn);
+          form.appendChild(err);
+          cancelBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            form.remove();
+          });
+          form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            var parsed = cleanComputerName(input.value);
+            if (!parsed.ok) {
+              err.textContent = parsed.error;
+              return;
+            }
+            var names = {};
+            names[id] = parsed.name;
+            persistJarvis({ computer_names: names }).then(function (saved) {
+              if (!saved) err.textContent = "Could not rename";
+            });
+          });
+          row.appendChild(form);
+          input.focus();
+          input.select();
+        }
         function renderComputer(list, current) {
           while (computerBox.firstChild) computerBox.removeChild(computerBox.firstChild);
           selectedComputer = current === "android" ? "android" : "linux";
           var choices = (list && list.length) ? list : COMPUTER_CHOICES;
           choices.forEach(function (p) {
-            var b = document.createElement("button");
-            b.type = "button";
-            b.className = "iu-set-profile";
-            b.dataset.id = p.id;
-            b.dataset.on = p.id === selectedComputer ? "1" : "0";
+            var row = document.createElement("div");
+            row.className = "iu-set-profile iu-set-computer";
+            row.dataset.id = p.id;
+            row.dataset.on = p.id === selectedComputer ? "1" : "0";
+            var main = document.createElement("button");
+            main.type = "button";
+            main.className = "iu-set-computer-main";
             var strong = document.createElement("strong");
-            strong.textContent = p.label || p.id;
+            strong.className = "computer-name";
+            strong.textContent = p.display_name || p.label || p.id;
             var span = document.createElement("span");
             span.textContent = p.allows || "";
-            b.appendChild(strong);
-            b.appendChild(span);
-            b.addEventListener("click", function (e) {
+            main.appendChild(strong);
+            main.appendChild(span);
+            main.addEventListener("click", function (e) {
               e.preventDefault();
               e.stopPropagation();
               selectedComputer = p.id;
@@ -939,7 +1011,19 @@
               });
               persistJarvis({ computer_kind: selectedComputer });
             });
-            computerBox.appendChild(b);
+            var rename = document.createElement("button");
+            rename.type = "button";
+            rename.className = "iu-set-rename";
+            rename.textContent = "Rename";
+            rename.setAttribute("aria-label", "Rename " + strong.textContent);
+            rename.addEventListener("click", function (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              beginComputerRename(row, p.id, strong.textContent || "");
+            });
+            row.appendChild(main);
+            row.appendChild(rename);
+            computerBox.appendChild(row);
           });
         }
         renderComputer(COMPUTER_CHOICES, "linux");

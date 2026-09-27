@@ -388,3 +388,77 @@ export function routinesFromPayload(payload: unknown): { id: string; name: strin
   }
   return items
 }
+
+export type ComputerMeta = {
+  id: string
+  hostname: string
+  label: string
+  display_name: string
+  allows?: string
+}
+
+export const COMPUTER_NAME_MAX = 64
+
+export const DEFAULT_COMPUTERS: ComputerMeta[] = [
+  {
+    id: "linux",
+    hostname: "jarvis-computer",
+    label: "Linux",
+    display_name: "Linux",
+    allows: "The usual desktop. Chrome, notepad, files.",
+  },
+  {
+    id: "android",
+    hostname: "jarvis-android",
+    label: "Android",
+    display_name: "Android",
+    allows: "A phone-shaped box he can tap. Same Jarvis, different computer.",
+  },
+]
+
+export function normalizeComputerName(
+  value: unknown
+): { ok: true; name: string } | { ok: false; error: string } {
+  const name = String(value ?? "").replace(/\s+/g, " ").trim()
+  if (!name) return { ok: false, error: "Name cannot be empty." }
+  if (name.length > COMPUTER_NAME_MAX) return { ok: false, error: "Name is too long." }
+  for (const ch of name) {
+    const code = ch.codePointAt(0) || 0
+    if (code < 32 || code === 127) {
+      return { ok: false, error: "That name has a character Jarvis can't use." }
+    }
+  }
+  return { ok: true, name }
+}
+
+export function computersFromSettings(data: unknown): ComputerMeta[] {
+  const src = data && typeof data === "object" ? (data as Record<string, unknown>) : {}
+  const rows = Array.isArray(src.computers)
+    ? src.computers
+    : Array.isArray(src.computer_kinds)
+      ? src.computer_kinds
+      : []
+  if (!rows.length) return DEFAULT_COMPUTERS.map((row) => ({ ...row }))
+  const out: ComputerMeta[] = []
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object") continue
+    const row = raw as Record<string, unknown>
+    const id = String(row.id || "").trim()
+    if (id !== "linux" && id !== "android") continue
+    const fallback = DEFAULT_COMPUTERS.find((item) => item.id === id)
+    const label = String(row.display_name || row.label || fallback?.label || "Computer").trim() || "Computer"
+    out.push({
+      id,
+      hostname: String(row.hostname || fallback?.hostname || id),
+      label,
+      display_name: label,
+      allows: typeof row.allows === "string" ? row.allows : fallback?.allows,
+    })
+  }
+  return out.length ? out : DEFAULT_COMPUTERS.map((row) => ({ ...row }))
+}
+
+export function selectedComputerLabel(computers: ComputerMeta[], kind: unknown): string {
+  const id = String(kind || "").toLowerCase() === "android" ? "android" : "linux"
+  return computers.find((row) => row.id === id)?.label || "Computer"
+}

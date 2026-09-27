@@ -33,6 +33,9 @@ after ``load()``; ``null`` means “unset / fall back to env or default”:
 * ``computer_kind`` — linux | android | null  (ORCH-461; which box Jarvis
       drives. Default linux. Android is a second machine, not the Play
       Store phone app.)
+* ``computer_names`` — {linux|android: display name}. The id (and the
+      container hostname) stay the technical key. Humans see the display
+      name. Unset keeps the default label (Linux / Android).
 * ``talk_speed`` — slow | normal | quick | null  (public Talk playback rate)
 * ``talk_mode`` — computer | terminal | null  (Talk interaction mode.
       Computer may use the screen. Terminal is chat/CLI only, no PC.)
@@ -49,6 +52,7 @@ import hashlib
 import json
 import os
 import threading
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -190,6 +194,12 @@ ALLOWED_MODEL_SPEEDS = frozenset({"fast", "balanced", "careful"})
 # phone-shaped box he can tap. Not the Play Store client under android/.
 ALLOWED_COMPUTER_KINDS = frozenset({"linux", "android"})
 DEFAULT_COMPUTER_KIND = "linux"
+# Stable technical names. Display names never replace these keys.
+COMPUTER_HOSTNAMES: dict[str, str] = {
+    "linux": "jarvis-computer",
+    "android": "jarvis-android",
+}
+COMPUTER_NAME_MAX = 64
 ALLOWED_TALK_SPEEDS = frozenset({"slow", "normal", "quick"})
 DEFAULT_TALK_SPEED = "normal"
 ALLOWED_TALK_MODES = frozenset({"computer", "terminal"})
@@ -252,6 +262,7 @@ def _empty() -> dict[str, Any]:
         "model_speed": None,
         "approve_countdown_sec": None,
         "computer_kind": None,
+        "computer_names": {},
         "talk_speed": None,
         "talk_mode": None,
         "spend": _empty_spend(),
@@ -370,6 +381,7 @@ def _read_file(path: Path) -> dict[str, Any]:
         if key in raw:
             out[key] = _coerce_int(raw[key])
     out["spend"] = _normalize_spend(raw.get("spend"))
+    out["computer_names"] = _normalize_stored_computer_names(raw.get("computer_names"))
     return out
 
 
@@ -417,6 +429,9 @@ def save(updates: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
                 continue
             if key == "spend":
                 # Runtime ledger — use record_spend(), not a user PUT.
+                continue
+            if key == "computer_names":
+                cur[key] = _apply_computer_name_updates(cur.get(key), updates[key])
                 continue
             val = updates[key]
             if key in _BOOL_KEYS:
@@ -777,6 +792,110 @@ def get_computer_kind(root: Path | None = None, env: dict[str, str] | None = Non
     return env_kind or DEFAULT_COMPUTER_KIND
 
 
+def computer_id_from_key(raw: str | None) -> str | None:
+    """Map a stable id or hostname to the computer id. Unknown keys are None."""
+    s = (raw or "").strip().lower()
+    if s in ALLOWED_COMPUTER_KINDS:
+        return s
+    for cid, host in COMPUTER_HOSTNAMES.items():
+        if s == host:
+            return cid
+    return None
+
+
+def computer_hostname(kind: str | None) -> str:
+    cid = computer_id_from_key(kind) or ""
+    return COMPUTER_HOSTNAMES.get(cid, "")
+
+
+def normalize_computer_display_name(value: str) -> str:
+    """User-facing computer name. Empty and control characters are rejected.
+
+    Letters, numbers, spaces, and the punctuation people put in PC names
+    (apostrophes, hyphens, dots) are allowed. The machine id is unchanged.
+    """
+    candidate = " ".join(str(value or "").strip().split())
+    if not candidate:
+        raise ValueError("display name cannot be empty")
+    if len(candidate) > COMPUTER_NAME_MAX:
+        raise ValueError(
+            f"display name must be {COMPUTER_NAME_MAX} characters or fewer"
+        )
+    if any(unicodedata.category(ch).startswith("C") for ch in candidate):
+        raise ValueError("display name contains unsupported characters")
+    return candidate
+
+
+def _normalize_stored_computer_names(raw: Any) -> dict[str, str]:
+    """Drop corrupt stored names so a bad file cannot hide the computer list."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, val in raw.items():
+        cid = computer_id_from_key(str(key))
+        if not cid or not isinstance(val, str):
+            continue
+        try:
+            out[cid] = normalize_computer_display_name(val)
+        except ValueError:
+            continue
+    return out
+
+
+def _apply_computer_name_updates(current: Any, updates: Any) -> dict[str, str]:
+    """Merge one or more renames. Other computers keep their names."""
+    base = _normalize_stored_computer_names(current)
+    if not isinstance(updates, dict) or not updates:
+        raise ValueError("computer_names must name a computer")
+    for key, val in updates.items():
+        cid = computer_id_from_key(str(key))
+        if not cid:
+            raise ValueError("unknown computer")
+        if not isinstance(val, str):
+            raise ValueError("display name must be text")
+        base[cid] = normalize_computer_display_name(val)
+    return base
+
+
+def get_computer_names(root: Path | None = None) -> dict[str, str]:
+    """Custom display names only. Missing ids still use the default label."""
+    return _normalize_stored_computer_names(load(root).get("computer_names"))
+
+
+def computer_display_name(kind: str | None, root: Path | None = None) -> str:
+    """Name humans see. Custom name, else Linux / Android, else Computer."""
+    cid = computer_id_from_key(kind)
+    if not cid:
+        return "Computer"
+    custom = get_computer_names(root).get(cid)
+    if custom:
+        return custom
+    blurb = COMPUTER_KIND_BLURBS.get(cid) or {}
+    return str(blurb.get("label") or "Computer")
+
+
+def list_computers(root: Path | None = None) -> list[dict[str, Any]]:
+    """Registered computers. ``id`` / ``hostname`` are stable; ``label`` is not."""
+    names = get_computer_names(root)
+    rows: list[dict[str, Any]] = []
+    for cid in ("linux", "android"):
+        blurb = COMPUTER_KIND_BLURBS[cid]
+        custom = names.get(cid) or ""
+        label = custom or blurb["label"]
+        rows.append(
+            {
+                "id": cid,
+                "hostname": COMPUTER_HOSTNAMES[cid],
+                "display_name": label,
+                "label": label,
+                "default_label": blurb["label"],
+                "allows": blurb["allows"],
+                "renamed": bool(custom),
+            }
+        )
+    return rows
+
+
 def get_daily_budget_usd(root: Path | None = None) -> float:
     val = _coerce_float(load(root).get("daily_budget_usd"))
     if val is not None and val > 0:
@@ -926,6 +1045,8 @@ def public_view(root: Path | None = None) -> dict[str, Any]:
         "approve_countdown_min": APPROVE_COUNTDOWN_MIN,
         "approve_countdown_max": APPROVE_COUNTDOWN_MAX,
         "computer_kind": get_computer_kind(root),
+        "computer_names": get_computer_names(root),
+        "computers": list_computers(root),
         "talk_speed": get_talk_speed(root),
         "talk_mode": get_talk_mode(root),
         "talk_modes": [
@@ -938,11 +1059,13 @@ def public_view(root: Path | None = None) -> dict[str, Any]:
         ],
         "computer_kinds": [
             {
-                "id": kid,
-                "label": COMPUTER_KIND_BLURBS[kid]["label"],
-                "allows": COMPUTER_KIND_BLURBS[kid]["allows"],
+                "id": row["id"],
+                "label": row["label"],
+                "allows": row["allows"],
+                "hostname": row["hostname"],
+                "display_name": row["display_name"],
             }
-            for kid in ("linux", "android")
+            for row in list_computers(root)
         ],
         "model_speeds": [
             {"id": "fast", "label": "Fast", "allows": "Pick quicker models when I can."},
@@ -1022,6 +1145,10 @@ def validate_update(body: dict[str, Any], *, require_unlock: bool = True) -> dic
         if not parsed:
             raise ValueError("computer_kind must be linux or android")
         updates["computer_kind"] = parsed
+    if "computer_names" in body and body["computer_names"] is not None:
+        updates["computer_names"] = _apply_computer_name_updates(
+            {}, body["computer_names"]
+        )
     if "talk_speed" in body and body["talk_speed"] is not None:
         parsed = _normalize_talk_speed(str(body["talk_speed"]))
         if not parsed:

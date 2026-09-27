@@ -15,11 +15,13 @@ import {
   filterNavItems,
   friendlyModel,
   helpersFromInventory,
+  computersFromSettings,
   liveComputerView,
   mergeHistory,
   normalizeTalkMode,
   parseAskReply,
   routinesFromPayload,
+  type ComputerMeta,
   type TalkMode,
   type TalkTurn,
 } from "@/lib/jarvis"
@@ -29,7 +31,9 @@ import {
   fetchRoutines,
   fetchSettings,
   fetchTalkLast,
+  persistComputerKind,
   persistTalkMode,
+  renameComputer,
   playSpeak,
   postTalkLog,
   startComputer,
@@ -68,6 +72,8 @@ export function Shell() {
   const [routineNote, setRoutineNote] = useState("")
   const [menuOpen, setMenuOpen] = useState(false)
   const [notice, setNotice] = useState("Jarvis is ready")
+  const [computers, setComputers] = useState<ComputerMeta[]>([])
+  const [computerKind, setComputerKind] = useState("linux")
   const sendingRef = useRef(false)
   const engineHeard = useRef(false)
   const recRef = useRef<{ stop: () => void } | null>(null)
@@ -141,6 +147,9 @@ export function Shell() {
     const data = await fetchSettings()
     applyMode(data.talk_mode)
     setModelLabel(friendlyModel(data))
+    const kind = String(data.computer_kind || "linux").toLowerCase()
+    setComputerKind(kind === "android" ? "android" : "linux")
+    setComputers(computersFromSettings(data))
   }, [applyMode])
 
   const loadPc = useCallback(async () => {
@@ -535,6 +544,18 @@ export function Shell() {
           onHideRight={() => savePanes({ left: panes.left, right: false })}
           onAddRoutine={() => setRoutineNote(LABELS.addRoutineSoon)}
           onRoutineClick={() => setRoutineNote("This routine is on the schedule. Changing it comes later.")}
+          computers={computers}
+          computerKind={computerKind}
+          onSelectComputer={(id) => {
+            const next = id === "android" ? "android" : "linux"
+            setComputerKind(next)
+            persistComputerKind(next)
+          }}
+          onRenameComputer={async (id, name) => {
+            const err = await renameComputer(id, name)
+            if (!err) await loadSettings()
+            return err
+          }}
         />
       )}
     </div>
