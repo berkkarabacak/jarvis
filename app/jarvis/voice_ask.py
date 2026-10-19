@@ -25,9 +25,12 @@ from app.jarvis.gateway import get_gateway, model_view
 from app.jarvis.realtime import openrouter_api_key
 from app.jarvis.overlay import (
     RESTORE_DISMISS_CLICK,
+    ask_wants_car,
     ask_wants_cart,
+    ask_wants_flight,
     ask_wants_hotel,
     ask_wants_payment,
+    ask_wants_restaurant,
     ask_wants_shop,
     ask_wants_shopping_compare,
     continue_web_search,
@@ -38,6 +41,10 @@ from app.jarvis.overlay import (
     hotel_travel_url,
     hotel_typed_query,
     look_has_blocking_overlay,
+    look_is_consent_page,
+    look_task_kind,
+    task_option_lines,
+    task_search_url,
     cart_option_lines,
     look_has_cart_results,
     look_has_hotel_results,
@@ -2448,7 +2455,10 @@ def _speak_web_job(
         reply = "I stopped. I will not pay or check out."
     elif look_is_pay_control(blob, asked) and "hotel" not in blob.lower():
         reply = "I stopped. I will not pay or check out."
-    elif look_has_hotel_results(looked):
+    elif look_has_hotel_results(looked) and (
+        ask_wants_hotel(asked)
+        or not (ask_wants_restaurant(asked) or ask_wants_car(asked) or ask_wants_flight(asked))
+    ):
         options = " ".join(hotel_option_lines(looked)).strip()
         if options and _usable_tell_text(options):
             reply = options
@@ -2456,6 +2466,20 @@ def _speak_web_job(
             reply = spoken
         else:
             reply = spoken if spoken else _WEB_STUCK
+    elif ask_wants_restaurant(asked) or ask_wants_car(asked) or ask_wants_flight(asked):
+        # Speak this task's priced lines. A leftover hotel list is not dinner.
+        if look_has_hotel_results(looked) and look_task_kind(looked) == "hotel":
+            reply = _WEB_STUCK
+        else:
+            options = " ".join(task_option_lines(looked)).strip()
+            if options and _usable_tell_text(options):
+                reply = options
+            elif usable and not look_is_consent_page(looked):
+                reply = spoken
+            elif looked.get("_cookie_stuck") or look_is_consent_page(looked):
+                reply = _COOKIE_STUCK
+            else:
+                reply = spoken if spoken and usable else _WEB_STUCK
     elif look_has_cart_results(looked):
         options = " ".join(cart_option_lines(looked)).strip()
         if options and _usable_tell_text(options):
@@ -3492,6 +3516,7 @@ def _tell_from_opened_site(asked: str, opened: dict[str, Any]) -> dict[str, Any]
         # click+type, then speak. Never return a homepage caption here.
         looked = _continue_web_job(asked, looked, tools)
         looked = _leave_hotel_serp_if_needed(asked, looked, tools)
+        _release_stuck_consent(looked)
         return _speak_looked(looked, tools, opened=True, asked=asked)
     blob = _look_blob(looked)
     if _looks_like_ssl_or_error_page(blob) and looked.get("ok"):
@@ -3539,6 +3564,7 @@ def _tell_from_current_screen(asked: str) -> dict[str, Any]:
     if wants_web_job(asked):
         looked = _continue_web_job(asked, looked, tools)
         looked = _leave_hotel_serp_if_needed(asked, looked, tools)
+        _release_stuck_consent(looked)
         return _speak_looked(looked, tools, opened=False, asked=asked)
     if wants_news_tell(asked) or look_is_news_page(looked):
         return _finish_news_tell(
@@ -4537,6 +4563,36 @@ def _hire_children_now(asked: str) -> dict[str, Any] | None:
     }
 
 
+def _stuck_screen_blocks_next_job(prior: dict[str, Any], asked: str) -> bool:
+    """True when the live screen must be closed before this ask runs.
+
+    A Google/Booking consent wall stays up and the next ask then has
+    nothing to click. A hotel tab is the wrong computer for dinner,
+    a rental car, or a flight.
+    """
+    if not prior:
+        return False
+    if look_is_consent_page(prior):
+        return True
+    from app.jarvis.overlay import ask_topic
+
+    kind = ask_topic(asked)
+    if kind not in {"hotel", "restaurant", "car", "flight"}:
+        return False
+    seen = look_task_kind(prior)
+    return bool(seen and seen != kind)
+
+
+def _release_stuck_consent(looked: dict[str, Any]) -> None:
+    """Close Chrome when the job ends still on a consent wall."""
+    if not looked.get("_cookie_stuck") and not look_is_consent_page(looked):
+        return
+    try:
+        _close_windows_now()
+    except Exception:
+        pass
+
+
 def _open_site_now(asked: str) -> dict[str, Any] | None:
     """Use the PC now: open a named URL, search, look, or click. Skip the agent.
 
@@ -4608,7 +4664,12 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
             prior = last_look() or {}
         except Exception:
             prior = {}
-        if look_is_leftover_for_ask(prior, asked) or look_is_http_error(prior):
+        # A consent wall or the previous task's tab is not a place to continue.
+        # Close it and open THIS task. Weather-vs-shop leftovers still reuse
+        # the window (new tab) — that path is not a stuck consent page.
+        if not _stuck_screen_blocks_next_job(prior, asked) and (
+            look_is_leftover_for_ask(prior, asked) or look_is_http_error(prior)
+        ):
             return _with_prior_tools(_tell_from_current_screen(asked), prior_tools)
     if (
         wants_look_at_screen(asked)
@@ -4631,6 +4692,15 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
             return _with_prior_tools(_tell_from_current_news(asked), prior_tools)
 
     url = named
+    # "where to book (Booking.com)" is a hint, not the page to open.
+    # A hotel / restaurant / car / flight ask gets that task's search URL.
+    if wants_web_job(asked) and (
+        ask_wants_hotel(asked)
+        or ask_wants_restaurant(asked)
+        or ask_wants_car(asked)
+        or ask_wants_flight(asked)
+    ):
+        url = task_search_url(asked)
     if not url and wants_news_search(asked):
         url = news_homepage_from_ask(asked)
     if not url:
@@ -4639,9 +4709,7 @@ def _open_site_now(asked: str) -> dict[str, Any] | None:
         except Exception:
             wants_web_job = None
         if wants_web_job and wants_web_job(asked):
-            if ask_wants_hotel(asked):
-                url = hotel_travel_url(asked)
-            elif ask_wants_cart(asked) or (
+            if ask_wants_cart(asked) or (
                 ask_wants_shop(asked) and shop_home_url(asked)
             ):
                 url = shop_home_url(asked) or "https://www.coolblue.nl/"
@@ -4790,6 +4858,16 @@ async def run_voice_ask(text: str) -> dict[str, Any]:
         max_tool_rounds=rounds,
     )
     if agent is None:
+        # A stuck consent page must not stay on the Live Computer when
+        # the model cannot start. Close it so the next ask is not blocked.
+        if sys.platform != "win32":
+            try:
+                from app.jarvis.capture import last_look
+
+                if look_is_consent_page(last_look() or {}):
+                    _close_windows_now()
+            except Exception:
+                pass
         return {
             "ok": False,
             "reply": "Jarvis is not ready to answer yet.",
