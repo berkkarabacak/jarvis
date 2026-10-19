@@ -70,6 +70,24 @@ AMAZON_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
     AMAZON_COOKIE_ACCEPT_CLICK,
     AMAZON_COOKIE_REJECT_CLICK,
 )
+# Google EU consent ("Before you continue" / "Bevor Sie zu Google
+# weitergehen") on 1280x720. Two full-width pills near the bottom of
+# the card: Accept all on the right, Reject all on the left. Coolblue
+# card pixels miss both. Language does not move the buttons.
+GOOGLE_CONSENT_ACCEPT_CLICK = (800, 640)
+GOOGLE_CONSENT_REJECT_CLICK = (480, 640)
+GOOGLE_CONSENT_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
+    GOOGLE_CONSENT_ACCEPT_CLICK,
+    GOOGLE_CONSENT_REJECT_CLICK,
+)
+# Booking.com OneTrust bar on 1280x720. Accept sits on the right of the
+# bottom sheet; Reject is just left of it. Not the Coolblue card.
+BOOKING_COOKIE_ACCEPT_CLICK = (1080, 640)
+BOOKING_COOKIE_REJECT_CLICK = (860, 640)
+BOOKING_COOKIE_DISMISS_CLICKS: tuple[tuple[int, int], ...] = (
+    BOOKING_COOKIE_ACCEPT_CLICK,
+    BOOKING_COOKIE_REJECT_CLICK,
+)
 # Coolblue / amazon.nl / bol.com cart job on 1280×720 after cookies.
 # Header search — not mid-page categories. Product tiles on zoeken.
 # PDP In winkelwagen is the right column. Basket icon is top-right.
@@ -217,7 +235,33 @@ _COOKIE_RE = re.compile(
     r"advertising\s*choices|"
     r"alle\s*cookies|"
     r"\bdecline\b|"
-    r"customis[ea]"
+    r"customis[ea]|"
+    r"consent\.google|"
+    r"before you continue to google|"
+    r"bevor sie zu google weitergehen|"
+    r"alle\s*akzeptieren|"
+    r"alle\s*ablehnen|"
+    r"\bakzeptieren\b|"
+    r"\bablehnen\b|"
+    r"\bzustimmen\b|"
+    r"\beinverstanden\b|"
+    r"tout\s*accepter|"
+    r"tout\s*refuser|"
+    r"aceptar\s*todo|"
+    r"rechazar\s*todo|"
+    r"accetta\s*tutto|"
+    r"rifiuta\s*tutto|"
+    r"aceitar\s*tudo|"
+    r"rejeitar\s*tudo|"
+    r"zaakceptuj|"
+    r"odrzu[cć]\s*wszystko|"
+    r"t[uü]m[uü]n[uü]\s*kabul|"
+    r"t[uü]m[uü]n[uü]\s*reddet|"
+    r"avant de continuer|"
+    r"antes de continuar|"
+    r"prima di continuare|"
+    r"only essential|"
+    r"essential(?:\s+cookies)?\s+only"
     r")",
     re.I,
 )
@@ -470,6 +514,13 @@ _DISMISS_LABEL_RE = re.compile(
     r"\bclose\b|"
     r"\bweigeren\b|"
     r"alles\s*weigeren|"
+    r"alle\s*ablehnen|"
+    r"\bablehnen\b|"
+    r"tout\s*refuser|"
+    r"rechazar(?:\s+todo)?|"
+    r"rifiuta(?:\s+tutto)?|"
+    r"rejeitar(?:\s+tudo)?|"
+    r"t[uü]m[uü]n[uü]\s*reddet|"
     r"(?:the\s+)?(?:x|×)\s+(?:button|control)?"
     r")",
     re.I,
@@ -477,16 +528,32 @@ _DISMISS_LABEL_RE = re.compile(
 _DISMISS_XY_RE = re.compile(
     r"(?:"
     r"no thanks|not now|cancel|reject(?:\s+all)?(?:\s+cookies)?|"
-    r"dismiss|close|weigeren|alles\s*weigeren|(?:the\s+)?(?:x|×)"
+    r"dismiss|close|weigeren|alles\s*weigeren|alle\s*ablehnen|ablehnen|"
+    r"tout\s*refuser|rechazar(?:\s+todo)?|rifiuta(?:\s+tutto)?|"
+    r"rejeitar(?:\s+tudo)?|(?:the\s+)?(?:x|×)"
     r")"
     r"(?:\s+button|\s+control)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
     re.I,
 )
 _COOKIE_ACCEPT_XY_RE = re.compile(
-    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s*accepteren)"
+    r"(?:accept(?:\s+all)?|i\s+agree|agree|continue|alles\s*accepteren|"
+    r"alle\s*akzeptieren|akzeptieren|tout\s*accepter|aceptar(?:\s+todo)?|"
+    r"accetta(?:\s+tutto)?|aceitar(?:\s+tudo)?)"
     r"(?:\s+button|\s+and\s+continue)?"
     r"\s+(?:at\s+)?\((\d{2,4})\s*,\s*(\d{2,4})\)",
+    re.I,
+)
+# Full-page Google consent. "Google Suche" plus these lines is not a SERP.
+_GOOGLE_CONSENT_TEXT_RE = re.compile(
+    r"("
+    r"consent\.google|"
+    r"before you continue to google|"
+    r"bevor sie zu google weitergehen|"
+    r"avant de continuer vers google|"
+    r"antes de continuar a google|"
+    r"prima di continuare su google"
+    r")",
     re.I,
 )
 _NEVER_CLICK_RE = re.compile(
@@ -873,8 +940,31 @@ _LOOK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
         re.compile(r"\b(reuters|bbc\.com|cnn|nzz|bloomberg|swissinfo)\b", re.I),
     ),
 )
-# Ask-side topic. Shop vs weather, hotel vs calculator — not the same job.
+# Ask-side topic. Restaurant / car / flight before hotel so "booking
+# link" or "where to book" does not turn dinner into a hotel search.
+# Bare "booking" is not a hotel — only hotels / airbnb / a stay / booking.com.
 _ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "restaurant",
+        re.compile(
+            r"\b(restaurants?|dinner|lunch|brunch|caf[eé]s?|eateries|where to eat)\b",
+            re.I,
+        ),
+    ),
+    (
+        "car",
+        re.compile(
+            r"\b(rental\s+cars?|car\s+rentals?|rent\s+a\s+car|hire\s+a\s+car)\b",
+            re.I,
+        ),
+    ),
+    (
+        "flight",
+        re.compile(
+            r"\b((?:round[\s-]?trip\s+)?flights?|airfares?|airlines?)\b",
+            re.I,
+        ),
+    ),
     (
         "shop",
         re.compile(
@@ -888,7 +978,12 @@ _ASK_TOPIC_RES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "hotel",
-        re.compile(r"\b(hotel|booking|airbnb|stay)\b", re.I),
+        re.compile(
+            r"\b(hotels?|airbnb|lodging|accommodations?|motel|hostel)\b|"
+            r"\bstays?\b|"
+            r"\bbooking\.com\b",
+            re.I,
+        ),
     ),
     (
         "calculator",
@@ -1152,10 +1247,15 @@ def _cookie_fallback_click(
     Coolblue's live card has no Weigeren and no coords — click Alles
     accepteren at the card footer (900, 620), then Weigeren. Never the
     cookie-man at y=520. Amazon.nl uses the bottom Accept / Decline
-    row, not Coolblue pixels. Never Escape-only.
+    row, not Coolblue pixels. Google consent and Booking OneTrust have
+    their own pills — Coolblue pixels miss both. Never Escape-only.
     """
-    if look_is_amazon_host(looked):
+    if look_is_google_consent(looked) and not look_is_booking_host(looked):
+        clicks = GOOGLE_CONSENT_DISMISS_CLICKS
+    elif look_is_amazon_host(looked):
         clicks = AMAZON_COOKIE_DISMISS_CLICKS
+    elif look_is_booking_host(looked):
+        clicks = BOOKING_COOKIE_DISMISS_CLICKS
     else:
         clicks = COOLBLUE_COOKIE_DISMISS_CLICKS
     idx = min(max(int(dismisses), 0), len(clicks) - 1)
@@ -1368,8 +1468,78 @@ def look_has_hotel_results(looked: dict[str, Any] | None) -> bool:
 
 
 def ask_wants_hotel(asked: str) -> bool:
-    """Find / book a hotel — not weather or a shop search."""
+    """Find / book a hotel — not a restaurant, car, flight, or shop."""
     return ask_topic(asked) == "hotel"
+
+
+def ask_wants_restaurant(asked: str) -> bool:
+    """Dinner / restaurant search. A booking link is not a hotel."""
+    return ask_topic(asked) == "restaurant"
+
+
+def ask_wants_car(asked: str) -> bool:
+    """Rental car search. Not a hotel stay."""
+    return ask_topic(asked) == "car"
+
+
+def ask_wants_flight(asked: str) -> bool:
+    """Flight search. Not a hotel stay."""
+    return ask_topic(asked) == "flight"
+
+
+def look_is_google_consent(looked: dict[str, Any] | None) -> bool:
+    """Google's consent interstitial, any language, including German.
+
+    Title "Google Suche" plus "Bevor Sie zu Google weitergehen" is this
+    page, not a results list. consent.google.com is this page.
+    """
+    blob = _COOKIE_ABSENT_RE.sub(" ", look_blob(looked))
+    if re.search(r"consent\.google(?:\.[a-z]+)?", blob, re.I):
+        return True
+    return bool(_GOOGLE_CONSENT_TEXT_RE.search(blob))
+
+
+def look_is_booking_host(looked: dict[str, Any] | None) -> bool:
+    """True when the focused tab is booking.com — not every travel mention."""
+    item = looked or {}
+    blob = " ".join(str(item.get(key) or "") for key in ("url", "title"))
+    return bool(re.search(r"booking\.com", blob, re.I))
+
+
+def look_is_consent_page(looked: dict[str, Any] | None) -> bool:
+    """Cookie / consent wall still covering the page. Not a captcha."""
+    if look_is_captcha(looked):
+        return False
+    if look_is_google_consent(looked):
+        return True
+    return overlay_kind(looked) == "cookie"
+
+
+def look_task_kind(looked: dict[str, Any] | None) -> str:
+    """Host task on this tab. Booking.com is a hotel tab even if the nav says flights."""
+    item = looked or {}
+    blob = " ".join(str(item.get(key) or "") for key in ("url", "title"))
+    if re.search(r"booking\.com|hotels\.com", blob, re.I):
+        return "hotel"
+    if re.search(
+        r"tripadvisor\.|opentable\.|thefork\.|/restaurants?\b",
+        blob,
+        re.I,
+    ):
+        return "restaurant"
+    if re.search(
+        r"kayak\.com/cars|rentalcars\.|sixt\.com|enterprise\.com",
+        blob,
+        re.I,
+    ):
+        return "car"
+    if re.search(
+        r"google\.[^/\s]+/travel/flights|kayak\.com/flights",
+        blob,
+        re.I,
+    ):
+        return "flight"
+    return look_topic(looked)
 
 
 def look_is_travel_site(looked: dict[str, Any] | None) -> bool:
@@ -1430,14 +1600,73 @@ def look_is_unfinished_hotel_search(looked: dict[str, Any] | None) -> bool:
     return bool(_look_is_search_engine(looked))
 
 
-def hotel_stay_dates(today: date | None = None) -> tuple[date, date]:
-    """A real 3-night stay about three weeks out — next-3-months window."""
+_MONTH_INDEX = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+_NAMED_DATE_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
+    r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
+    r"nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b",
+    re.I,
+)
+_ISO_DATE_RE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+
+
+def explicit_stay_dates(asked: str) -> tuple[date, date] | None:
+    """Check-in/out written in the ask. None when they did not name a day."""
+    found: list[date] = []
+    for match in _ISO_DATE_RE.finditer(asked or ""):
+        try:
+            found.append(
+                date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+            )
+        except ValueError:
+            continue
+    if len(found) < 2:
+        found = []
+        for match in _NAMED_DATE_RE.finditer(asked or ""):
+            month = _MONTH_INDEX.get(match.group(2).lower()[:3])
+            if not month:
+                continue
+            try:
+                found.append(date(int(match.group(3)), month, int(match.group(1))))
+            except ValueError:
+                continue
+    if len(found) >= 2:
+        start, end = found[0], found[1]
+        if end < start:
+            start, end = end, start
+        if start == end:
+            end = start + timedelta(days=1)
+        return start, end
+    if len(found) == 1:
+        return found[0], found[0] + timedelta(days=1)
+    return None
+
+
+def hotel_stay_dates(today: date | None = None, asked: str = "") -> tuple[date, date]:
+    """Dates they named, else a real 3-night stay about three weeks out."""
+    parsed = explicit_stay_dates(asked) if asked else None
+    if parsed:
+        return parsed
     start = (today or date.today()) + timedelta(days=21)
     return start, start + timedelta(days=3)
 
 
-def hotel_date_query(today: date | None = None) -> str:
-    checkin, checkout = hotel_stay_dates(today)
+def hotel_date_query(today: date | None = None, asked: str = "") -> str:
+    checkin, checkout = hotel_stay_dates(today, asked)
     return f"check-in {checkin.isoformat()} check-out {checkout.isoformat()}"
 
 
@@ -1476,7 +1705,7 @@ def hotel_destination(asked: str) -> str:
 def hotel_typed_query(asked: str, today: date | None = None) -> str:
     """Clean destination + real check-in/out. Never the coaching essay."""
     dest = hotel_destination(asked)
-    dates = hotel_date_query(today)
+    dates = hotel_date_query(today, asked)
     if dest.lower() in {"hotel", "hotels"}:
         return f"hotels {dates}".strip()
     return f"{dest} hotels {dates}".strip()
@@ -1485,7 +1714,7 @@ def hotel_typed_query(asked: str, today: date | None = None) -> str:
 def hotel_travel_url(asked: str, today: date | None = None) -> str:
     """Booking.com search with destination + real check-in/out dates."""
     dest = hotel_destination(asked) or "hotel"
-    checkin, checkout = hotel_stay_dates(today)
+    checkin, checkout = hotel_stay_dates(today, asked)
     return (
         "https://www.booking.com/searchresults.html?"
         f"ss={quote_plus(dest)}"
@@ -1505,7 +1734,7 @@ def hotel_alt_travel_url(asked: str, today: date | None = None) -> str:
     HTML) when the look stays blank. Never invent prices.
     """
     dest = hotel_destination(asked) or "hotel"
-    checkin, checkout = hotel_stay_dates(today)
+    checkin, checkout = hotel_stay_dates(today, asked)
     dest_path = quote_plus(dest)
     q = quote_plus(f"{dest} hotels")
     return (
@@ -1525,12 +1754,133 @@ def hotel_alt_fallback_url(asked: str, today: date | None = None) -> str:
     not need the JS Travel UI.
     """
     dest = hotel_destination(asked) or "hotel"
-    checkin, checkout = hotel_stay_dates(today)
+    checkin, checkout = hotel_stay_dates(today, asked)
     q = quote_plus(
         f"{dest} hotels check-in {checkin.isoformat()} "
         f"check-out {checkout.isoformat()}"
     )
     return f"https://html.duckduckgo.com/html/?q={q}"
+
+
+def ddg_html_url(query: str) -> str:
+    """DuckDuckGo HTML results. No Google consent interstitial."""
+    q = re.sub(r"\s+", " ", (query or "").strip()) or "search"
+    return "https://html.duckduckgo.com/html/?q=" + quote_plus(q)
+
+
+def task_search_query(asked: str) -> str:
+    """Words to search. Not the coaching essay and not a hotel date rewrite."""
+    return web_search_query(asked) or re.sub(r"\s+", " ", (asked or "").strip())
+
+
+def restaurant_search_url(asked: str) -> str:
+    return ddg_html_url(task_search_query(asked))
+
+
+def car_search_url(asked: str) -> str:
+    return ddg_html_url(task_search_query(asked))
+
+
+def flight_search_url(asked: str) -> str:
+    return ddg_html_url(task_search_query(asked))
+
+
+def task_search_url(asked: str) -> str:
+    """URL for THIS task. Restaurants never open a hotel search."""
+    if ask_wants_hotel(asked):
+        return hotel_travel_url(asked)
+    if ask_wants_restaurant(asked):
+        return restaurant_search_url(asked)
+    if ask_wants_car(asked):
+        return car_search_url(asked)
+    if ask_wants_flight(asked):
+        return flight_search_url(asked)
+    return ddg_html_url(task_search_query(asked))
+
+
+def _host_of(url: str) -> str:
+    raw = re.sub(r"^https?://", "", url or "", flags=re.I).split("/")[0].lower()
+    if raw.startswith("www."):
+        raw = raw[4:]
+    return raw
+
+
+def consent_route_url(asked: str, looked: dict[str, Any] | None = None) -> str:
+    """A different host when a consent wall will not click away.
+
+    Hotels leave Booking for the DuckDuckGo list that paints prices.
+    Other searches leave Google consent for DuckDuckGo HTML. Empty
+    when the look is already on that host.
+    """
+    if ask_wants_hotel(asked):
+        url = hotel_alt_fallback_url(asked)
+    elif ask_wants_restaurant(asked):
+        url = restaurant_search_url(asked)
+    elif ask_wants_car(asked):
+        url = car_search_url(asked)
+    elif ask_wants_flight(asked):
+        url = flight_search_url(asked)
+    else:
+        url = ddg_html_url(task_search_query(asked))
+    current = str((looked or {}).get("url") or "")
+    if current and _host_of(current) == _host_of(url):
+        return ""
+    return url
+
+
+def task_option_lines(looked: dict[str, Any] | None) -> list[str]:
+    """Priced option sentences from vision. Not a consent wall."""
+    if look_is_google_consent(looked):
+        return []
+    blob = look_result_blob(looked)
+    if not blob.strip():
+        return []
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", blob) if p.strip()]
+    kept: list[str] = []
+    for part in parts:
+        if not _STAY_PRICE_RE.search(part):
+            continue
+        if _GOOGLE_CONSENT_TEXT_RE.search(part):
+            continue
+        if _SEARCHING_CAPTION_RE.search(part) or _COACHING_PHRASE_RE.search(part):
+            continue
+        kept.append(part)
+    return kept[:3]
+
+
+def look_has_task_results(looked: dict[str, Any] | None, asked: str = "") -> bool:
+    """Named priced options for a restaurant / car / flight / hotel look."""
+    if look_is_consent_page(looked):
+        return False
+    if look_has_blocking_overlay(looked, goal=asked):
+        return False
+    return bool(task_option_lines(looked))
+
+
+def _task_results_match(looked: dict[str, Any] | None, asked: str) -> bool:
+    """True when this look is priced options for THIS task, not another."""
+    kind = ask_topic(asked)
+    if kind == "hotel":
+        return look_has_hotel_results(looked)
+    if kind not in {"restaurant", "car", "flight"}:
+        return False
+    if not look_has_task_results(looked, asked):
+        return False
+    seen = look_task_kind(looked)
+    if seen and seen != kind:
+        return False
+    if seen == kind:
+        return True
+    blob = look_result_blob(looked)
+    if kind == "restaurant" and re.search(r"\b(restaurants?|dinner)\b", blob, re.I):
+        return True
+    if kind == "car" and re.search(
+        r"\b(rental\s+cars?|car\s+rental|sixt|enterprise|hertz)\b", blob, re.I
+    ):
+        return True
+    if kind == "flight" and re.search(r"\b(flights?|airlines?|airways)\b", blob, re.I):
+        return True
+    return False
 
 
 def look_is_booking_bounce(
@@ -2189,6 +2539,8 @@ def look_is_leftover_for_ask(looked: dict[str, Any] | None, asked: str) -> bool:
     query = web_search_query(asked)
     if look_is_captcha(looked):
         return True
+    if _task_results_match(looked, asked):
+        return False
     if (
         ask_wants_cart(asked)
         and _look_is_search_engine(looked)
@@ -2322,6 +2674,8 @@ def needs_web_query(
         # Genius / cookie / Restore still up — not done. URL tokens from
         # searchresults.html are not priced options.
         return True
+    if _task_results_match(looked, asked) and not ask_wants_hotel(asked):
+        return False
     if ask_wants_hotel(asked) and look_is_travel_search_form(looked):
         # Homepage / empty date form — type destination + dates.
         return True
@@ -2874,6 +3228,10 @@ def continue_web_search(
             item["_retailer_blocked"] = True
         if cookie_stuck:
             item["_cookie_stuck"] = True
+        if current.get("_consent_routed"):
+            item["_consent_routed"] = True
+        if current.get("_task_routed"):
+            item["_task_routed"] = True
         if overlay_dismisses:
             item["_cookie_dismisses"] = overlay_dismisses
         for key in (
@@ -2918,6 +3276,28 @@ def continue_web_search(
         cookie_stuck = False
         return True
 
+    def _open_consent_route() -> bool:
+        """Leave a consent wall for a host that can show THIS task."""
+        nonlocal current, overlay_dismisses, cookie_stuck, typed_query
+        if current.get("_consent_routed") or open_url is None:
+            return False
+        url = consent_route_url(goal, current)
+        if not url:
+            return False
+        opened = open_url(url)
+        if not opened or not opened.get("ok"):
+            return False
+        _pause_after_web_act()
+        nxt = look_again() or current
+        nxt["_consent_routed"] = True
+        current = nxt
+        overlay_dismisses = 0
+        cookie_stuck = False
+        typed_query = True
+        current["_cookie_dismisses"] = 0
+        current.pop("_cookie_stuck", None)
+        return True
+
     for i in range(limit):
         blob = look_blob(current)
         if ask_wants_payment(goal):
@@ -2935,6 +3315,26 @@ def continue_web_search(
                 retailer_blocked = True
                 current["_retailer_blocked"] = True
                 return _mark(current)
+        task_kind = ask_topic(goal)
+        seen_kind = look_task_kind(current)
+        if (
+            task_kind in {"restaurant", "car", "flight", "hotel"}
+            and seen_kind
+            and seen_kind != task_kind
+            and not current.get("_task_routed")
+            and open_url is not None
+            and not look_has_blocking_overlay(current, goal=goal)
+        ):
+            # Leftover hotel list is not a restaurant / car / flight answer.
+            url = task_search_url(goal)
+            opened = open_url(url)
+            if opened and opened.get("ok"):
+                _pause_after_web_act()
+                current = look_again() or current
+                current["_task_routed"] = True
+                typed_query = True
+                overlay_dismisses = 0
+                continue
         plan = overlay_dismiss_plan(
             current, goal=goal, dismisses=overlay_dismisses
         )
@@ -2953,6 +3353,12 @@ def continue_web_search(
             if ask_wants_cart(goal) and not look_is_amazon_host(current):
                 if _open_retailer_fallback(force=True):
                     continue
+            if (
+                not ask_wants_shop(goal)
+                and overlay_dismisses >= OVERLAY_DISMISS_MAX
+                and _open_consent_route()
+            ):
+                continue
             cookie_stuck = True
             current["_cookie_stuck"] = True
             return _mark(current)
@@ -3044,8 +3450,18 @@ def continue_web_search(
             )
             opened_new_tab = True
             continue
-        if look_has_hotel_results(current) and not look_is_travel_search_form(
-            current
+        if (
+            look_has_hotel_results(current)
+            and not look_is_travel_search_form(current)
+            and (
+                ask_wants_hotel(goal)
+                or ask_topic(goal) not in {"restaurant", "car", "flight"}
+            )
+        ):
+            return _mark(current)
+        if (
+            ask_topic(goal) in {"restaurant", "car", "flight"}
+            and _task_results_match(current, goal)
         ):
             return _mark(current)
         if needs_hotel_followthrough(goal, current, query) and not hotel_followed:
@@ -3134,8 +3550,18 @@ def continue_web_search(
             return True
 
         if typed_query:
-            if look_has_hotel_results(current) and not look_is_travel_search_form(
-                current
+            if (
+                look_has_hotel_results(current)
+                and not look_is_travel_search_form(current)
+                and (
+                    ask_wants_hotel(goal)
+                    or ask_topic(goal) not in {"restaurant", "car", "flight"}
+                )
+            ):
+                return _mark(current)
+            if (
+                ask_topic(goal) in {"restaurant", "car", "flight"}
+                and _task_results_match(current, goal)
             ):
                 return _mark(current)
             if ask_wants_hotel(goal) and not look_has_hotel_results(current):

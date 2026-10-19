@@ -5950,3 +5950,408 @@ async def test_voice_ask_sorry_unused_new_tab_look_speed_off(monkeypatch, tmp_pa
     assert "146.148" not in low
     assert "amsterdam" in low or "weather" in low or "degrees" in low
     reset_last_look()
+
+
+# Issues #99 and #100 — hard Talk searches.
+PORTO_HOTEL = (
+    "Can you find me 2 or 3 real hotels in Porto for 2 adults, check-in "
+    "Friday 17 October 2026 and check-out Monday 20 October 2026, under €450 "
+    "total for the whole stay? I need hotel names, total prices or nightly "
+    "rates, and where to book (Booking.com or the hotel site)."
+)
+LISBON_CAR = (
+    "Can you find me 2 or 3 real rental cars at Lisbon Airport for pick-up "
+    "Friday 10 October 2026 and return Sunday 12 October 2026? Compact or "
+    "economy, under €70 per day. I need the company or car name, the total "
+    "price for those dates, and where to book (Sixt, Enterprise, Kayak, or similar)."
+)
+PRAGUE_DINNER = (
+    "Can you find me 2 or 3 dinner restaurants in Prague for 2 people on "
+    "Saturday 18 October 2026, under about €40 per person, with a booking "
+    "link or clear where to reserve? Names, rough price, and neighborhood please."
+)
+AMSTERDAM_FLIGHT = (
+    "round-trip flights Amsterdam to Barcelona, 1 adult, depart 24 October "
+    "2026, return 27 October 2026, total under €200. I need the airline, "
+    "times, prices, and where to book."
+)
+GOOGLE_DE_CONSENT = {
+    "ok": True,
+    "title": "Google Suche",
+    "url": "https://consent.google.com/m?continue=https://www.google.com/search",
+    "_cookie_dismisses": 0,
+    "vision_description": (
+        "Bevor Sie zu Google weitergehen. Alle akzeptieren. Alle ablehnen. "
+        "Google Suche. The full question is in the address bar."
+    ),
+}
+BOOKING_COOKIE = {
+    "ok": True,
+    "title": "Booking.com: Hotels in Porto",
+    "url": "https://www.booking.com/searchresults.html?ss=Porto",
+    "vision_description": (
+        "Booking.com cookie banner covers the page. Accept cookies. Reject. "
+        "No hotel names. No prices."
+    ),
+}
+PORTO_HOTEL_RESULTS = {
+    "ok": True,
+    "title": "Booking.com: Porto hotels",
+    "url": "https://www.booking.com/searchresults.html?ss=Porto&checkin=2026-10-17",
+    "vision_description": (
+        "Hotel Infante Sagres, Porto, €362 total for 3 nights. "
+        "Hotel Teatro, Porto, €410 total."
+    ),
+}
+LISBON_CAR_RESULTS = {
+    "ok": True,
+    "title": "rental cars Lisbon Airport — DuckDuckGo",
+    "url": "https://html.duckduckgo.com/html/?q=rental+cars+Lisbon",
+    "vision_description": (
+        "Sixt Fiat 500, rental car, €58 per day, Lisbon Airport, kayak.com. "
+        "Enterprise Renault Clio, €64 per day, Lisbon Airport."
+    ),
+}
+PRAGUE_DINNER_RESULTS = {
+    "ok": True,
+    "title": "dinner restaurants Prague — DuckDuckGo",
+    "url": "https://html.duckduckgo.com/html/?q=dinner+restaurants+Prague",
+    "vision_description": (
+        "Lokal Dlouhaaa, dinner restaurant, Prague 1, about €25 per person, "
+        "OpenTable. "
+        "Cafe Louvre, Prague 1, about €30 per person."
+    ),
+}
+FLIGHT_RESULTS = {
+    "ok": True,
+    "title": "flights Amsterdam Barcelona — DuckDuckGo",
+    "url": "https://html.duckduckgo.com/html/?q=flights+Amsterdam+Barcelona",
+    "vision_description": (
+        "Vueling flight Amsterdam to Barcelona, depart 08:15, return 19:40, "
+        "€176 total, kayak.com. "
+        "Transavia flight, €189 total."
+    ),
+}
+LEFTOVER_PRAGUE_HOTELS = {
+    "ok": True,
+    "title": "Booking.com: Search results: Prague. Book your hotel now!",
+    "url": (
+        "https://www.booking.com/searchresults.html?"
+        "ss=Prague&checkin=2026-10-20&checkout=2026-10-23"
+    ),
+    "vision_description": (
+        "Factory Suites — Prague 8, €237 for 3 nights. "
+        "Rentero One Bedroom, Prague 9, €325 for 3 nights. "
+        "Book your hotel now!"
+    ),
+}
+
+
+def test_issue_100_dinner_is_not_a_hotel_search():
+    """'booking link' must not open Booking.com hotels."""
+    from app.jarvis.overlay import (
+        ask_wants_hotel,
+        ask_wants_restaurant,
+        hotel_travel_url,
+        restaurant_search_url,
+        task_search_url,
+    )
+
+    assert ask_wants_restaurant(PRAGUE_DINNER) is True
+    assert ask_wants_hotel(PRAGUE_DINNER) is False
+    assert wants_web_job(PRAGUE_DINNER) is True
+    url = task_search_url(PRAGUE_DINNER)
+    assert url == restaurant_search_url(PRAGUE_DINNER)
+    assert "booking.com" not in url.lower()
+    assert "checkin=" not in url.lower()
+    low = url.lower()
+    assert "prague" in low
+    assert "restaurant" in low or "dinner" in low
+    hotel = hotel_travel_url(PORTO_HOTEL)
+    assert "booking.com/searchresults" in hotel
+    assert "checkin=2026-10-17" in hotel
+    assert "checkout=2026-10-20" in hotel
+    assert "porto" in hotel.lower()
+
+
+def test_issue_99_german_google_consent_is_a_cookie_wall():
+    """Bevor Sie zu Google weitergehen is a consent page, not a finished search."""
+    from app.jarvis.overlay import (
+        GOOGLE_CONSENT_ACCEPT_CLICK,
+        GOOGLE_CONSENT_DISMISS_CLICKS,
+        ask_wants_car,
+        ask_wants_hotel,
+        look_is_consent_page,
+        look_is_google_consent,
+        overlay_dismiss_plan,
+        overlay_kind,
+    )
+    from app.jarvis.serp import look_has_cookie_overlay
+
+    assert ask_wants_car(LISBON_CAR) is True
+    assert ask_wants_hotel(LISBON_CAR) is False
+    assert wants_web_job(LISBON_CAR) is True
+    assert wants_web_job(AMSTERDAM_FLIGHT) is True
+    assert look_is_google_consent(GOOGLE_DE_CONSENT) is True
+    assert look_is_consent_page(GOOGLE_DE_CONSENT) is True
+    assert look_has_cookie_overlay(GOOGLE_DE_CONSENT) is True
+    assert overlay_kind(GOOGLE_DE_CONSENT) == "cookie"
+    assert look_has_blocking_overlay(GOOGLE_DE_CONSENT, goal=LISBON_CAR) is True
+    plan = overlay_dismiss_plan(GOOGLE_DE_CONSENT, goal=LISBON_CAR)
+    assert plan is not None and plan.kind == "cookie"
+    assert plan.click == GOOGLE_CONSENT_ACCEPT_CLICK
+    assert plan.click in GOOGLE_CONSENT_DISMISS_CLICKS
+    assert plan.click not in COOLBLUE_COOKIE_DISMISS_CLICKS
+    q = web_search_query(LISBON_CAR)
+    assert needs_web_query(LISBON_CAR, GOOGLE_DE_CONSENT, q) is True
+
+
+def test_issue_99_booking_cookie_uses_booking_pixels_then_routes():
+    """A Booking cookie that will not click away opens the hotels list elsewhere."""
+    from app.jarvis.overlay import (
+        BOOKING_COOKIE_ACCEPT_CLICK,
+        BOOKING_COOKIE_DISMISS_CLICKS,
+        consent_route_url,
+        overlay_dismiss_plan,
+    )
+
+    plan = overlay_dismiss_plan(BOOKING_COOKIE, goal=PORTO_HOTEL)
+    assert plan is not None and plan.kind == "cookie"
+    assert plan.click == BOOKING_COOKIE_ACCEPT_CLICK
+    assert plan.click in BOOKING_COOKIE_DISMISS_CLICKS
+    assert plan.click not in COOLBLUE_COOKIE_DISMISS_CLICKS
+    route = consent_route_url(PORTO_HOTEL, BOOKING_COOKIE)
+    assert "html.duckduckgo.com" in route
+    assert "porto" in route.lower()
+
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    looks = {"n": 0}
+    frames = [
+        dict(BOOKING_COOKIE),
+        dict(BOOKING_COOKIE),
+        dict(BOOKING_COOKIE),
+        dict(PORTO_HOTEL_RESULTS),
+    ]
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def type_text(*, text="", **_k):
+        return {"ok": True}
+
+    def press(*, combo="", **_k):
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        return dict(frames[min(looks["n"], len(frames) - 1)])
+
+    out = continue_web_search(
+        dict(BOOKING_COOKIE),
+        goal=PORTO_HOTEL,
+        click=click,
+        type_text=type_text,
+        keys=press,
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert clicks
+    assert clicks[0] == BOOKING_COOKIE_ACCEPT_CLICK
+    assert any("html.duckduckgo.com" in u for u in opened)
+    assert "Infante" in str(out.get("vision_description") or "") or look_has_hotel_results(
+        out
+    )
+    from app.jarvis.voice_ask import _speak_web_job
+
+    spoken = _speak_web_job(
+        PORTO_HOTEL,
+        out,
+        ["run_app", "see_screen", "click"],
+        opened=True,
+    )
+    assert "infante" in spoken["reply"].lower()
+    assert spoken["reply"] != _COOKIE_STUCK
+    assert "could not finish" not in spoken["reply"].lower()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_porto_hotel_dismisses_cookie_and_names_hotels(
+    monkeypatch, tmp_path
+):
+    """Issue #99: Booking cookie click, then real Porto hotels for the asked dates."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import reset_last_look
+    from app.jarvis.overlay import BOOKING_COOKIE_ACCEPT_CLICK
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    monkeypatch.delenv("JARVIS_ENABLED", raising=False)
+    settings_store.save({"look_speed": "off"})
+    reset_last_look()
+    clicks: list[tuple[int, int]] = []
+    launched: list[dict] = []
+    looks = [dict(BOOKING_COOKIE), dict(PORTO_HOTEL_RESULTS), dict(PORTO_HOTEL_RESULTS)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=[],
+        keys=[],
+        launched=launched,
+    )
+    body = await run_voice_ask(PORTO_HOTEL)
+    urls = " ".join(str(p.get("url") or "") for p in launched)
+    assert "booking.com/searchresults" in urls
+    assert "checkin=2026-10-17" in urls
+    assert "checkout=2026-10-20" in urls
+    assert BOOKING_COOKIE_ACCEPT_CLICK in clicks
+    low = body["reply"].lower()
+    assert "infante" in low or "teatro" in low
+    assert body["reply"] != _COOKIE_STUCK
+    assert "jarvis is not ready" not in low
+    reset_last_look()
+
+
+def test_continue_german_consent_clicks_then_leaves_google():
+    opened: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    looks = {"n": 0}
+    frames = [
+        dict(GOOGLE_DE_CONSENT),
+        dict(GOOGLE_DE_CONSENT),
+        dict(GOOGLE_DE_CONSENT),
+        dict(LISBON_CAR_RESULTS),
+    ]
+
+    def click(*, x, y, **_k):
+        clicks.append((int(x), int(y)))
+        return {"ok": True}
+
+    def open_url(url: str = "", **_k):
+        opened.append(str(url))
+        return {"ok": True, "url": url}
+
+    def look_again():
+        looks["n"] += 1
+        return dict(frames[min(looks["n"], len(frames) - 1)])
+
+    from app.jarvis.overlay import GOOGLE_CONSENT_ACCEPT_CLICK
+
+    out = continue_web_search(
+        dict(GOOGLE_DE_CONSENT),
+        goal=LISBON_CAR,
+        click=click,
+        type_text=lambda **_k: {"ok": True},
+        keys=lambda **_k: {"ok": True},
+        look_again=look_again,
+        open_url=open_url,
+        deadline=time.monotonic() + 30,
+    )
+    assert clicks and clicks[0] == GOOGLE_CONSENT_ACCEPT_CLICK
+    assert any("html.duckduckgo.com" in u and "lisbon" in u.lower() for u in opened)
+    assert out.get("_cookie_stuck") is not True
+    assert "Sixt" in str(out.get("vision_description") or "")
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_prague_dinner_does_not_open_booking_hotels(
+    monkeypatch, tmp_path
+):
+    """Issue #100: dinner in Prague must not return Booking.com hotels."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    monkeypatch.delenv("JARVIS_ENABLED", raising=False)
+    settings_store.save({"look_speed": "off"})
+    reset_last_look()
+    remember_last_look(dict(LEFTOVER_PRAGUE_HOTELS))
+
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    launched: list[dict] = []
+    looks = [dict(PRAGUE_DINNER_RESULTS)]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=[],
+        launched=launched,
+    )
+    body = await run_voice_ask(PRAGUE_DINNER)
+    urls = " ".join(str(p.get("url") or "") for p in launched).lower()
+    assert "run_app" in body["tools_used"]
+    assert "booking.com" not in urls
+    assert "checkin=" not in urls
+    assert "prague" in urls
+    assert "html.duckduckgo.com" in urls
+    low = body["reply"].lower()
+    assert "lokal" in low or "louvre" in low
+    assert "factory suites" not in low
+    assert "book your hotel" not in low
+    assert "jarvis is not ready" not in low
+    assert body["reply"] != _COOKIE_STUCK
+    reset_last_look()
+
+
+@pytest.mark.asyncio
+async def test_voice_ask_consent_wall_then_flight_starts_clean(
+    monkeypatch, tmp_path
+):
+    """Issue #99: German consent must not stick and block the next flight ask."""
+    from app.jarvis import settings_store
+    from app.jarvis.capture import remember_last_look, reset_last_look
+    from app.jarvis.voice_ask import run_voice_ask
+
+    monkeypatch.setenv("JARVIS_WORKSPACE", str(tmp_path))
+    monkeypatch.delenv("JARVIS_ENABLED", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    settings_store.save({"look_speed": "off"})
+    reset_last_look()
+    remember_last_look(dict(GOOGLE_DE_CONSENT))
+
+    closed: list[str] = []
+    clicks: list[tuple[int, int]] = []
+    typed: list[str] = []
+    launched: list[dict] = []
+    looks = [
+        dict(GOOGLE_DE_CONSENT),
+        dict(GOOGLE_DE_CONSENT),
+        dict(GOOGLE_DE_CONSENT),
+        dict(FLIGHT_RESULTS),
+    ]
+    _patch_voice_ask_web(
+        monkeypatch,
+        looks,
+        clicks=clicks,
+        typed=typed,
+        keys=[],
+        launched=launched,
+    )
+
+    def fake_close(*, app="chrome"):
+        closed.append(app)
+        return {"ok": True, "app": app, "method": "close-all"}
+
+    monkeypatch.setattr("app.jarvis.desktop.close_windows", fake_close)
+    body = await run_voice_ask(AMSTERDAM_FLIGHT)
+    urls = " ".join(str(p.get("url") or "") for p in launched).lower()
+    assert closed, "stuck consent page must be closed before the next job"
+    assert "booking.com" not in urls
+    assert "html.duckduckgo.com" in urls
+    assert "amsterdam" in urls or "barcelona" in urls or "flight" in urls
+    low = body["reply"].lower()
+    assert "jarvis is not ready" not in low
+    assert "i could not finish the search" not in low
+    assert "vueling" in low or "transavia" in low or "176" in low
+    assert "factory suites" not in low
+    reset_last_look()
